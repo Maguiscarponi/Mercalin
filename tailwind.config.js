@@ -19,10 +19,18 @@ export default {
           '0%': { opacity: '0', transform: 'scale(0.85)' },
           '100%': { opacity: '1', transform: 'scale(1)' },
         },
+        heartbeat: {
+          '0%, 100%': { transform: 'scale(1)' },
+          '15%': { transform: 'scale(1.15)' },
+          '30%': { transform: 'scale(1)' },
+          '45%': { transform: 'scale(1.1)' },
+          '60%': { transform: 'scale(1)' },
+        },
       },
       animation: {
         'fade-in': 'fadeIn 0.25s ease-out',
         'pop-in': 'popIn 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)',
+        heartbeat: 'heartbeat 1.8s ease-in-out infinite',
       },
     },
   },

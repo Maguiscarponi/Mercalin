@@ -90,17 +90,22 @@ export default function OnboardingChecklist({ hasProducts, hasSales }: { hasProd
                 )}
               >
                 <div className="flex items-center gap-3 min-w-0">
-                  <div
-                    className={clsx(
-                      "w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-sm transition-all duration-300",
-                      isDone
-                        ? "bg-emerald-100 text-emerald-600 animate-pop-in"
-                        : isNext
-                        ? "bg-indigo-100 text-indigo-600"
-                        : "bg-stone-100 text-stone-400"
+                  <div className="relative shrink-0 w-8 h-8">
+                    {isNext && !isDone && (
+                      <span className="absolute inset-0 rounded-full bg-indigo-400 motion-safe:animate-ping opacity-40" />
                     )}
-                  >
-                    {isDone ? "✓" : step.icon}
+                    <div
+                      className={clsx(
+                        "relative w-8 h-8 rounded-full flex items-center justify-center text-sm transition-all duration-300",
+                        isDone
+                          ? "bg-emerald-100 text-emerald-600 animate-pop-in"
+                          : isNext
+                          ? "bg-indigo-100 text-indigo-600 motion-safe:animate-heartbeat"
+                          : "bg-stone-100 text-stone-400"
+                      )}
+                    >
+                      {isDone ? "✓" : step.icon}
+                    </div>
                   </div>
                   <div className="min-w-0">
                     <div className={clsx("text-sm font-medium truncate", isDone ? "text-stone-400 line-through" : "text-stone-800")}>
