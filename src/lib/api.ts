@@ -35,8 +35,11 @@ export const api = {
   getProduct: (id: number) =>
     invoke<Product>("get_product", { id }),
 
-  listProducts: (query = "") =>
-    invoke<Product[]>("list_products", { query }),
+  // includeGhosts: true trae también los precargados sin precio (para activarlos buscando/
+  // escaneando en Caja o en "Agregar producto"). El resto del sistema (catálogo real, combos,
+  // promociones, reportes, etc.) usa el default false a propósito.
+  listProducts: (query = "", includeGhosts = false) =>
+    invoke<Product[]>("list_products", { query, includeGhosts }),
 
   createProduct: (product: NewProduct) =>
     invoke<Product>("create_product", { product }),

@@ -42,17 +42,17 @@ pub fn find_product_by_barcode(
 }
 
 #[tauri::command]
-pub fn list_products(query: String, state: State<AppState>) -> CmdResult<Vec<Product>> {
+pub fn list_products(query: String, include_ghosts: bool, state: State<AppState>) -> CmdResult<Vec<Product>> {
     let conn = state.db.lock();
     let q = query.trim().to_lowercase();
+    // Catálogo real (Productos → "Todos", Caja al no pedir fantasmas): solo active=1.
+    // Con include_ghosts=true (pantalla "Agregar producto", búsqueda/escaneo en Caja) también
+    // aparecen los precargados sin precio — nunca un producto borrado de verdad (active=0, is_ghost=0).
+    let visibility = if include_ghosts { "(active = 1 OR is_ghost = 1)" } else { "active = 1" };
 
-    // Un producto "fantasma" (precargado, sin precio todavía) se ve siempre en el listado,
-    // igual que cualquier otro — solo que no cuenta en alertas/métricas (esas queries filtran
-    // active=1 aparte). Un producto borrado de verdad (active=0, is_ghost=0) nunca aparece acá.
     if q.is_empty() {
-        let mut stmt = conn
-            .prepare("SELECT * FROM products WHERE (active = 1 OR is_ghost = 1) ORDER BY name LIMIT 20000")
-            .map_err(err)?;
+        let sql = format!("SELECT * FROM products WHERE {} ORDER BY name LIMIT 20000", visibility);
+        let mut stmt = conn.prepare(&sql).map_err(err)?;
         let rows = stmt.query_map([], row_to_product).map_err(err)?;
         let mut out = Vec::new();
         for r in rows { out.push(r.map_err(err)?); }
@@ -70,8 +70,8 @@ pub fn list_products(query: String, state: State<AppState>) -> CmdResult<Vec<Pro
         .collect();
     let where_clause = conditions.join(" AND ");
     let sql = format!(
-        "SELECT * FROM products WHERE (active = 1 OR is_ghost = 1) AND ({}) ORDER BY name LIMIT 20000",
-        where_clause
+        "SELECT * FROM products WHERE {} AND ({}) ORDER BY name LIMIT 20000",
+        visibility, where_clause
     );
 
     let mut stmt = conn.prepare(&sql).map_err(err)?;

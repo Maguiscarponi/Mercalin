@@ -101,7 +101,7 @@ export default function Caja() {
     if (value.trim().length >= 2) {
       searchTimer.current = setTimeout(async () => {
         try {
-          const results = await api.listProducts(value.trim());
+          const results = await api.listProducts(value.trim(), true);
           if (results.length === 1) {
             selectSearchResult(results[0]);
           } else {
@@ -174,7 +174,7 @@ export default function Caja() {
         setScanValue("");
         return;
       }
-      const results = await api.listProducts(code);
+      const results = await api.listProducts(code, true);
       if (results.length === 1) {
         addProductSafely(results[0]);
         setScanValue("");
@@ -939,7 +939,7 @@ function PriceCheckModal({ onClose }: { onClose: () => void }) {
       timer.current = setTimeout(async () => {
         const byBarcode = await api.findProductByBarcode(v.trim()).catch(() => null);
         if (byBarcode) { setFound(byBarcode); return; }
-        const list = await api.listProducts(v.trim()).catch(() => []);
+        const list = await api.listProducts(v.trim(), true).catch(() => []);
         if (list.length > 0) setFound(list[0]);
         else setNotFound(true);
       }, 200);
@@ -951,7 +951,7 @@ function PriceCheckModal({ onClose }: { onClose: () => void }) {
     if (timer.current) clearTimeout(timer.current);
     const byBarcode = await api.findProductByBarcode(query.trim()).catch(() => null);
     if (byBarcode) { setFound(byBarcode); setNotFound(false); return; }
-    const list = await api.listProducts(query.trim()).catch(() => []);
+    const list = await api.listProducts(query.trim(), true).catch(() => []);
     if (list.length > 0) { setFound(list[0]); setNotFound(false); }
     else { setFound(null); setNotFound(true); }
   }

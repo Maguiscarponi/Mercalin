@@ -36,7 +36,7 @@ function VelocityBadge({ v }: { v: ProductVelocity | undefined }) {
 const PAGE_SIZE = 50;
 
 // ── Tabs ──────────────────────────────────────────────────────────────────────
-type ProductTab = "todos" | "alertas" | "sin_movimiento" | "sin_precio" | "stock_ia" | "precio_ia";
+type ProductTab = "todos" | "agregar" | "alertas" | "sin_movimiento" | "sin_precio" | "stock_ia" | "precio_ia";
 
 function MarginBadge({ price, cost }: { price: number; cost: number }) {
   if (cost <= 0 || price <= 0) return null;
@@ -191,11 +191,11 @@ export default function Productos() {
             className={clsx("btn text-sm", offImportRunning ? "btn-primary" : "btn-secondary")}
             title={offImportRunning
               ? "La importación sigue corriendo en segundo plano — tocá para ver el progreso"
-              : "Trae los productos nuevos que se hayan agregado a la base pública desde la última carga — el grueso del catálogo ya debería estar"}
+              : "Trae más productos precargados desde la base pública, para tener más opciones al buscarlos en \"Agregar producto\""}
           >
             {offImportRunning
               ? `⏳ Importando… ${offImportProgress ? `${offImportProgress.page}/${offImportProgress.total_pages}` : ""}`
-              : "🌐 Buscar productos nuevos"}
+              : "🌐 Traer más precargados"}
           </button>
           <button onClick={() => setShowImport(true)} className="btn btn-secondary text-sm">
             📥 Importar CSV/Excel
@@ -216,6 +216,7 @@ export default function Productos() {
       <div className="flex gap-1 border-b border-stone-200">
         {([
           { id: "todos", label: "Todos" },
+          { id: "agregar", label: "🔎 Agregar producto" },
           { id: "alertas", label: `Alertas (${lowStock.length})` },
           { id: "sin_movimiento", label: `Sin movimiento (${deadStock.length})` },
           { id: "sin_precio", label: `Sin precio (${products.filter((p) => p.price_cents <= 0).length})` },
@@ -333,14 +334,14 @@ export default function Productos() {
                         <td colSpan={6} className="text-center py-10">
                           {products.length === 0 ? (
                             <div className="flex flex-col items-center gap-3">
-                              <p className="text-stone-500">Todavía no cargaste ningún producto.</p>
+                              <p className="text-stone-500">Todavía no tenés productos con precio cargado.</p>
                               <p className="text-sm text-stone-400 max-w-sm">
-                                No hace falta tipear todo a mano: podés traer miles de productos argentinos
-                                ya cargados (nombre y código de barras) de una sola vez.
+                                Probá primero en "Agregar producto": muchos ya están precargados (nombre y
+                                código de barras) y solo hace falta ponerles un precio.
                               </p>
                               <div className="flex gap-2 mt-1">
-                                <button onClick={() => setShowOffImport(true)} className="btn btn-primary text-sm">
-                                  {offImportRunning ? "⏳ Ver progreso de la importación" : "🌐 Buscar productos nuevos"}
+                                <button onClick={() => setTab("agregar")} className="btn btn-primary text-sm">
+                                  🔎 Agregar producto
                                 </button>
                                 <button onClick={() => setEditing({})} className="btn btn-secondary text-sm">
                                   Cargar uno a mano
@@ -357,17 +358,7 @@ export default function Productos() {
                       <tr key={p.id} className="table-row">
                         <td className="table-cell font-mono text-sm text-stone-500">{p.barcode || "—"}</td>
                         <td className="table-cell">
-                          <div className="font-semibold text-stone-900 flex items-center gap-1.5">
-                            {p.name}
-                            {p.is_ghost && (
-                              <span
-                                className="text-[10px] font-semibold bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded-full shrink-0"
-                                title="Precargado — todavía no es parte de tu catálogo. Ponele un precio para activarlo."
-                              >
-                                👻 Fantasma
-                              </span>
-                            )}
-                          </div>
+                          <div className="font-semibold text-stone-900">{p.name}</div>
                           {p.category && <div className="text-xs text-stone-400 uppercase tracking-wide mt-0.5">{p.category}</div>}
                         </td>
                         <td className="table-cell text-right tabular">{centsToARS(p.cost_cents)}</td>
@@ -484,17 +475,7 @@ export default function Productos() {
                       <tr key={p.id} className="table-row">
                         <td className="table-cell font-mono text-sm text-stone-500">{p.barcode || "—"}</td>
                         <td className="table-cell">
-                          <div className="font-semibold text-stone-900 flex items-center gap-1.5">
-                            {p.name}
-                            {p.is_ghost && (
-                              <span
-                                className="text-[10px] font-semibold bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded-full shrink-0"
-                                title="Precargado — todavía no es parte de tu catálogo. Ponele un precio para activarlo."
-                              >
-                                👻 Fantasma
-                              </span>
-                            )}
-                          </div>
+                          <div className="font-semibold text-stone-900">{p.name}</div>
                           {p.category && <div className="text-xs text-stone-400 uppercase tracking-wide mt-0.5">{p.category}</div>}
                         </td>
                         <td className="table-cell text-right tabular">{centsToARS(p.cost_cents)}</td>
@@ -587,6 +568,14 @@ export default function Productos() {
             </>
           )}
         </div>
+      )}
+
+      {/* ── Tab: Agregar producto ──────────────────────────────────────── */}
+      {tab === "agregar" && (
+        <AgregarProductoTab
+          onActivated={load}
+          onCreateNew={(name) => setEditing({ name })}
+        />
       )}
 
       {/* ── Tab: Stock mín. IA ─────────────────────────────────────────── */}
@@ -1393,6 +1382,101 @@ function formatEta(seconds: number): string {
 // El estado del import vive en un store global (useCatalogImport), no acá: así el import
 // sigue corriendo y el progreso se sigue viendo aunque el usuario cierre este modal y
 // navegue a otra pantalla — cerrar esta ventana NO cancela nada.
+// Pantalla principal para sumar productos al catálogo: busca entre lo ya precargado
+// (incluye fantasmas) y, si lo encuentra, alcanza con ponerle un precio para activarlo.
+// Si no está, ofrece cargarlo a mano con el nombre ya escrito.
+function AgregarProductoTab({
+  onActivated,
+  onCreateNew,
+}: {
+  onActivated: () => void;
+  onCreateNew: (name: string) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<Product[]>([]);
+  const [searched, setSearched] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (timer.current) clearTimeout(timer.current);
+    const q = query.trim();
+    if (!q) { setResults([]); setSearched(false); return; }
+    timer.current = setTimeout(async () => {
+      try {
+        const r = await api.listProducts(q, true);
+        setResults(r);
+      } catch (e) {
+        console.error(e);
+        setResults([]);
+      } finally {
+        setSearched(true);
+      }
+    }, 250);
+    return () => { if (timer.current) clearTimeout(timer.current); };
+  }, [query]);
+
+  return (
+    <div className="card flex-1 overflow-y-auto p-6">
+      <div className="max-w-xl mx-auto">
+        <h2 className="text-base font-semibold mb-1">Agregar producto</h2>
+        <p className="text-sm text-stone-500 mb-4">
+          Buscá por nombre o código de barras. La mayoría ya están precargados — si aparece, alcanza con
+          ponerle un precio para sumarlo a tu catálogo.
+        </p>
+        <input
+          autoFocus
+          className="input mb-4"
+          placeholder="Ej: coca cola, alfajor, 7790895000997…"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        {results.length > 0 && (
+          <div className="space-y-2 mb-4">
+            {results.map((p) => (
+              <AgregarProductoRow key={p.id} product={p} onSaved={onActivated} />
+            ))}
+          </div>
+        )}
+        {searched && results.length === 0 && (
+          <div className="text-center py-6 text-stone-400 text-sm mb-4 border border-dashed border-stone-200 rounded-lg">
+            No encontramos "{query.trim()}" precargado.
+          </div>
+        )}
+        {query.trim().length >= 2 && (
+          <button onClick={() => onCreateNew(query.trim())} className="btn btn-secondary w-full">
+            + Cargar "{query.trim()}" como producto nuevo, a mano
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AgregarProductoRow({ product, onSaved }: { product: Product; onSaved: () => void }) {
+  const isGhost = product.price_cents <= 0;
+  const [justActivated, setJustActivated] = useState(false);
+
+  return (
+    <div className="flex items-center justify-between gap-3 border border-stone-200 rounded-lg px-3 py-2.5">
+      <div className="min-w-0">
+        <div className="font-medium text-sm truncate">{product.name}</div>
+        <div className="text-xs text-stone-400">
+          {product.barcode || "Sin código"}{product.category ? ` · ${product.category}` : ""}
+        </div>
+      </div>
+      {justActivated ? (
+        <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full shrink-0">
+          ✓ Activado
+        </span>
+      ) : isGhost ? (
+        <QuickPriceInput product={product} onSaved={() => { setJustActivated(true); onSaved(); }} />
+      ) : (
+        <span className="text-xs font-medium text-stone-500 shrink-0">Ya está en tu catálogo</span>
+      )}
+    </div>
+  );
+}
+
 function OffImportModal({ onClose, onImported }: { onClose: () => void; onImported: () => void }) {
   const { running, progress, result, errorMsg, startedAt } = useCatalogImport();
   const prevResultRef = useRef<CatalogImportResult | null>(null);
@@ -1446,12 +1530,12 @@ function OffImportModal({ onClose, onImported }: { onClose: () => void; onImport
           <>
             <p className="text-sm text-stone-500 mb-4 leading-relaxed">
               El grueso del catálogo (miles de productos argentinos, nombre y código de barras) ya está
-              cargado y visible en tu listado. Este botón solo trae los productos <strong>nuevos</strong> que
-              se hayan agregado a la base pública desde la última vez — no toca ni pisa nada de lo que ya
-              tenés. Todo lo que entra se ve en la lista normal, marcado como <strong>"👻 Fantasma"</strong> hasta
-              que le pongas un precio (buscándolo, escaneándolo, o vendiéndolo en Caja): recién ahí pasa a
-              contar en tus alertas y métricas. Necesita conexión a internet y puede tardar varios minutos
-              — podés cerrar esta ventana y seguir usando el sistema mientras tanto.
+              precargado. Este botón solo trae los productos <strong>nuevos</strong> que se hayan agregado a
+              la base pública desde la última vez — no toca ni pisa nada de lo que ya tenés. No cuentan en
+              tu catálogo ni en "Todos": se buscan y se activan (con precio) desde la pestaña
+              <strong> "🔎 Agregar producto"</strong>, o directamente vendiéndolos en Caja. Necesita conexión a
+              internet y puede tardar varios minutos — podés cerrar esta ventana y seguir usando el sistema
+              mientras tanto.
             </p>
             {errorMsg && (
               <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-md px-3 py-2 mb-4">
