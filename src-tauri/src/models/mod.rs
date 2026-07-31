@@ -1018,3 +1018,23 @@ pub struct ElectronicInvoice {
     pub created_at: String,
 }
 
+// ─── Import de catálogo público (Open Food Facts) ─────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CatalogImportProgress {
+    pub page: i64,
+    pub total_pages: i64,
+    pub imported: i64,
+    pub scanned: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CatalogImportResult {
+    pub imported: i64,
+    pub skipped_existing: i64,
+    pub skipped_invalid: i64,
+    pub failed_pages: i64,
+    pub scanned: i64,
+    pub cancelled: bool,
+}
+

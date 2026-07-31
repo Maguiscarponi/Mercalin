@@ -1,0 +1,217 @@
+use crate::commands::{audit::log_action, err, CmdResult};
+use crate::models::{CatalogImportProgress, CatalogImportResult};
+use crate::AppState;
+use rusqlite::params;
+use serde::Deserialize;
+use std::collections::HashSet;
+use std::sync::atomic::Ordering;
+use std::time::Duration;
+use tauri::{AppHandle, Emitter, State};
+
+const USER_AGENT: &str = "PuntoSimplePOS-KioscoLocal/1.0";
+const PAGE_SIZE: i64 = 100;
+const PAGE_DELAY_MS: u64 = 350;
+const AR_BARCODE_PREFIXES: [&str; 2] = ["778", "779"];
+
+#[derive(Debug, Deserialize)]
+struct OffProduct {
+    code: Option<String>,
+    product_name: Option<String>,
+    brands: Option<String>,
+    quantity: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OffResponse {
+    count: i64,
+    products: Vec<OffProduct>,
+}
+
+fn is_argentine_barcode(code: &str) -> bool {
+    code.len() >= 8
+        && code.chars().all(|c| c.is_ascii_digit())
+        && AR_BARCODE_PREFIXES.iter().any(|p| code.starts_with(p))
+}
+
+/// Arma un nombre legible combinando nombre + marca + cantidad, evitando repetir
+/// información que Open Food Facts ya incluye duplicada entre esos tres campos.
+fn clean_name(p: &OffProduct) -> Option<String> {
+    let base = p.product_name.as_deref()?.trim();
+    if base.is_empty() {
+        return None;
+    }
+    let mut name = base.to_string();
+    let base_lower = base.to_lowercase();
+
+    if let Some(brands) = p.brands.as_deref() {
+        let brand = brands.split(',').next().unwrap_or("").trim();
+        if !brand.is_empty() && !base_lower.contains(&brand.to_lowercase()) {
+            name = format!("{} {}", name, brand);
+        }
+    }
+    if let Some(qty) = p.quantity.as_deref() {
+        let qty = qty.trim();
+        if !qty.is_empty() && !base_lower.contains(&qty.to_lowercase()) {
+            name = format!("{} ({})", name, qty);
+        }
+    }
+    Some(name)
+}
+
+fn fetch_page(page: i64) -> Result<OffResponse, String> {
+    let url = format!(
+        "https://ar.openfoodfacts.org/api/v2/search?countries_tags=en:argentina&fields=code,product_name,brands,quantity&page_size={}&page={}",
+        PAGE_SIZE, page
+    );
+    let resp = ureq::get(&url)
+        .set("User-Agent", USER_AGENT)
+        .timeout(Duration::from_secs(20))
+        .call()
+        .map_err(|e| format!("Error consultando Open Food Facts (página {}): {}", page, e))?;
+    let body = resp
+        .into_string()
+        .map_err(|e| format!("Error leyendo la respuesta de Open Food Facts: {}", e))?;
+    serde_json::from_str::<OffResponse>(&body)
+        .map_err(|e| format!("Respuesta inesperada de Open Food Facts (página {}): {}", page, e))
+}
+
+/// Importa productos nuevos (por código de barras argentino real) desde el catálogo
+/// público de Open Food Facts. Nunca modifica productos que ya existen: si el barcode
+/// ya está en la base, se salta. Quedan activos, con precio y costo en $0 — Caja no
+/// deja vender un producto sin precio, así que no hay riesgo de venderlos gratis.
+#[tauri::command]
+pub fn import_off_catalog(app: AppHandle, state: State<AppState>) -> CmdResult<CatalogImportResult> {
+    state.catalog_import_cancelled.store(false, Ordering::SeqCst);
+
+    let mut known_barcodes: HashSet<String> = {
+        let conn = state.db.lock();
+        let mut stmt = conn
+            .prepare("SELECT barcode FROM products WHERE barcode IS NOT NULL")
+            .map_err(err)?;
+        let rows = stmt
+            .query_map([], |r| r.get::<_, String>(0))
+            .map_err(err)?;
+        rows.filter_map(|r| r.ok()).collect()
+    };
+
+    let mut page: i64 = 1;
+    let mut total_pages: i64 = 1;
+    let mut imported: i64 = 0;
+    let mut skipped_existing: i64 = 0;
+    let mut skipped_invalid: i64 = 0;
+    let mut failed_pages: i64 = 0;
+    let mut scanned: i64 = 0;
+    let mut total_count: i64 = i64::MAX;
+
+    loop {
+        if state.catalog_import_cancelled.load(Ordering::SeqCst) {
+            break;
+        }
+
+        let parsed = match fetch_page(page) {
+            Ok(p) => p,
+            Err(e) => {
+                if page == 1 {
+                    return Err(e);
+                }
+                failed_pages += 1;
+                std::thread::sleep(Duration::from_millis(PAGE_DELAY_MS));
+                page += 1;
+                if page > total_pages {
+                    break;
+                }
+                continue;
+            }
+        };
+
+        if page == 1 {
+            total_count = parsed.count;
+            total_pages = ((parsed.count as f64) / (PAGE_SIZE as f64)).ceil().max(1.0) as i64;
+        }
+
+        let mut new_rows: Vec<(String, String)> = Vec::new();
+        for p in &parsed.products {
+            scanned += 1;
+            let code = match p.code.as_deref() {
+                Some(c) if is_argentine_barcode(c) => c.to_string(),
+                _ => {
+                    skipped_invalid += 1;
+                    continue;
+                }
+            };
+            if known_barcodes.contains(&code) {
+                skipped_existing += 1;
+                continue;
+            }
+            let name = match clean_name(p) {
+                Some(n) => n,
+                None => {
+                    skipped_invalid += 1;
+                    continue;
+                }
+            };
+            known_barcodes.insert(code.clone());
+            new_rows.push((code, name));
+        }
+
+        if !new_rows.is_empty() {
+            let mut conn = state.db.lock();
+            let tx = conn.transaction().map_err(err)?;
+            for (barcode, name) in &new_rows {
+                let res = tx.execute(
+                    "INSERT OR IGNORE INTO products
+                     (barcode, name, price_cents, cost_cents, stock, min_stock, category, active)
+                     VALUES (?1, ?2, 0, 0, 0, 0, 'Importado', 1)",
+                    params![barcode, name],
+                );
+                if let Ok(n) = res {
+                    if n > 0 {
+                        imported += 1;
+                    }
+                }
+            }
+            tx.commit().map_err(err)?;
+        }
+
+        let _ = app.emit(
+            "catalog_import_progress",
+            CatalogImportProgress { page, total_pages, imported, scanned },
+        );
+
+        if page * PAGE_SIZE >= total_count || parsed.products.is_empty() {
+            break;
+        }
+        page += 1;
+        std::thread::sleep(Duration::from_millis(PAGE_DELAY_MS));
+    }
+
+    let cancelled = state.catalog_import_cancelled.load(Ordering::SeqCst);
+    {
+        let conn = state.db.lock();
+        log_action(
+            &conn,
+            None,
+            "importacion_open_food_facts",
+            "productos",
+            None,
+            Some(&format!(
+                "Nuevos: {imported}, ya existentes: {skipped_existing}, inválidos: {skipped_invalid}, páginas fallidas: {failed_pages}, cancelado: {cancelled}"
+            )),
+        );
+    }
+
+    Ok(CatalogImportResult {
+        imported,
+        skipped_existing,
+        skipped_invalid,
+        failed_pages,
+        scanned,
+        cancelled,
+    })
+}
+
+#[tauri::command]
+pub fn cancel_off_catalog_import(state: State<AppState>) -> CmdResult<()> {
+    state.catalog_import_cancelled.store(true, Ordering::SeqCst);
+    Ok(())
+}

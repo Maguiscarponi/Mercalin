@@ -3,7 +3,8 @@ import * as XLSX from "xlsx";
 import { api } from "@/lib/api";
 import { centsToARS, arsStringToCents, formatDateTime } from "@/lib/format";
 import { useSearchParams } from "react-router-dom";
-import type { BulkPriceInput, BulkPricePreviewItem, CsvProductRow, DeadStockItem, ImportResult, LowStockProduct, MinStockSuggestion, PriceImpactItem, PriceSyncAlert, Product, ProductVelocity, StockMovement, Supplier } from "@/types";
+import { listen } from "@tauri-apps/api/event";
+import type { BulkPriceInput, BulkPricePreviewItem, CatalogImportProgress, CatalogImportResult, CsvProductRow, DeadStockItem, ImportResult, LowStockProduct, MinStockSuggestion, PriceImpactItem, PriceSyncAlert, Product, ProductVelocity, StockMovement, Supplier } from "@/types";
 import clsx from "clsx";
 import HelpButton from "@/components/HelpModal";
 
@@ -35,7 +36,7 @@ function VelocityBadge({ v }: { v: ProductVelocity | undefined }) {
 const PAGE_SIZE = 50;
 
 // ── Tabs ──────────────────────────────────────────────────────────────────────
-type ProductTab = "todos" | "alertas" | "sin_movimiento" | "stock_ia" | "precio_ia";
+type ProductTab = "todos" | "alertas" | "sin_movimiento" | "sin_precio" | "stock_ia" | "precio_ia";
 
 function MarginBadge({ price, cost }: { price: number; cost: number }) {
   if (cost <= 0 || price <= 0) return null;
@@ -71,6 +72,7 @@ export default function Productos() {
   const [categoryFilter, setCategoryFilter] = useState("");
   const [page, setPage] = useState(1);
   const [showImport, setShowImport] = useState(false);
+  const [showOffImport, setShowOffImport] = useState(false);
   const [showBulkPrice, setShowBulkPrice] = useState(false);
   const [exportToast, setExportToast] = useState<string | null>(null);
 
@@ -182,6 +184,9 @@ export default function Productos() {
           )}
         </div>
         <div className="flex gap-2">
+          <button onClick={() => setShowOffImport(true)} className="btn btn-secondary text-sm">
+            🌐 Importar catálogo público
+          </button>
           <button onClick={() => setShowImport(true)} className="btn btn-secondary text-sm">
             📥 Importar CSV/Excel
           </button>
@@ -203,6 +208,7 @@ export default function Productos() {
           { id: "todos", label: "Todos" },
           { id: "alertas", label: `Alertas (${lowStock.length})` },
           { id: "sin_movimiento", label: `Sin movimiento (${deadStock.length})` },
+          { id: "sin_precio", label: `Sin precio (${products.filter((p) => p.price_cents <= 0).length})` },
           { id: "stock_ia", label: "Stock mín. IA" },
           { id: "precio_ia", label: "Impacto de precio" },
         ] as const).map(({ id, label }) => (
@@ -225,7 +231,7 @@ export default function Productos() {
         ))}
       </div>
 
-      {tab === "todos" && (
+      {(tab === "todos" || tab === "sin_precio") && (
         <div className="flex gap-2">
           <input
             type="text"
@@ -288,7 +294,7 @@ export default function Productos() {
             </table>
           )}
         </div>
-      ) : (() => {
+      ) : tab === "todos" ? (() => {
           const filtered = products.filter((p) => !categoryFilter || p.category === categoryFilter);
           const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
           const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -402,7 +408,74 @@ export default function Productos() {
               )}
             </div>
           );
-        })()
+        })() : tab === "sin_precio" ? (() => {
+          const q = query.trim().toLowerCase();
+          const filtered = products
+            .filter((p) => p.price_cents <= 0)
+            .filter((p) => !categoryFilter || p.category === categoryFilter)
+            .filter((p) => !q || p.name.toLowerCase().includes(q) || (p.barcode || "").includes(q));
+          const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+          const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+          return (
+            <div className="card flex-1 overflow-hidden flex flex-col">
+              {filtered.length > 0 && (
+                <div className="px-4 py-2.5 bg-indigo-50 border-b border-indigo-100 text-sm text-indigo-800 shrink-0">
+                  Completá el precio de venta para poder vender estos productos en Caja.
+                </div>
+              )}
+              <div className="overflow-y-auto flex-1">
+                <table className="w-full">
+                  <thead>
+                    <tr className="table-header">
+                      <th>Código</th>
+                      <th>Nombre</th>
+                      <th className="text-right">Costo</th>
+                      <th className="text-right">Precio de venta</th>
+                      <th className="px-4 py-2.5 text-xs font-bold uppercase tracking-wide text-stone-500 bg-stone-50 sticky top-0">Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paginated.length === 0 && (
+                      <tr>
+                        <td colSpan={5} className="text-center py-10 text-stone-400">
+                          {products.length === 0 ? "No hay productos cargados todavía." : "Todos los productos tienen precio cargado."}
+                        </td>
+                      </tr>
+                    )}
+                    {paginated.map((p) => (
+                      <tr key={p.id} className="table-row">
+                        <td className="table-cell font-mono text-sm text-stone-500">{p.barcode || "—"}</td>
+                        <td className="table-cell">
+                          <div className="font-semibold text-stone-900">{p.name}</div>
+                          {p.category && <div className="text-xs text-stone-400 uppercase tracking-wide mt-0.5">{p.category}</div>}
+                        </td>
+                        <td className="table-cell text-right tabular">{centsToARS(p.cost_cents)}</td>
+                        <td className="table-cell text-right">
+                          <QuickPriceInput
+                            product={p}
+                            onSaved={(updated) => setProducts((prev) => prev.map((x) => (x.id === updated.id ? updated : x)))}
+                          />
+                        </td>
+                        <td className="table-cell text-right">
+                          <button onClick={() => setEditing(p)} className="btn-table-neutral">Editar</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {totalPages > 1 && (
+                <div className="border-t border-stone-200 px-4 py-2.5 flex items-center justify-between bg-stone-50 shrink-0">
+                  <span className="text-sm text-stone-500">{filtered.length} productos · página {page} de {totalPages}</span>
+                  <div className="flex items-center gap-1">
+                    <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1} className="btn-table-neutral disabled:opacity-40 disabled:cursor-default">‹ Anterior</button>
+                    <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages} className="btn-table-neutral disabled:opacity-40 disabled:cursor-default">Siguiente ›</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })() : null
       }
 
       {/* ── Tab: Sin movimiento ─────────────────────────────────────────── */}
@@ -501,6 +574,13 @@ export default function Productos() {
         <StockMovementsModal
           product={viewingMovements}
           onClose={() => setViewingMovements(null)}
+        />
+      )}
+
+      {showOffImport && (
+        <OffImportModal
+          onClose={() => setShowOffImport(false)}
+          onImported={load}
         />
       )}
 
@@ -1213,6 +1293,150 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       <span className="text-xs font-medium text-stone-600 block mb-1">{label}</span>
       {children}
     </label>
+  );
+}
+
+function QuickPriceInput({ product, onSaved }: { product: Product; onSaved: (p: Product) => void }) {
+  const [value, setValue] = useState("");
+  const [saving, setSaving] = useState(false);
+  const cents = arsStringToCents(value);
+
+  async function save() {
+    if (cents <= 0 || saving) return;
+    setSaving(true);
+    try {
+      const updated = await api.updateProduct({ ...product, price_cents: cents });
+      onSaved(updated);
+    } catch (e) {
+      console.error(e);
+      alert("Error al guardar el precio");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-1.5 justify-end">
+      <input
+        className="input tabular text-right w-24 h-8 text-sm"
+        placeholder="$0"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => e.key === "Enter" && save()}
+        inputMode="numeric"
+      />
+      <button
+        onClick={save}
+        disabled={saving || cents <= 0}
+        className="btn-table-success disabled:opacity-40 disabled:cursor-not-allowed"
+      >
+        {saving ? "…" : "Guardar"}
+      </button>
+    </div>
+  );
+}
+
+function OffImportModal({ onClose, onImported }: { onClose: () => void; onImported: () => void }) {
+  const [running, setRunning] = useState(false);
+  const [progress, setProgress] = useState<CatalogImportProgress | null>(null);
+  const [result, setResult] = useState<CatalogImportResult | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let cancelled = false;
+    listen<CatalogImportProgress>("catalog_import_progress", (e) => setProgress(e.payload)).then((fn) => {
+      if (cancelled) fn();
+      else unlisten = fn;
+    });
+    return () => { cancelled = true; unlisten?.(); };
+  }, []);
+
+  async function start() {
+    setRunning(true);
+    setErrorMsg(null);
+    setResult(null);
+    try {
+      const res = await api.importOffCatalog();
+      setResult(res);
+      if (res.imported > 0) onImported();
+    } catch (e) {
+      console.error(e);
+      setErrorMsg("No se pudo completar la importación. Revisá tu conexión a internet e intentá de nuevo.");
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  async function cancel() {
+    try { await api.cancelOffCatalogImport(); } catch (e) { console.error(e); }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+      onClick={() => { if (!running) onClose(); }}
+    >
+      <div className="bg-white rounded-lg shadow-xl w-[440px] p-6" onClick={(e) => e.stopPropagation()}>
+        <h2 className="text-lg font-semibold mb-1">Importar catálogo público</h2>
+
+        {!running && !result && (
+          <>
+            <p className="text-sm text-stone-500 mb-4 leading-relaxed">
+              Agrega productos nuevos (nombre y código de barras) desde una base pública de productos
+              argentinos — no toca ni pisa ningún producto que ya tengas cargado. Los productos nuevos
+              entran sin precio ni stock; los vas completando desde la pestaña "Sin precio" o al venderlos
+              por primera vez en Caja. Necesita conexión a internet y puede tardar uno o dos minutos.
+            </p>
+            {errorMsg && (
+              <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-md px-3 py-2 mb-4">
+                {errorMsg}
+              </div>
+            )}
+            <div className="flex gap-2">
+              <button onClick={onClose} className="btn btn-secondary flex-1">Cancelar</button>
+              <button onClick={start} className="btn btn-primary flex-1">Iniciar importación</button>
+            </div>
+          </>
+        )}
+
+        {running && (
+          <>
+            <div className="bg-stone-50 rounded-md p-4 mb-4 text-sm space-y-2">
+              <div className="flex justify-between">
+                <span className="text-stone-500">Página</span>
+                <span className="tabular font-medium">
+                  {progress ? `${progress.page} / ${progress.total_pages}` : "iniciando…"}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-stone-500">Productos nuevos encontrados</span>
+                <span className="tabular font-semibold text-emerald-700">{progress?.imported ?? 0}</span>
+              </div>
+              <div className="w-full h-1.5 bg-stone-200 rounded-full overflow-hidden mt-1">
+                <div
+                  className="h-full bg-indigo-600 transition-all"
+                  style={{ width: `${progress ? Math.min(100, (progress.page / Math.max(1, progress.total_pages)) * 100) : 3}%` }}
+                />
+              </div>
+            </div>
+            <button onClick={cancel} className="btn btn-secondary w-full">Cancelar importación</button>
+          </>
+        )}
+
+        {result && (
+          <>
+            <div className="bg-emerald-50 border border-emerald-200 rounded-md p-4 mb-4 text-sm text-emerald-800">
+              {result.cancelled ? "Importación cancelada. " : ""}
+              Se agregaron <strong>{result.imported}</strong> productos nuevos.
+              {result.skipped_existing > 0 ? ` ${result.skipped_existing} ya estaban en tu catálogo (no se tocaron).` : ""}
+              {result.failed_pages > 0 ? ` ${result.failed_pages} páginas no se pudieron consultar — podés repetir la importación más tarde, no duplica nada.` : ""}
+            </div>
+            <button onClick={onClose} className="btn btn-primary w-full">Cerrar</button>
+          </>
+        )}
+      </div>
+    </div>
   );
 }
 

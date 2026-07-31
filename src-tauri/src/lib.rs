@@ -3,6 +3,7 @@ mod models;
 mod commands;
 
 use std::path::PathBuf;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use parking_lot::Mutex;
 use rusqlite::Connection;
@@ -11,6 +12,7 @@ use tauri::Manager;
 pub struct AppState {
     pub db: Arc<Mutex<Connection>>,
     pub db_path: PathBuf,
+    pub catalog_import_cancelled: Arc<AtomicBool>,
 }
 
 // ─── Servidor HTTP para modo tablet ──────────────────────────────────────────
@@ -296,6 +298,7 @@ pub fn run() {
             app.manage(AppState {
                 db: db_arc,
                 db_path,
+                catalog_import_cancelled: Arc::new(AtomicBool::new(false)),
             });
 
             Ok(())
@@ -450,6 +453,9 @@ pub fn run() {
             commands::arca::issue_electronic_invoice,
             commands::arca::list_electronic_invoices,
             commands::arca::retry_pending_invoices,
+            // Catálogo — Import Open Food Facts
+            commands::catalog_import::import_off_catalog,
+            commands::catalog_import::cancel_off_catalog_import,
         ])
         .run(tauri::generate_context!())
         .expect("error al correr la app Tauri");

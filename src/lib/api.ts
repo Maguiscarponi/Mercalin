@@ -4,6 +4,7 @@ import type {
   AuditEntry,
   BackupInfo,
   BulkPriceInput, BulkPricePreviewItem,
+  CatalogImportResult,
   Combo, ComboWithItems, NewCombo,
   MinStockSuggestion, PriceImpactItem, ProductAffinity, SupplierRiskScore,
   CashMovement, CashSession, CloseSessionInput, NewCashMovement, OpenSessionInput,
@@ -424,4 +425,11 @@ export const api = {
 
   retryPendingInvoices: () =>
     invoke<number>("retry_pending_invoices"),
+
+  // ─── Import de catálogo público (Open Food Facts) ──────────────────────
+  importOffCatalog: () =>
+    invoke<CatalogImportResult>("import_off_catalog"),
+
+  cancelOffCatalogImport: () =>
+    invoke<void>("cancel_off_catalog_import"),
 };

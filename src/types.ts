@@ -897,6 +897,23 @@ export interface ProductAffinity {
   affinity_pct: number;
 }
 
+// ─── Import de catálogo público (Open Food Facts) ─────────────────────────────
+export interface CatalogImportProgress {
+  page: number;
+  total_pages: number;
+  imported: number;
+  scanned: number;
+}
+
+export interface CatalogImportResult {
+  imported: number;
+  skipped_existing: number;
+  skipped_invalid: number;
+  failed_pages: number;
+  scanned: number;
+  cancelled: boolean;
+}
+
 // ─── Inteligencia: Score de riesgo por proveedor ─────────────────────────────
 export interface SupplierRiskScore {
   supplier_id: Id;

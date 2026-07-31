@@ -2,6 +2,7 @@ pub mod arca;
 pub mod audit;
 pub mod backup;
 pub mod caja;
+pub mod catalog_import;
 pub mod combos;
 pub mod dashboard;
 pub mod insights;

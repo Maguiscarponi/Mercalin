@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useCart } from "@/stores/cart";
 import { api } from "@/lib/api";
-import { centsToARS, formatDateTime, todayISO } from "@/lib/format";
+import { centsToARS, arsStringToCents, formatDateTime, todayISO } from "@/lib/format";
 import clsx from "clsx";
 import PaymentModal from "@/components/PaymentModal";
 import { CashSessionPanel, OpenCashForm } from "./Caja_Sesion";
@@ -32,6 +32,7 @@ export default function Caja() {
   const [minMarginPct, setMinMarginPct] = useState(10);
   const [promos, setPromos] = useState<Promotion[]>([]);
   const [promoToast, setPromoToast] = useState<string | null>(null);
+  const [pendingPriceProduct, setPendingPriceProduct] = useState<Product | null>(null);
   const scanRef = useRef<HTMLInputElement>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Producto detrás de cada línea del carrito con promo aplicada, para poder
@@ -69,7 +70,7 @@ export default function Caja() {
       if (e.key === "Enter") {
         const target = e.target as HTMLElement;
         const isOtherInput = (target.tagName === "INPUT" || target.tagName === "TEXTAREA") && target !== scanRef.current;
-        if (!isOtherInput && !payOpen && !showPriceCheck && !showClientSearch) {
+        if (!isOtherInput && !payOpen && !showPriceCheck && !showClientSearch && !pendingPriceProduct) {
           const scanEmpty = !(scanRef.current?.value.trim());
           if (scanEmpty && cart.items.length > 0 && session !== null) {
             e.preventDefault();
@@ -77,20 +78,21 @@ export default function Caja() {
           }
         }
       }
-      if (e.key === "F2" && cart.items.length > 0 && session !== null && !payOpen && !showPriceCheck) {
+      if (e.key === "F2" && cart.items.length > 0 && session !== null && !payOpen && !showPriceCheck && !pendingPriceProduct) {
         e.preventDefault(); setPayOpen(true);
       }
-      if (e.key === "F3" && !payOpen) {
+      if (e.key === "F3" && !payOpen && !pendingPriceProduct) {
         e.preventDefault(); setShowPriceCheck(true);
       }
       if (e.key === "Escape") {
         setPayOpen(false); setShowClientSearch(false);
         setSearchResults([]); setShowPriceCheck(false);
+        setPendingPriceProduct(null);
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [cart.items.length, session, payOpen, showPriceCheck, showClientSearch]);
+  }, [cart.items.length, session, payOpen, showPriceCheck, showClientSearch, pendingPriceProduct]);
 
   function handleSearchChange(value: string) {
     setScanValue(value);
@@ -168,17 +170,13 @@ export default function Caja() {
     try {
       const product = await api.findProductByBarcode(code);
       if (product) {
-        addWithPromo(product, getPriceForList(product));
-        setStockMap((m) => ({ ...m, [product.id]: product.stock }));
-        setCostMap((m) => ({ ...m, [product.id]: product.cost_cents }));
+        addProductSafely(product);
         setScanValue("");
         return;
       }
       const results = await api.listProducts(code);
       if (results.length === 1) {
-        addWithPromo(results[0], getPriceForList(results[0]));
-        setStockMap((m) => ({ ...m, [results[0].id]: results[0].stock }));
-        setCostMap((m) => ({ ...m, [results[0].id]: results[0].cost_cents }));
+        addProductSafely(results[0]);
         setScanValue("");
       } else if (results.length > 1) {
         setSearchResults(results);
@@ -295,11 +293,23 @@ export default function Caja() {
     return p.price_cents;
   }
 
-  function selectSearchResult(product: Product) {
-    if (searchTimer.current) clearTimeout(searchTimer.current);
-    addWithPromo(product, getPriceForList(product));
+  // Punto único para agregar un producto encontrado (escaneo, búsqueda o desplegable):
+  // si no tiene precio cargado en la lista activa, no lo agrega — pide el precio primero
+  // para no dejar vender nada a $0 por error.
+  function addProductSafely(product: Product) {
+    const price = getPriceForList(product);
+    if (price <= 0) {
+      setPendingPriceProduct(product);
+      return;
+    }
+    addWithPromo(product, price);
     setStockMap((m) => ({ ...m, [product.id]: product.stock }));
     setCostMap((m) => ({ ...m, [product.id]: product.cost_cents }));
+  }
+
+  function selectSearchResult(product: Product) {
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    addProductSafely(product);
     setSearchResults([]);
     setScanValue("");
     scanRef.current?.focus();
@@ -787,6 +797,20 @@ ${itemsHtml}
         <PriceCheckModal onClose={() => { setShowPriceCheck(false); scanRef.current?.focus(); }} />
       )}
 
+      {pendingPriceProduct && (
+        <SetPriceModal
+          product={pendingPriceProduct}
+          onCancel={() => { setPendingPriceProduct(null); scanRef.current?.focus(); }}
+          onSaved={(updated) => {
+            setPendingPriceProduct(null);
+            addWithPromo(updated, getPriceForList(updated));
+            setStockMap((m) => ({ ...m, [updated.id]: updated.stock }));
+            setCostMap((m) => ({ ...m, [updated.id]: updated.cost_cents }));
+            scanRef.current?.focus();
+          }}
+        />
+      )}
+
       {/* Promo toast */}
       {promoToast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-emerald-700 text-white px-5 py-2.5 rounded-full shadow-lg text-sm font-medium pointer-events-none whitespace-nowrap">
@@ -838,6 +862,65 @@ function ClientSearch({ onSelect, onClose }: { onSelect: (c: Client) => void; on
             <li className="text-center py-4 text-stone-400 text-sm">Sin resultados</li>
           )}
         </ul>
+      </div>
+    </div>
+  );
+}
+
+function SetPriceModal({
+  product,
+  onCancel,
+  onSaved,
+}: {
+  product: Product;
+  onCancel: () => void;
+  onSaved: (updated: Product) => void;
+}) {
+  const [priceStr, setPriceStr] = useState("");
+  const [saving, setSaving] = useState(false);
+  const cents = arsStringToCents(priceStr);
+
+  async function submit() {
+    if (cents <= 0 || saving) return;
+    setSaving(true);
+    try {
+      const updated = await api.updateProduct({ ...product, price_cents: cents });
+      onSaved(updated);
+    } catch (e) {
+      console.error(e);
+      alert("Error al guardar el precio");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onCancel}>
+      <div className="bg-white rounded-lg shadow-xl w-[380px] p-6" onClick={(e) => e.stopPropagation()}>
+        <h3 className="font-semibold mb-1">Precio no cargado</h3>
+        <p className="text-sm text-stone-500 mb-4">
+          <strong>{product.name}</strong> todavía no tiene un precio de venta. Cargalo para agregarlo a esta
+          venta — queda guardado para la próxima vez.
+        </p>
+        <input
+          autoFocus
+          className="input tabular text-right h-12 text-lg mb-4"
+          placeholder="0"
+          value={priceStr}
+          onChange={(e) => setPriceStr(e.target.value)}
+          inputMode="numeric"
+          onKeyDown={(e) => e.key === "Enter" && submit()}
+        />
+        <div className="flex gap-2">
+          <button onClick={onCancel} className="btn btn-secondary flex-1">Cancelar</button>
+          <button
+            onClick={submit}
+            disabled={saving || cents <= 0}
+            className="btn btn-primary flex-1 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {saving ? "Guardando…" : "Guardar y agregar"}
+          </button>
+        </div>
       </div>
     </div>
   );
