@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import clsx from "clsx";
 import { api } from "@/lib/api";
 import { centsToARS } from "@/lib/format";
+import OnboardingChecklist from "@/components/OnboardingChecklist";
 import type { DashboardData, Insight } from "@/types";
 
 const METHOD_LABELS: Record<string, string> = {
@@ -129,17 +130,20 @@ export default function Dashboard() {
   const [insights, setInsights] = useState<Insight[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
+  const [hasProducts, setHasProducts] = useState(false);
   const navigate = useNavigate();
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [d, ins] = await Promise.all([
+      const [d, ins, products] = await Promise.all([
         api.getDashboard(),
         api.getInsights(),
+        api.listProducts(""),
       ]);
       setData(d);
       setInsights(ins);
+      setHasProducts(products.length > 0);
       setLastUpdate(new Date());
     } catch (e) {
       console.error("dashboard:", e);
@@ -231,6 +235,10 @@ export default function Dashboard() {
 
       {/* Body */}
       <div className="flex-1 overflow-y-auto p-5 space-y-4">
+        <OnboardingChecklist
+          hasProducts={hasProducts}
+          hasSales={data.today_sales_count > 0 || data.month_so_far_cents > 0}
+        />
 
         {/* ── Fila 1: métricas del día ─────────────────────────────────────── */}
         <div className="grid grid-cols-4 gap-3">

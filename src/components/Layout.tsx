@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import clsx from "clsx";
 import {
   ShoppingCart, Wallet, Users, RotateCcw,
   Package, Truck, Tag, Calendar, ClipboardList, Layers, Gift,
   FileText, Percent, Receipt, Lock,
   LayoutDashboard, BarChart2, Search, Settings,
-  LogOut, Maximize2, Minimize2, ChevronLeft, ChevronRight,
+  LogOut, Maximize2, Minimize2, ChevronLeft, ChevronRight, ArrowLeft,
   type LucideIcon,
 } from "lucide-react";
 import { api } from "@/lib/api";
@@ -90,14 +90,22 @@ const ALT_KEY_ROUTES: Record<string, string> = {
 
 const ROLE_LABEL: Record<UserRole, string> = { admin: "Admin", supervisor: "Supervisor", cajero: "Cajero" };
 
+// Pantallas que se benefician de usar todo el espacio disponible y minimizar distracciones
+// (por ahora solo Caja: es donde más importa durante una venta con el cliente esperando).
+// El resto de los módulos mantiene el menú lateral para poder saltar de uno a otro directo.
+const FOCUS_MODE_ROUTES = new Set(["/caja"]);
+
 export default function Layout() {
   const [businessName, setBusinessName] = useState("Punto Simple");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
   const userRole = (user?.role as UserRole) ?? "cajero";
+  const isFocusMode = FOCUS_MODE_ROUTES.has(location.pathname);
+  const focusLabel = NAV_GROUPS.flatMap((g) => g.links).find((l) => l.to === location.pathname)?.label ?? "";
 
   useEffect(() => {
     api.getConfig("business_name").then((n) => { if (n) setBusinessName(n); }).catch(console.error);
@@ -134,7 +142,8 @@ export default function Layout() {
   return (
     <div className="h-screen flex bg-stone-100">
 
-      {/* ── Sidebar ────────────────────────────────────────────── */}
+      {/* ── Sidebar (oculto en modo foco) ──────────────────────── */}
+      {!isFocusMode && (
       <aside className={clsx(
         "bg-zinc-800 flex flex-col shrink-0 transition-all duration-200",
         sidebarOpen ? "w-52" : "w-14"
@@ -189,7 +198,11 @@ export default function Layout() {
                     >
                       {({ isActive }) => (
                         <>
-                          <Icon size={15} strokeWidth={isActive ? 2.25 : 1.75} className="shrink-0" />
+                          <Icon
+                            size={17}
+                            strokeWidth={2}
+                            className={clsx("shrink-0 transition-transform duration-150", isActive && "scale-110")}
+                          />
                           {sidebarOpen && (
                             <span className="text-[11px] font-semibold uppercase tracking-wider leading-none">
                               {l.label}
@@ -240,10 +253,40 @@ export default function Layout() {
           )}
         </div>
       </aside>
+      )}
 
       {/* ── Contenido ─────────────────────────────────────────── */}
-      <main className="flex-1 overflow-hidden">
-        <Outlet />
+      <main className="flex-1 overflow-hidden flex flex-col">
+        {isFocusMode && (
+          <div className="h-11 bg-zinc-800 flex items-center px-2 gap-1 shrink-0">
+            <button
+              onClick={() => navigate("/dashboard")}
+              title="Volver"
+              className="text-white/70 hover:text-white hover:bg-white/10 transition-colors rounded-md w-8 h-8 flex items-center justify-center shrink-0"
+            >
+              <ArrowLeft size={16} />
+            </button>
+            <span className="text-white text-[11px] font-semibold uppercase tracking-wider">{focusLabel}</span>
+            <div className="flex-1" />
+            <button
+              onClick={toggleFullscreen}
+              title={isFullscreen ? "Salir pantalla completa" : "Pantalla completa"}
+              className="text-white/60 hover:text-white hover:bg-white/10 rounded-md transition-colors w-8 h-8 flex items-center justify-center shrink-0"
+            >
+              {isFullscreen ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+            </button>
+            <button
+              onClick={logout}
+              title="Cerrar sesión"
+              className="text-white/60 hover:text-white hover:bg-white/10 transition-colors rounded-md w-8 h-8 flex items-center justify-center shrink-0"
+            >
+              <LogOut size={13} />
+            </button>
+          </div>
+        )}
+        <div className="flex-1 overflow-hidden">
+          <Outlet />
+        </div>
       </main>
     </div>
   );

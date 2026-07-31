@@ -4,6 +4,7 @@ import * as XLSX from "xlsx";
 import { api } from "@/lib/api";
 import { centsToARS, formatDateTime, todayISO } from "@/lib/format";
 import type { DailyReport, IvaReportItem, MarginCategory, MarginProduct, Product, ProductAffinity, ReorderItem, Sale, SaleWithItems, SalesByUser, TopProduct } from "@/types";
+import { markReportesVisited } from "@/components/OnboardingChecklist";
 import clsx from "clsx";
 
 const METHOD_LABELS: Record<string, string> = {
@@ -38,6 +39,7 @@ function getRange(period: Period, customFrom: string, customTo: string): [string
 }
 
 export default function Reportes() {
+  useEffect(() => { markReportesVisited(); }, []);
   const [tab, setTab] = useState<Tab>("resumen");
   const [period, setPeriod] = useState<Period>("hoy");
   const [customFrom, setCustomFrom] = useState(todayISO());
