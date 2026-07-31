@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
+import { ensureCatalogImportListeners } from "@/stores/catalogImport";
 import type { UserRole } from "@/types";
 
 type NavLinkDef = {
@@ -101,6 +102,8 @@ export default function Layout() {
   useEffect(() => {
     api.getConfig("business_name").then((n) => { if (n) setBusinessName(n); }).catch(console.error);
   }, []);
+
+  useEffect(() => { ensureCatalogImportListeners(); }, []);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {

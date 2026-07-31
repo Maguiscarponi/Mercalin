@@ -3,8 +3,8 @@ import * as XLSX from "xlsx";
 import { api } from "@/lib/api";
 import { centsToARS, arsStringToCents, formatDateTime } from "@/lib/format";
 import { useSearchParams } from "react-router-dom";
-import { listen } from "@tauri-apps/api/event";
-import type { BulkPriceInput, BulkPricePreviewItem, CatalogImportProgress, CatalogImportResult, CsvProductRow, DeadStockItem, ImportResult, LowStockProduct, MinStockSuggestion, PriceImpactItem, PriceSyncAlert, Product, ProductVelocity, StockMovement, Supplier } from "@/types";
+import { useCatalogImport } from "@/stores/catalogImport";
+import type { BulkPriceInput, BulkPricePreviewItem, CatalogImportResult, CsvProductRow, DeadStockItem, ImportResult, LowStockProduct, MinStockSuggestion, PriceImpactItem, PriceSyncAlert, Product, ProductVelocity, StockMovement, Supplier } from "@/types";
 import clsx from "clsx";
 import HelpButton from "@/components/HelpModal";
 
@@ -55,6 +55,8 @@ function MarginBadge({ price, cost }: { price: number; cost: number }) {
 }
 
 export default function Productos() {
+  const offImportRunning = useCatalogImport((s) => s.running);
+  const offImportProgress = useCatalogImport((s) => s.progress);
   const [searchParams, setSearchParams] = useSearchParams();
   const [products, setProducts] = useState<Product[]>([]);
   const [velocities, setVelocities] = useState<Map<number, ProductVelocity>>(new Map());
@@ -186,10 +188,14 @@ export default function Productos() {
         <div className="flex gap-2">
           <button
             onClick={() => setShowOffImport(true)}
-            className="btn btn-secondary text-sm"
-            title="Trae automáticamente miles de productos ya cargados (nombre y código de barras) para no tener que tipearlos uno por uno"
+            className={clsx("btn text-sm", offImportRunning ? "btn-primary" : "btn-secondary")}
+            title={offImportRunning
+              ? "La importación sigue corriendo en segundo plano — tocá para ver el progreso"
+              : "Trae automáticamente miles de productos ya cargados (nombre y código de barras) para no tener que tipearlos uno por uno"}
           >
-            🌐 Cargar productos automáticamente
+            {offImportRunning
+              ? `⏳ Importando… ${offImportProgress ? `${offImportProgress.page}/${offImportProgress.total_pages}` : ""}`
+              : "🌐 Cargar productos automáticamente"}
           </button>
           <button onClick={() => setShowImport(true)} className="btn btn-secondary text-sm">
             📥 Importar CSV/Excel
@@ -334,7 +340,7 @@ export default function Productos() {
                               </p>
                               <div className="flex gap-2 mt-1">
                                 <button onClick={() => setShowOffImport(true)} className="btn btn-primary text-sm">
-                                  🌐 Cargar productos automáticamente
+                                  {offImportRunning ? "⏳ Ver progreso de la importación" : "🌐 Cargar productos automáticamente"}
                                 </button>
                                 <button onClick={() => setEditing({})} className="btn btn-secondary text-sm">
                                   Cargar uno a mano
@@ -1364,56 +1370,30 @@ function formatEta(seconds: number): string {
   return mins <= 1 ? "~1 minuto" : `~${mins} minutos`;
 }
 
+// El estado del import vive en un store global (useCatalogImport), no acá: así el import
+// sigue corriendo y el progreso se sigue viendo aunque el usuario cierre este modal y
+// navegue a otra pantalla — cerrar esta ventana NO cancela nada.
 function OffImportModal({ onClose, onImported }: { onClose: () => void; onImported: () => void }) {
-  const [running, setRunning] = useState(false);
-  const [progress, setProgress] = useState<CatalogImportProgress | null>(null);
-  const [result, setResult] = useState<CatalogImportResult | null>(null);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const startedAtRef = useRef<number | null>(null);
+  const { running, progress, result, errorMsg, startedAt } = useCatalogImport();
+  const prevResultRef = useRef<CatalogImportResult | null>(null);
 
-  // El comando vuelve al instante (el import corre en un hilo aparte del lado del backend);
-  // todo lo que pasa mientras corre —progreso y resultado final— llega por estos dos eventos,
-  // nunca bloqueando la interfaz a la espera de una respuesta que tarda 1-2 minutos.
   useEffect(() => {
-    let unlistenProgress: (() => void) | undefined;
-    let unlistenDone: (() => void) | undefined;
-    let cancelledEffect = false;
-
-    listen<CatalogImportProgress>("catalog_import_progress", (e) => setProgress(e.payload)).then((fn) => {
-      if (cancelledEffect) fn();
-      else unlistenProgress = fn;
-    });
-    listen<CatalogImportResult>("catalog_import_done", (e) => {
-      setRunning(false);
-      if (e.payload.error) {
-        setErrorMsg(`No se pudo completar la importación: ${e.payload.error}`);
-      } else {
-        setResult(e.payload);
-        if (e.payload.imported > 0) onImported();
-      }
-    }).then((fn) => {
-      if (cancelledEffect) fn();
-      else unlistenDone = fn;
-    });
-
-    return () => { cancelledEffect = true; unlistenProgress?.(); unlistenDone?.(); };
+    if (result && result !== prevResultRef.current) {
+      prevResultRef.current = result;
+      if (result.imported > 0) onImported();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [result]);
 
   async function start() {
-    setRunning(true);
-    setErrorMsg(null);
-    setResult(null);
-    setProgress(null);
-    startedAtRef.current = Date.now();
+    useCatalogImport.getState().start();
     try {
       await api.importOffCatalog();
-      // A partir de acá el resultado llega por el evento catalog_import_done.
+      // A partir de acá el progreso y el resultado llegan por eventos (ver stores/catalogImport.ts).
     } catch (e) {
       console.error(e);
       const detail = typeof e === "string" ? e : (e as { message?: string } | undefined)?.message;
-      setErrorMsg(detail || "No se pudo iniciar la importación. Probá de nuevo en unos segundos.");
-      setRunning(false);
+      useCatalogImport.getState().fail(detail || "No se pudo iniciar la importación. Probá de nuevo en unos segundos.");
     }
   }
 
@@ -1421,21 +1401,26 @@ function OffImportModal({ onClose, onImported }: { onClose: () => void; onImport
     try { await api.cancelOffCatalogImport(); } catch (e) { console.error(e); }
   }
 
+  function closeAndClear() {
+    useCatalogImport.getState().dismissResult();
+    onClose();
+  }
+
   const eta = (() => {
-    if (!progress || !startedAtRef.current || progress.page < 3) return null;
-    const elapsedSec = (Date.now() - startedAtRef.current) / 1000;
+    if (!progress || !startedAt || progress.page < 3) return null;
+    const elapsedSec = (Date.now() - startedAt) / 1000;
     const remainingPages = Math.max(0, progress.total_pages - progress.page);
     const secPerPage = elapsedSec / progress.page;
     return formatEta(remainingPages * secPerPage);
   })();
 
   return (
-    <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
-      onClick={() => { if (!running) onClose(); }}
-    >
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
       <div className="bg-white rounded-lg shadow-xl w-[440px] p-6" onClick={(e) => e.stopPropagation()}>
-        <h2 className="text-lg font-semibold mb-1">Importar catálogo público</h2>
+        <div className="flex items-start justify-between mb-1">
+          <h2 className="text-lg font-semibold">Importar catálogo público</h2>
+          <button onClick={onClose} className="text-stone-400 hover:text-stone-600 text-xl leading-none px-1 -mt-1">×</button>
+        </div>
 
         {!running && !result && (
           <>
@@ -1444,7 +1429,7 @@ function OffImportModal({ onClose, onImported }: { onClose: () => void; onImport
               argentinos — no toca ni pisa ningún producto que ya tengas cargado. Los productos nuevos
               entran sin precio ni stock; los vas completando desde la pestaña "Sin precio" o al venderlos
               por primera vez en Caja. Necesita conexión a internet y puede tardar uno o dos minutos —
-              podés seguir usando el sistema normalmente mientras tanto.
+              podés cerrar esta ventana y seguir usando el sistema mientras tanto.
             </p>
             {errorMsg && (
               <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-md px-3 py-2 mb-4">
@@ -1482,8 +1467,10 @@ function OffImportModal({ onClose, onImported }: { onClose: () => void; onImport
                 />
               </div>
             </div>
-            <p className="text-xs text-stone-400 mb-3 text-center">Podés seguir navegando el sistema mientras tanto.</p>
-            <button onClick={cancel} className="btn btn-secondary w-full">Cancelar importación</button>
+            <div className="flex gap-2">
+              <button onClick={cancel} className="btn btn-secondary flex-1">Cancelar importación</button>
+              <button onClick={onClose} className="btn btn-primary flex-1">Seguir usando el sistema</button>
+            </div>
           </>
         )}
 
@@ -1495,7 +1482,7 @@ function OffImportModal({ onClose, onImported }: { onClose: () => void; onImport
               {result.skipped_existing > 0 ? ` ${result.skipped_existing} ya estaban en tu catálogo (no se tocaron).` : ""}
               {result.failed_pages > 0 ? ` ${result.failed_pages} páginas no se pudieron consultar — podés repetir la importación más tarde, no duplica nada.` : ""}
             </div>
-            <button onClick={onClose} className="btn btn-primary w-full">Cerrar</button>
+            <button onClick={closeAndClear} className="btn btn-primary w-full">Cerrar</button>
           </>
         )}
       </div>
