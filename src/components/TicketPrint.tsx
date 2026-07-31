@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { centsToARS, formatDateTime } from "@/lib/format";
 import { printHtml } from "@/lib/printHtml";
 import type { Sale, SaleItem } from "@/types";
@@ -139,6 +139,21 @@ export default function TicketPrint({ sale, items, businessName, businessAddress
     // se llama igual — así la caja siempre queda lista para la próxima venta.
     printHtml(html, onClose);
   }
+
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        doPrint();
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        onClose();
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paperSize]);
 
   // Preview receipt (simplificado para mostrar en pantalla)
   return (
