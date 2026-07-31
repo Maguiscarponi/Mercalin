@@ -124,6 +124,12 @@ fn run_import(
     let mut failed_pages: i64 = 0;
     let mut scanned: i64 = 0;
     let mut total_count: i64 = i64::MAX;
+    let mut consecutive_failures: i64 = 0;
+    let mut early_stop_note: Option<String> = None;
+    // Si Open Food Facts empieza a rechazar pedidos seguidos (503, timeouts), seguir
+    // insistiendo página tras página solo estira la espera sin sentido — mejor cortar
+    // rápido con una explicación clara. Lo ya importado queda guardado igual.
+    const MAX_CONSECUTIVE_FAILURES: i64 = 6;
 
     loop {
         if cancelled.load(Ordering::SeqCst) {
@@ -131,12 +137,23 @@ fn run_import(
         }
 
         let parsed = match fetch_page_with_retries(page, if page == 1 { 3 } else { 1 }) {
-            Ok(p) => p,
+            Ok(p) => { consecutive_failures = 0; p }
             Err(e) => {
                 if page == 1 {
                     return Err(e);
                 }
                 failed_pages += 1;
+                consecutive_failures += 1;
+                let _ = app.emit(
+                    "catalog_import_progress",
+                    CatalogImportProgress { page, total_pages, imported, scanned },
+                );
+                if consecutive_failures >= MAX_CONSECUTIVE_FAILURES {
+                    early_stop_note = Some(format!(
+                        "Open Food Facts empezó a rechazar los pedidos (probablemente por la cantidad de pruebas de hoy desde esta conexión). Se cortó el import en la página {page} de {total_pages} — lo que ya se importó quedó guardado. Probá de nuevo más tarde, no se duplica nada."
+                    ));
+                    break;
+                }
                 std::thread::sleep(Duration::from_millis(PAGE_DELAY_MS));
                 page += 1;
                 if page > total_pages {
@@ -229,7 +246,7 @@ fn run_import(
         failed_pages,
         scanned,
         cancelled: was_cancelled,
-        error: None,
+        error: early_stop_note,
     })
 }
 

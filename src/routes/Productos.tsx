@@ -1476,11 +1476,16 @@ function OffImportModal({ onClose, onImported }: { onClose: () => void; onImport
 
         {result && (
           <>
+            {result.error && (
+              <div className="bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-md px-3 py-2 mb-3">
+                {result.error}
+              </div>
+            )}
             <div className="bg-emerald-50 border border-emerald-200 rounded-md p-4 mb-4 text-sm text-emerald-800">
               {result.cancelled ? "Importación cancelada. " : ""}
               Se agregaron <strong>{result.imported}</strong> productos nuevos.
               {result.skipped_existing > 0 ? ` ${result.skipped_existing} ya estaban en tu catálogo (no se tocaron).` : ""}
-              {result.failed_pages > 0 ? ` ${result.failed_pages} páginas no se pudieron consultar — podés repetir la importación más tarde, no duplica nada.` : ""}
+              {result.failed_pages > 0 && !result.error ? ` ${result.failed_pages} páginas no se pudieron consultar — podés repetir la importación más tarde, no duplica nada.` : ""}
             </div>
             <button onClick={closeAndClear} className="btn btn-primary w-full">Cerrar</button>
           </>
