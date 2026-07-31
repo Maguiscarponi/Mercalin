@@ -46,9 +46,12 @@ pub fn list_products(query: String, state: State<AppState>) -> CmdResult<Vec<Pro
     let conn = state.db.lock();
     let q = query.trim().to_lowercase();
 
+    // Un producto "fantasma" (precargado, sin precio todavía) se ve siempre en el listado,
+    // igual que cualquier otro — solo que no cuenta en alertas/métricas (esas queries filtran
+    // active=1 aparte). Un producto borrado de verdad (active=0, is_ghost=0) nunca aparece acá.
     if q.is_empty() {
         let mut stmt = conn
-            .prepare("SELECT * FROM products WHERE active = 1 ORDER BY name LIMIT 1000")
+            .prepare("SELECT * FROM products WHERE (active = 1 OR is_ghost = 1) ORDER BY name LIMIT 20000")
             .map_err(err)?;
         let rows = stmt.query_map([], row_to_product).map_err(err)?;
         let mut out = Vec::new();
@@ -66,11 +69,8 @@ pub fn list_products(query: String, state: State<AppState>) -> CmdResult<Vec<Pro
         .map(|(i, _)| format!("(lower(name) LIKE ?{i} OR barcode LIKE ?{i})", i = i + 1))
         .collect();
     let where_clause = conditions.join(" AND ");
-    // A diferencia del listado vacío, la búsqueda por texto SÍ incluye fantasmas
-    // (is_ghost=1): es el mecanismo para encontrarlos y activarlos poniéndoles precio.
-    // Un producto borrado de verdad (active=0, is_ghost=0) sigue sin aparecer nunca.
     let sql = format!(
-        "SELECT * FROM products WHERE (active = 1 OR is_ghost = 1) AND ({}) ORDER BY name LIMIT 1000",
+        "SELECT * FROM products WHERE (active = 1 OR is_ghost = 1) AND ({}) ORDER BY name LIMIT 20000",
         where_clause
     );
 

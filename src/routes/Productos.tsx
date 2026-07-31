@@ -191,11 +191,11 @@ export default function Productos() {
             className={clsx("btn text-sm", offImportRunning ? "btn-primary" : "btn-secondary")}
             title={offImportRunning
               ? "La importación sigue corriendo en segundo plano — tocá para ver el progreso"
-              : "Precarga miles de productos (nombre y código de barras) como \"fantasmas\": no cuentan en tu catálogo hasta que les pongas un precio buscándolos o vendiéndolos"}
+              : "Trae los productos nuevos que se hayan agregado a la base pública desde la última carga — el grueso del catálogo ya debería estar"}
           >
             {offImportRunning
               ? `⏳ Importando… ${offImportProgress ? `${offImportProgress.page}/${offImportProgress.total_pages}` : ""}`
-              : "🌐 Cargar productos automáticamente"}
+              : "🌐 Buscar productos nuevos"}
           </button>
           <button onClick={() => setShowImport(true)} className="btn btn-secondary text-sm">
             📥 Importar CSV/Excel
@@ -340,7 +340,7 @@ export default function Productos() {
                               </p>
                               <div className="flex gap-2 mt-1">
                                 <button onClick={() => setShowOffImport(true)} className="btn btn-primary text-sm">
-                                  {offImportRunning ? "⏳ Ver progreso de la importación" : "🌐 Cargar productos automáticamente"}
+                                  {offImportRunning ? "⏳ Ver progreso de la importación" : "🌐 Buscar productos nuevos"}
                                 </button>
                                 <button onClick={() => setEditing({})} className="btn btn-secondary text-sm">
                                   Cargar uno a mano
@@ -1445,12 +1445,13 @@ function OffImportModal({ onClose, onImported }: { onClose: () => void; onImport
         {!running && !result && (
           <>
             <p className="text-sm text-stone-500 mb-4 leading-relaxed">
-              Precarga miles de productos argentinos (nombre y código de barras) desde una base pública
-              — no toca ni pisa ningún producto que ya tengas cargado. Entran como <strong>"fantasmas"</strong>:
-              no cuentan en tu catálogo ni generan alertas, y no aparecen navegando el listado — recién se
-              activan y pasan a contar como tuyos cuando vos (o un cajero) los busca por nombre, los escanea,
-              o los encuentra en Caja y les pone un precio. Necesita conexión a internet y puede tardar uno
-              o dos minutos — podés cerrar esta ventana y seguir usando el sistema mientras tanto.
+              El grueso del catálogo (miles de productos argentinos, nombre y código de barras) ya está
+              cargado y visible en tu listado. Este botón solo trae los productos <strong>nuevos</strong> que
+              se hayan agregado a la base pública desde la última vez — no toca ni pisa nada de lo que ya
+              tenés. Todo lo que entra se ve en la lista normal, marcado como <strong>"👻 Fantasma"</strong> hasta
+              que le pongas un precio (buscándolo, escaneándolo, o vendiéndolo en Caja): recién ahí pasa a
+              contar en tus alertas y métricas. Necesita conexión a internet y puede tardar varios minutos
+              — podés cerrar esta ventana y seguir usando el sistema mientras tanto.
             </p>
             {errorMsg && (
               <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-md px-3 py-2 mb-4">
