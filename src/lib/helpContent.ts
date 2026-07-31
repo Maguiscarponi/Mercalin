@@ -109,9 +109,9 @@ export const helpContent: Record<string, HelpContent> = {
         title: "Cobrar",
         items: [
           {
-            label: "Botón COBRAR (o tecla F2)",
+            label: "Botón COBRAR (o Enter / F2)",
             description:
-              "Cuando tenés todos los productos en el carrito, hacé clic en el botón azul grande que dice 'Cobrar' o presioná F2. Se abre una ventana donde elegís cómo paga el cliente: efectivo, tarjeta, transferencia, cuenta corriente o combinado.",
+              "Cuando tenés todos los productos en el carrito, hacé clic en el botón azul grande que dice 'Cobrar', o presioná Enter con el buscador vacío, o F2. Se abre una ventana donde elegís cómo paga el cliente: efectivo, tarjeta, transferencia, cuenta corriente o combinado. Si en tu teclado F2 no responde sin apretar Fn, usá Enter — funciona igual en cualquier teclado.",
           },
           {
             label: "Imprimir presupuesto",
@@ -149,17 +149,18 @@ export const helpContent: Record<string, HelpContent> = {
         title: "Atajos de teclado",
         items: [
           {
+            label: "Enter",
+            description:
+              "Si el buscador está vacío y hay productos en el carrito, abre la pantalla de cobro. Funciona en cualquier teclado — es el atajo más confiable para cobrar.",
+          },
+          {
             label: "F2",
-            description: "Abre la pantalla de cobro (igual que hacer clic en el botón COBRAR).",
+            description:
+              "Abre la pantalla de cobro (igual que hacer clic en el botón COBRAR). En algunas notebooks hay que mantener Fn apretado para que F2 funcione como tecla de función — si te pasa, usá Enter.",
           },
           {
             label: "F3",
             description: "Abre la consulta de precio sin agregar al carrito.",
-          },
-          {
-            label: "Enter",
-            description:
-              "Si el buscador está vacío y hay productos en el carrito, abre la pantalla de cobro.",
           },
           {
             label: "Escape",

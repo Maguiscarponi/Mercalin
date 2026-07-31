@@ -667,7 +667,12 @@ ${itemsHtml}
             style={{ height: "80px" }}
           >
             Cobrar
-            <span className="text-sm font-normal bg-white/20 px-2 py-1 rounded-md font-mono">F2</span>
+            <span
+              className="text-sm font-normal bg-white/20 px-2 py-1 rounded-md font-mono"
+              title="Con el buscador vacío y productos en el carrito, Enter cobra directo — sirve incluso si en tu teclado F2 no anda sin Fn"
+            >
+              Enter · F2
+            </span>
           </button>
 
           {/* ANULAR VENTA */}
