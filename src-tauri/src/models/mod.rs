@@ -16,6 +16,9 @@ pub struct Product {
     pub category: Option<String>,
     pub is_weighable: bool,
     pub active: bool,
+    /// Precargado (ej. import de catálogo público) pero todavía sin precio: no cuenta como
+    /// parte real del catálogo, pero se puede encontrar buscando o escaneando su código.
+    pub is_ghost: bool,
     pub supplier_id: Option<i64>,
     pub expires_at: Option<String>,
     pub image_path: Option<String>,

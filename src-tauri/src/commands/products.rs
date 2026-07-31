@@ -18,6 +18,7 @@ fn row_to_product(row: &Row) -> rusqlite::Result<Product> {
         category: row.get("category")?,
         is_weighable: row.get::<_, i64>("is_weighable")? != 0,
         active: row.get::<_, i64>("active")? != 0,
+        is_ghost: row.get::<_, i64>("is_ghost")? != 0,
         supplier_id: row.get("supplier_id")?,
         expires_at: row.get("expires_at")?,
         image_path: row.get("image_path")?,
@@ -32,8 +33,10 @@ pub fn find_product_by_barcode(
     state: State<AppState>,
 ) -> CmdResult<Option<Product>> {
     let conn = state.db.lock();
+    // Un fantasma (is_ghost=1) tiene que poder encontrarse escaneando su código —
+    // es justo el momento en que se le carga el precio y "se activa" de verdad.
     let mut stmt = conn
-        .prepare("SELECT * FROM products WHERE barcode = ?1 AND active = 1 LIMIT 1")
+        .prepare("SELECT * FROM products WHERE barcode = ?1 AND (active = 1 OR is_ghost = 1) LIMIT 1")
         .map_err(err)?;
     Ok(stmt.query_row(params![barcode], row_to_product).ok())
 }
@@ -63,8 +66,11 @@ pub fn list_products(query: String, state: State<AppState>) -> CmdResult<Vec<Pro
         .map(|(i, _)| format!("(lower(name) LIKE ?{i} OR barcode LIKE ?{i})", i = i + 1))
         .collect();
     let where_clause = conditions.join(" AND ");
+    // A diferencia del listado vacío, la búsqueda por texto SÍ incluye fantasmas
+    // (is_ghost=1): es el mecanismo para encontrarlos y activarlos poniéndoles precio.
+    // Un producto borrado de verdad (active=0, is_ghost=0) sigue sin aparecer nunca.
     let sql = format!(
-        "SELECT * FROM products WHERE active = 1 AND ({}) ORDER BY name LIMIT 1000",
+        "SELECT * FROM products WHERE (active = 1 OR is_ghost = 1) AND ({}) ORDER BY name LIMIT 1000",
         where_clause
     );
 
@@ -83,8 +89,8 @@ pub fn create_product(product: NewProduct, state: State<AppState>) -> CmdResult<
     let conn = state.db.lock();
     conn.execute(
         "INSERT INTO products
-            (barcode, name, price_cents, price2_cents, price3_cents, cost_cents, stock, min_stock, category, is_weighable, active, supplier_id, expires_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+            (barcode, name, price_cents, price2_cents, price3_cents, cost_cents, stock, min_stock, category, is_weighable, active, is_ghost, supplier_id, expires_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 0, ?12, ?13)",
         params![
             product.barcode,
             product.name,
@@ -112,13 +118,18 @@ pub fn create_product(product: NewProduct, state: State<AppState>) -> CmdResult<
 #[tauri::command]
 pub fn update_product(product: Product, state: State<AppState>) -> CmdResult<Product> {
     let conn = state.db.lock();
+    // Un fantasma se "activa" solo con cargarle un precio de venta — no hace falta que
+    // nadie marque un checkbox aparte. Una vez activado no vuelve a ser fantasma.
+    let activating = product.is_ghost && product.price_cents > 0;
+    let active = if activating { true } else { product.active };
+    let is_ghost = if activating { false } else { product.is_ghost };
     conn.execute(
         "UPDATE products SET
             barcode=?1, name=?2, price_cents=?3, price2_cents=?4, price3_cents=?5,
             cost_cents=?6, stock=?7, min_stock=?8, category=?9, is_weighable=?10,
-            active=?11, supplier_id=?12, expires_at=?13,
+            active=?11, is_ghost=?12, supplier_id=?13, expires_at=?14,
             updated_at=CURRENT_TIMESTAMP
-         WHERE id = ?14",
+         WHERE id = ?15",
         params![
             product.barcode,
             product.name,
@@ -130,7 +141,8 @@ pub fn update_product(product: Product, state: State<AppState>) -> CmdResult<Pro
             product.min_stock,
             product.category,
             product.is_weighable as i64,
-            product.active as i64,
+            active as i64,
+            is_ghost as i64,
             product.supplier_id,
             product.expires_at,
             product.id,

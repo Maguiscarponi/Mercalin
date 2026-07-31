@@ -197,10 +197,12 @@ fn run_import(
             let mut conn = db.lock();
             let tx = conn.transaction().map_err(err)?;
             for (barcode, name) in &new_rows {
+                // Entra como fantasma (active=0, is_ghost=1): no cuenta en alertas ni en el
+                // listado por defecto hasta que alguien lo busque/escanee y le ponga precio.
                 let res = tx.execute(
                     "INSERT OR IGNORE INTO products
-                     (barcode, name, price_cents, cost_cents, stock, min_stock, category, active)
-                     VALUES (?1, ?2, 0, 0, 0, 0, 'Importado', 1)",
+                     (barcode, name, price_cents, cost_cents, stock, min_stock, category, active, is_ghost)
+                     VALUES (?1, ?2, 0, 0, 0, 0, 'Importado', 0, 1)",
                     params![barcode, name],
                 );
                 if let Ok(n) = res {

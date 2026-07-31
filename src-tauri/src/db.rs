@@ -216,6 +216,18 @@ pub fn open_and_migrate(path: &Path) -> Result<Connection> {
     );
     let _ = conn.execute_batch("ALTER TABLE products ADD COLUMN price2_cents INTEGER NOT NULL DEFAULT 0;");
     let _ = conn.execute_batch("ALTER TABLE products ADD COLUMN price3_cents INTEGER NOT NULL DEFAULT 0;");
+    // Productos "fantasma": precargados (ej. desde Open Food Facts) pero todavía sin precio.
+    // No cuentan como parte del catálogo del negocio hasta que alguien les pone un precio —
+    // por eso van con active=0 (no aparecen en listados/alertas) pero is_ghost=1 los distingue
+    // de un producto borrado de verdad (soft-delete, también active=0 pero is_ghost=0), para
+    // que sigan siendo encontrables por búsqueda/escaneo y un borrado real no "reviva".
+    let _ = conn.execute_batch("ALTER TABLE products ADD COLUMN is_ghost INTEGER NOT NULL DEFAULT 0;");
+    // Corrige de una vez los productos que ya se importaron como activos antes de este cambio
+    // (quedaban contando en alertas de stock bajo pese a no ser parte real del catálogo).
+    let _ = conn.execute_batch(
+        "UPDATE products SET active=0, is_ghost=1
+         WHERE active=1 AND is_ghost=0 AND price_cents=0 AND cost_cents=0 AND category='Importado';"
+    );
     // Pagos combinados por venta
     let _ = conn.execute_batch("
         CREATE TABLE IF NOT EXISTS sale_payments (

@@ -23,6 +23,10 @@ export interface Product {
   category: string | null;
   is_weighable: boolean;
   active: boolean;
+  // Precargado (ej. import de catálogo público) pero sin precio todavía: no cuenta como
+  // parte real del catálogo, pero se puede encontrar buscándolo o escaneándolo. Se activa
+  // solo con cargarle un precio de venta.
+  is_ghost: boolean;
   supplier_id: Id | null;
   expires_at: string | null;
   image_path: string | null;

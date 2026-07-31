@@ -191,7 +191,7 @@ export default function Productos() {
             className={clsx("btn text-sm", offImportRunning ? "btn-primary" : "btn-secondary")}
             title={offImportRunning
               ? "La importación sigue corriendo en segundo plano — tocá para ver el progreso"
-              : "Trae automáticamente miles de productos ya cargados (nombre y código de barras) para no tener que tipearlos uno por uno"}
+              : "Precarga miles de productos (nombre y código de barras) como \"fantasmas\": no cuentan en tu catálogo hasta que les pongas un precio buscándolos o vendiéndolos"}
           >
             {offImportRunning
               ? `⏳ Importando… ${offImportProgress ? `${offImportProgress.page}/${offImportProgress.total_pages}` : ""}`
@@ -357,7 +357,17 @@ export default function Productos() {
                       <tr key={p.id} className="table-row">
                         <td className="table-cell font-mono text-sm text-stone-500">{p.barcode || "—"}</td>
                         <td className="table-cell">
-                          <div className="font-semibold text-stone-900">{p.name}</div>
+                          <div className="font-semibold text-stone-900 flex items-center gap-1.5">
+                            {p.name}
+                            {p.is_ghost && (
+                              <span
+                                className="text-[10px] font-semibold bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded-full shrink-0"
+                                title="Precargado — todavía no es parte de tu catálogo. Ponele un precio para activarlo."
+                              >
+                                👻 Fantasma
+                              </span>
+                            )}
+                          </div>
                           {p.category && <div className="text-xs text-stone-400 uppercase tracking-wide mt-0.5">{p.category}</div>}
                         </td>
                         <td className="table-cell text-right tabular">{centsToARS(p.cost_cents)}</td>
@@ -474,7 +484,17 @@ export default function Productos() {
                       <tr key={p.id} className="table-row">
                         <td className="table-cell font-mono text-sm text-stone-500">{p.barcode || "—"}</td>
                         <td className="table-cell">
-                          <div className="font-semibold text-stone-900">{p.name}</div>
+                          <div className="font-semibold text-stone-900 flex items-center gap-1.5">
+                            {p.name}
+                            {p.is_ghost && (
+                              <span
+                                className="text-[10px] font-semibold bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded-full shrink-0"
+                                title="Precargado — todavía no es parte de tu catálogo. Ponele un precio para activarlo."
+                              >
+                                👻 Fantasma
+                              </span>
+                            )}
+                          </div>
                           {p.category && <div className="text-xs text-stone-400 uppercase tracking-wide mt-0.5">{p.category}</div>}
                         </td>
                         <td className="table-cell text-right tabular">{centsToARS(p.cost_cents)}</td>
@@ -1425,11 +1445,12 @@ function OffImportModal({ onClose, onImported }: { onClose: () => void; onImport
         {!running && !result && (
           <>
             <p className="text-sm text-stone-500 mb-4 leading-relaxed">
-              Agrega productos nuevos (nombre y código de barras) desde una base pública de productos
-              argentinos — no toca ni pisa ningún producto que ya tengas cargado. Los productos nuevos
-              entran sin precio ni stock; los vas completando desde la pestaña "Sin precio" o al venderlos
-              por primera vez en Caja. Necesita conexión a internet y puede tardar uno o dos minutos —
-              podés cerrar esta ventana y seguir usando el sistema mientras tanto.
+              Precarga miles de productos argentinos (nombre y código de barras) desde una base pública
+              — no toca ni pisa ningún producto que ya tengas cargado. Entran como <strong>"fantasmas"</strong>:
+              no cuentan en tu catálogo ni generan alertas, y no aparecen navegando el listado — recién se
+              activan y pasan a contar como tuyos cuando vos (o un cajero) los busca por nombre, los escanea,
+              o los encuentra en Caja y les pone un precio. Necesita conexión a internet y puede tardar uno
+              o dos minutos — podés cerrar esta ventana y seguir usando el sistema mientras tanto.
             </p>
             {errorMsg && (
               <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-md px-3 py-2 mb-4">
