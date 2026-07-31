@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useCart } from "@/stores/cart";
 import { api } from "@/lib/api";
 import { centsToARS, arsStringToCents, formatDateTime, todayISO } from "@/lib/format";
+import { printHtml } from "@/lib/printHtml";
 import clsx from "clsx";
 import PaymentModal from "@/components/PaymentModal";
 import { CashSessionPanel, OpenCashForm } from "./Caja_Sesion";
@@ -344,10 +345,7 @@ ${itemsHtml}
 <div class="dashed"></div>
 <div class="center" style="font-size:10px;color:#666">Válido por 24 horas · No constituye factura</div>
 </body></html>`;
-    const win = window.open("", "_blank", "width=360,height=600,toolbar=0,menubar=0,location=0");
-    if (!win) return;
-    win.document.write(html); win.document.close(); win.focus();
-    setTimeout(() => { win.print(); win.close(); }, 300);
+    printHtml(html);
   }
 
   const subtotal = cart.subtotal_cents();
@@ -565,25 +563,23 @@ ${itemsHtml}
         {/* Columna derecha — panel POS */}
         <div className="flex flex-col min-h-0 gap-3">
 
-          {/* LISTA DE PRECIOS */}
-          <div className="card px-4 py-2 shrink-0 flex items-center gap-2">
-            <span className="text-[10px] font-semibold text-stone-400 uppercase tracking-wide shrink-0">Lista</span>
-            <div className="flex gap-1 flex-1">
-              {([1, 2, 3] as const).map((n, i) => (
-                <button
-                  key={n}
-                  onClick={() => setPriceList(n)}
-                  className={clsx(
-                    "flex-1 py-1 text-[11px] rounded-md border transition-colors font-medium",
-                    priceList === n
-                      ? "bg-indigo-600 text-white border-indigo-600"
-                      : "bg-stone-50 border-stone-200 hover:bg-stone-100 text-stone-600"
-                  )}
-                >
-                  {priceListNames[i]}
-                </button>
+          {/* LISTA DE PRECIOS — discreta a propósito: un cliente mirando la pantalla no
+              tiene por qué ver que hay precios distintos según a quién le vendas. */}
+          <div className="flex items-center justify-end gap-1.5 px-1 shrink-0">
+            <span className="text-[9px] font-medium text-stone-400 uppercase tracking-wide">Lista</span>
+            <select
+              value={priceList}
+              onChange={(e) => setPriceList(Number(e.target.value) as 1 | 2 | 3)}
+              title="Cambiar lista de precios"
+              className={clsx(
+                "text-[11px] font-semibold bg-transparent border-0 rounded py-0.5 pl-1 pr-1 cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-300",
+                priceList === 1 ? "text-stone-400" : "text-indigo-600"
+              )}
+            >
+              {priceListNames.map((name, i) => (
+                <option key={i} value={i + 1}>{name}</option>
               ))}
-            </div>
+            </select>
           </div>
 
           {/* TOTAL — blanco, número enorme */}

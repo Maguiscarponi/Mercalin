@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { centsToARS, formatDateTime } from "@/lib/format";
+import { printHtml } from "@/lib/printHtml";
 import type { Sale, SaleItem } from "@/types";
 
 const METHOD_LABELS: Record<string, string> = {
@@ -134,17 +135,9 @@ export default function TicketPrint({ sale, items, businessName, businessAddress
 
   function doPrint() {
     const html = buildReceiptHtml({ sale, items, businessName, businessAddress, businessPhone, ticketFooter, paperSize, isRi });
-    const pw = PAPER_WIDTH[paperSize];
-    const win = window.open("", "_blank", `width=${pw.px + 60},height=700,toolbar=0,menubar=0,location=0,status=0`);
-    if (!win) { alert("Bloqueaste las ventanas emergentes. Habilitá los popups para imprimir."); return; }
-    win.document.write(html);
-    win.document.close();
-    win.focus();
-    setTimeout(() => {
-      win.print();
-      win.close();
-    }, 300);
-    onClose();
+    // Pase lo que pase con la impresión (falle, se cancele, no haya impresora), onClose()
+    // se llama igual — así la caja siempre queda lista para la próxima venta.
+    printHtml(html, onClose);
   }
 
   // Preview receipt (simplificado para mostrar en pantalla)

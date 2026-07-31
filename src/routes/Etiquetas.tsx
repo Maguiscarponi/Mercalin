@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import JsBarcode from "jsbarcode";
 import { api } from "@/lib/api";
 import { centsToARS } from "@/lib/format";
+import { printHtml } from "@/lib/printHtml";
 import type { Product } from "@/types";
 
 // ─── Tipos de plantilla ──────────────────────────────────────────────────────
@@ -263,12 +264,7 @@ export default function Etiquetas() {
 <div class="grid">${labelsHtml}</div>
 </body></html>`;
 
-    const win = window.open("", "_blank", "width=1000,height=750,toolbar=0,menubar=0,location=0");
-    if (!win) return;
-    win.document.write(html);
-    win.document.close();
-    win.focus();
-    setTimeout(() => { win.print(); }, 600);
+    printHtml(html);
   }
 
   const tplCfg = TEMPLATES[template];
