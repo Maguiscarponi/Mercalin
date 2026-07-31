@@ -258,7 +258,17 @@ function PromoCard({
   );
 }
 
-function ProductPicker({ value, onChange }: { value: string; onChange: (name: string) => void }) {
+function ProductPicker({
+  value,
+  hasSelection,
+  onChangeText,
+  onSelect,
+}: {
+  value: string;
+  hasSelection: boolean;
+  onChangeText: (name: string) => void;
+  onSelect: (p: Product) => void;
+}) {
   const [results, setResults] = useState<Product[]>([]);
   const [showDrop, setShowDrop] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -276,17 +286,20 @@ function ProductPicker({ value, onChange }: { value: string; onChange: (name: st
       <input
         className="input w-full"
         value={value}
-        onChange={(e) => { onChange(e.target.value); setShowDrop(true); }}
+        onChange={(e) => { onChangeText(e.target.value); setShowDrop(true); }}
         onBlur={() => setTimeout(() => setShowDrop(false), 150)}
         placeholder="Buscar producto del catálogo…"
       />
+      {!hasSelection && value.trim() && (
+        <p className="text-xs text-amber-600 mt-1">Elegí un producto de la lista de abajo — si solo escribís el nombre, la promoción no se va a aplicar.</p>
+      )}
       {showDrop && results.length > 0 && (
         <div className="absolute z-20 top-full left-0 right-0 bg-white border border-stone-200 rounded-md shadow-lg mt-0.5 max-h-48 overflow-y-auto">
           {results.map((p) => (
             <div
               key={p.id}
               className="px-3 py-2 hover:bg-stone-50 cursor-pointer"
-              onMouseDown={() => { onChange(p.name); setShowDrop(false); }}
+              onMouseDown={() => { onSelect(p); setShowDrop(false); }}
             >
               <div className="text-sm font-medium">{p.name}</div>
               {p.category && <div className="text-xs text-stone-400">{p.category}</div>}
@@ -317,8 +330,13 @@ function PromoForm({
   const [showConditions, setShowConditions] = useState(
     !!(promo.days_of_week || promo.time_start || promo.time_end || promo.min_qty)
   );
+  const [categories, setCategories] = useState<string[]>([]);
   const isNew = !promo.id;
   const needsValue = form.promo_type === "pct" || form.promo_type === "fixed";
+
+  useEffect(() => {
+    api.listCategories().then((cats) => setCategories(cats.map((c) => c.name).filter(Boolean))).catch(() => {});
+  }, []);
 
   function set<K extends keyof Promotion>(k: K, v: Promotion[K]) {
     setForm((f) => ({ ...f, [k]: v }));
@@ -332,6 +350,14 @@ function PromoForm({
 
   function submit() {
     if (!form.name?.trim()) { alert("El nombre es obligatorio"); return; }
+    if (form.applies_to === "product" && !form.target_id) {
+      alert("Elegí el producto de la lista de sugerencias — si solo escribís el nombre, la promoción no se va a aplicar en la caja.");
+      return;
+    }
+    if (form.applies_to === "category" && !form.target_name?.trim()) {
+      alert("Elegí una categoría.");
+      return;
+    }
     const value = form.promo_type === "fixed" ? arsStringToCents(valueStr) : parseFloat(valueStr) || 0;
     onSave({ ...form, value });
   }
@@ -376,13 +402,21 @@ function PromoForm({
           </Field>
 
           {form.applies_to === "category" && (
-            <Field label="Nombre de categoría">
-              <input className="input" value={form.target_name || ""} onChange={(e) => set("target_name", e.target.value)} placeholder="Ej: Bebidas" />
+            <Field label="Categoría">
+              <select className="input" value={form.target_name || ""} onChange={(e) => set("target_name", e.target.value)}>
+                <option value="">Elegí una categoría…</option>
+                {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
             </Field>
           )}
           {form.applies_to === "product" && (
             <Field label="Producto">
-              <ProductPicker value={form.target_name || ""} onChange={(name) => set("target_name", name)} />
+              <ProductPicker
+                value={form.target_name || ""}
+                hasSelection={!!form.target_id}
+                onChangeText={(name) => { set("target_name", name); set("target_id", null as unknown as number); }}
+                onSelect={(p) => { set("target_name", p.name); set("target_id", p.id); }}
+              />
             </Field>
           )}
 

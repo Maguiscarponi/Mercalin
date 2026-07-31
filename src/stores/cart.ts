@@ -59,12 +59,22 @@ export const useCart = create<CartState>((set, get) => ({
     }),
 
   addOpenItem: (name, price_cents) =>
-    set((state) => ({
-      items: [
-        ...state.items,
-        { product_id: null, barcode: null, name, unit_price_cents: price_cents, discount_pct: 0, qty: 1 },
-      ],
-    })),
+    set((state) => {
+      const existing = state.items.findIndex(
+        (i) => i.product_id === null && i.name === name && i.unit_price_cents === price_cents
+      );
+      if (existing >= 0) {
+        const items = [...state.items];
+        items[existing] = { ...items[existing], qty: items[existing].qty + 1 };
+        return { items };
+      }
+      return {
+        items: [
+          ...state.items,
+          { product_id: null, barcode: null, name, unit_price_cents: price_cents, discount_pct: 0, qty: 1 },
+        ],
+      };
+    }),
 
   incQty: (idx) =>
     set((state) => {

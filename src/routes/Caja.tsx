@@ -34,6 +34,9 @@ export default function Caja() {
   const [promoToast, setPromoToast] = useState<string | null>(null);
   const scanRef = useRef<HTMLInputElement>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Producto detrás de cada línea del carrito con promo aplicada, para poder
+  // recalcular el descuento (2x1/3x2/mínimo) cada vez que cambia la cantidad.
+  const promoProductsRef = useRef<Record<string, Product>>({});
 
   useEffect(() => {
     Promise.all([
@@ -83,13 +86,6 @@ export default function Caja() {
       if (e.key === "Escape") {
         setPayOpen(false); setShowClientSearch(false);
         setSearchResults([]); setShowPriceCheck(false);
-      }
-      if (e.key === " ") {
-        const target = e.target as HTMLElement;
-        if (target === scanRef.current && !scanRef.current?.value.trim() && cart.items.length > 0 && !payOpen && !showPriceCheck && !showClientSearch) {
-          e.preventDefault();
-          if (confirm("¿Anular toda la venta?")) { cart.clear(); setDiscountStr(""); }
-        }
       }
     };
     window.addEventListener("keydown", handler);
@@ -174,6 +170,7 @@ export default function Caja() {
       if (product) {
         addWithPromo(product, getPriceForList(product));
         setStockMap((m) => ({ ...m, [product.id]: product.stock }));
+        setCostMap((m) => ({ ...m, [product.id]: product.cost_cents }));
         setScanValue("");
         return;
       }
@@ -181,6 +178,7 @@ export default function Caja() {
       if (results.length === 1) {
         addWithPromo(results[0], getPriceForList(results[0]));
         setStockMap((m) => ({ ...m, [results[0].id]: results[0].stock }));
+        setCostMap((m) => ({ ...m, [results[0].id]: results[0].cost_cents }));
         setScanValue("");
       } else if (results.length > 1) {
         setSearchResults(results);
@@ -196,16 +194,50 @@ export default function Caja() {
     }
   }
 
+  // ¿La promo está vigente ahora mismo según día de la semana y horario configurados?
+  function isPromoActiveNow(p: Promotion): boolean {
+    if (p.days_of_week) {
+      try {
+        const days = JSON.parse(p.days_of_week);
+        if (Array.isArray(days) && days.length > 0 && !days.includes(new Date().getDay())) return false;
+      } catch { /* condición mal formada: no bloquea la promo */ }
+    }
+    if (p.time_start || p.time_end) {
+      const now = new Date();
+      const hm = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+      if (p.time_start && hm < p.time_start) return false;
+      if (p.time_end && hm > p.time_end) return false;
+    }
+    return true;
+  }
+
   function findPromo(product: Product): Promotion | null {
     const today = todayISO();
     const active = promos.filter(
-      (p) => p.active && (!p.starts_at || p.starts_at <= today) && (!p.ends_at || p.ends_at >= today)
+      (p) => p.active
+        && (!p.starts_at || p.starts_at <= today)
+        && (!p.ends_at || p.ends_at >= today)
+        && isPromoActiveNow(p)
     );
     return (
-      active.find((p) => p.applies_to === "product" && p.target_name === product.name) ||
+      active.find((p) => p.applies_to === "product" && (p.target_id ? p.target_id === product.id : p.target_name === product.name)) ||
       active.find((p) => p.applies_to === "category" && p.target_name === product.category) ||
       active.find((p) => p.applies_to === "all")
     ) ?? null;
+  }
+
+  // Porcentaje de descuento a aplicar sobre la línea, según tipo de promo y la cantidad ya cargada.
+  // Se recalcula cada vez que cambia la cantidad (ver bumpQty) para que 2x1/3x2 y el mínimo
+  // requerido respondan de verdad al carrito, no solo al momento en que se agregó el producto.
+  function promoDiscountPct(promo: Promotion, qty: number, unitPrice: number): number {
+    if (promo.min_qty && qty < promo.min_qty) return 0;
+    switch (promo.promo_type) {
+      case "pct": return Math.min(100, Math.max(0, promo.value));
+      case "fixed": return unitPrice > 0 ? Math.min(100, Math.max(0, (promo.value / unitPrice) * 100)) : 0;
+      case "2x1": return qty > 0 ? (Math.floor(qty / 2) / qty) * 100 : 0;
+      case "3x2": return qty > 0 ? (Math.floor(qty / 3) / qty) * 100 : 0;
+      default: return 0;
+    }
   }
 
   function showPromoToast(msg: string) {
@@ -213,21 +245,48 @@ export default function Caja() {
     setTimeout(() => setPromoToast(null), 2500);
   }
 
-  function addWithPromo(product: Product, price: number) {
+  function promoLineKey(productId: number, price: number) {
+    return `${productId}:${price}`;
+  }
+
+  function applyPromoToLine(product: Product, price: number) {
     const promo = findPromo(product);
-    if (promo?.promo_type === "pct") {
-      cart.addProduct(product, price);
-      const items = useCart.getState().items;
-      const idx = items.findIndex((i) => i.product_id === product.id && i.unit_price_cents === price);
-      if (idx >= 0 && items[idx].discount_pct === 0) cart.setItemDiscount(idx, promo.value);
-      showPromoToast(`✓ ${promo.name} (−${promo.value}%)`);
-    } else if (promo?.promo_type === "fixed") {
-      cart.addProduct(product, Math.max(0, price - promo.value));
-      showPromoToast(`✓ ${promo.name} (−${centsToARS(promo.value)})`);
-    } else {
-      cart.addProduct(product, price);
-      if (promo) showPromoToast(`🎁 ${promo.name}: ${promo.promo_type === "2x1" ? "Llevá 2, pagá 1" : "Llevá 3, pagá 2"}`);
+    if (!promo) return;
+    promoProductsRef.current[promoLineKey(product.id, price)] = product;
+    const items = useCart.getState().items;
+    const idx = items.findIndex((i) => i.product_id === product.id && i.unit_price_cents === price);
+    if (idx < 0) return;
+    const qty = items[idx].qty;
+    const pct = promoDiscountPct(promo, qty, price);
+    cart.setItemDiscount(idx, pct);
+    if (pct > 0) {
+      const label =
+        promo.promo_type === "pct" ? `−${promo.value}%` :
+        promo.promo_type === "fixed" ? `−${centsToARS(promo.value)}` :
+        promo.promo_type === "2x1" ? "Llevá 2, pagá 1" : "Llevá 3, pagá 2";
+      showPromoToast(`✓ ${promo.name} (${label})`);
+    } else if (promo.min_qty && promo.min_qty > qty) {
+      showPromoToast(`${promo.name}: agregá ${promo.min_qty - qty} más para activar la promo`);
     }
+  }
+
+  function addWithPromo(product: Product, price: number) {
+    cart.addProduct(product, price);
+    applyPromoToLine(product, price);
+  }
+
+  // Usado por los botones +/− del carrito: además de cambiar la cantidad,
+  // recalcula el descuento de la línea si tiene una promo asociada.
+  function bumpQty(idx: number, delta: 1 | -1) {
+    if (delta > 0) cart.incQty(idx); else cart.decQty(idx);
+    const items = useCart.getState().items;
+    const item = items[idx];
+    if (!item || item.product_id == null) return;
+    const product = promoProductsRef.current[promoLineKey(item.product_id, item.unit_price_cents)];
+    if (!product) return;
+    const promo = findPromo(product);
+    const pct = promo ? promoDiscountPct(promo, item.qty, item.unit_price_cents) : 0;
+    cart.setItemDiscount(idx, pct);
   }
 
   function getPriceForList(p: Product): number {
@@ -396,12 +455,16 @@ ${itemsHtml}
                 const next = e.relatedTarget as HTMLElement | null;
                 // Si el foco se va a otro INPUT/TEXTAREA real, dejarlo ir
                 if (next && (next.tagName === "INPUT" || next.tagName === "TEXTAREA" || next.tagName === "SELECT")) return;
-                // Si el foco se va a un botón u otro elemento (ej: +/-), recuperar foco después
+                // Si el foco se va a un control del carrito (−/+/×), dejarlo operable por teclado
+                // en vez de arrebatarle el foco de inmediato.
+                if (next && next.closest("[data-cart-ctrl]")) return;
+                // Si el foco se va a otro elemento (ej: menú lateral), recuperar foco después
                 setTimeout(() => {
                   const active = document.activeElement as HTMLElement | null;
-                  if (!active || (active.tagName !== "INPUT" && active.tagName !== "TEXTAREA" && active.tagName !== "SELECT")) {
-                    scanRef.current?.focus();
-                  }
+                  if (!active) { scanRef.current?.focus(); return; }
+                  if (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.tagName === "SELECT") return;
+                  if (active.closest("[data-cart-ctrl]")) return;
+                  scanRef.current?.focus();
                 }, 150);
               }}
             />
@@ -424,7 +487,7 @@ ${itemsHtml}
                           <div className="font-semibold text-base">{p.name}</div>
                           <div className="text-sm text-stone-400 mt-0.5">{p.barcode || "Sin código"} · Stock: {p.stock}</div>
                         </div>
-                        <div className="tabular text-base font-bold text-stone-800 ml-4">{centsToARS(p.price_cents)}</div>
+                        <div className="tabular text-base font-bold text-stone-800 ml-4">{centsToARS(getPriceForList(p))}</div>
                       </button>
                     </li>
                   ))}
@@ -468,9 +531,9 @@ ${itemsHtml}
                       </div>
 
                       <div className="flex items-center gap-2">
-                        <button onClick={() => cart.decQty(idx)} className="w-9 h-9 rounded-md border border-stone-300 hover:bg-stone-100 text-lg font-bold">−</button>
+                        <button onClick={() => bumpQty(idx, -1)} data-cart-ctrl="true" className="w-9 h-9 rounded-md border border-stone-300 hover:bg-stone-100 text-lg font-bold">−</button>
                         <span className="tabular w-9 text-center font-bold text-base">{item.qty}</span>
-                        <button onClick={() => cart.incQty(idx)} className="w-9 h-9 rounded-md border border-stone-300 hover:bg-stone-100 text-lg font-bold">+</button>
+                        <button onClick={() => bumpQty(idx, 1)} data-cart-ctrl="true" className="w-9 h-9 rounded-md border border-stone-300 hover:bg-stone-100 text-lg font-bold">+</button>
                       </div>
 
                       <div className="text-right">
@@ -480,7 +543,7 @@ ${itemsHtml}
                         )}
                       </div>
 
-                      <button onClick={() => cart.removeItem(idx)} className="text-stone-300 hover:text-red-500 text-2xl flex items-center justify-center">×</button>
+                      <button onClick={() => cart.removeItem(idx)} data-cart-ctrl="true" className="text-stone-400 hover:text-red-500 text-2xl flex items-center justify-center">×</button>
                     </li>
                   );
                 })}
@@ -599,13 +662,18 @@ ${itemsHtml}
 
           {/* ANULAR VENTA */}
           <button
-            onClick={() => { if (confirm("¿Anular toda la venta?")) { cart.clear(); setDiscountStr(""); } }}
+            onClick={() => {
+              if (confirm("¿Anular toda la venta?")) {
+                cart.clear();
+                setDiscountStr("");
+                promoProductsRef.current = {};
+              }
+            }}
             disabled={cart.items.length === 0}
             className="w-full rounded-xl border-2 border-red-300 bg-red-50 hover:bg-red-100 text-red-600 font-bold text-sm disabled:opacity-25 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-colors shrink-0"
             style={{ height: "46px" }}
           >
             🗑 Anular venta
-            <span className="text-xs font-normal bg-red-100 border border-red-200 px-2 py-0.5 rounded font-mono">ESPACIO</span>
           </button>
 
           {/* SECUNDARIO — scrollable */}
@@ -677,6 +745,7 @@ ${itemsHtml}
             cart.clear();
             setPayOpen(false);
             setDiscountStr("");
+            promoProductsRef.current = {};
             scanRef.current?.focus();
           }}
         />

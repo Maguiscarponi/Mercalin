@@ -6,7 +6,7 @@ import clsx from "clsx";
 
 const ROLES: { id: UserRole; label: string; desc: string }[] = [
   { id: "admin", label: "Administrador", desc: "Acceso completo al sistema" },
-  { id: "supervisor", label: "Supervisor", desc: "Ventas, caja, reportes y clientes" },
+  { id: "supervisor", label: "Supervisor", desc: "Todo el sistema excepto Usuarios y Configuración" },
   { id: "cajero", label: "Cajero", desc: "Solo pantalla de ventas y caja" },
 ];
 

@@ -134,9 +134,9 @@ export const helpContent: Record<string, HelpContent> = {
               "¿Querés saber el precio de un producto sin agregarlo a la venta? Usá el botón 'Precio' o presioná F3. Escribís el nombre o código y te muestra el precio y el stock disponible.",
           },
           {
-            label: "Anular toda la venta (ESPACIO)",
+            label: "Anular toda la venta",
             description:
-              "Si necesitás empezar de cero, presioná la barra espaciadora o usá el botón 'Anular venta'. El sistema te pide confirmación antes de borrar todo.",
+              "Si necesitás empezar de cero, usá el botón 'Anular venta'. El sistema te pide confirmación antes de borrar todo.",
           },
           {
             label: "Botones de acceso rápido",
@@ -160,10 +160,6 @@ export const helpContent: Record<string, HelpContent> = {
             label: "Enter",
             description:
               "Si el buscador está vacío y hay productos en el carrito, abre la pantalla de cobro.",
-          },
-          {
-            label: "Espacio",
-            description: "Anula toda la venta (pide confirmación primero).",
           },
           {
             label: "Escape",

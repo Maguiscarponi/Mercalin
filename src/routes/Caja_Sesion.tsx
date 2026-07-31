@@ -286,7 +286,9 @@ function CloseForm({
   onCancel: () => void;
   onClosed: () => void;
 }) {
-  const [closingStr, setClosingStr] = useState((saldoEsperado / 100).toString());
+  // Vacío a propósito: el arqueo tiene que reflejar lo que el cajero cuenta de verdad,
+  // no lo que el sistema espera — precargarlo permitiría cerrar sin contar un solo billete.
+  const [closingStr, setClosingStr] = useState("");
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -361,8 +363,8 @@ function CloseForm({
           <button onClick={onCancel} className="btn btn-secondary flex-1">Cancelar</button>
           <button
             onClick={submit}
-            disabled={saving}
-            className="btn flex-1 bg-red-600 text-white hover:bg-red-700"
+            disabled={saving || !closingStr.trim()}
+            className="btn flex-1 bg-red-600 text-white hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {saving ? "Cerrando…" : "Confirmar cierre"}
           </button>

@@ -34,7 +34,8 @@ export default function Inventario() {
   }
 
   function setCount(productId: number, value: string) {
-    const n = value === "" ? "" : Math.max(0, parseInt(value, 10) || 0);
+    // parseFloat (no parseInt): productos que se venden por peso necesitan contar en decimales (ej. 2.750 kg).
+    const n = value === "" ? "" : Math.max(0, parseFloat(value) || 0);
     setProducts((prev) => prev.map((p) =>
       p.product_id === productId ? { ...p, counted: n } : p
     ));
@@ -230,6 +231,7 @@ export default function Inventario() {
                       <input
                         type="number"
                         min={0}
+                        step="0.001"
                         className={clsx(
                           "input text-right tabular w-24 text-sm",
                           p.counted !== "" && Number(p.counted) !== p.system_stock && "border-amber-400 bg-amber-50"

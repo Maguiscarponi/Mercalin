@@ -834,11 +834,14 @@ function StockAdjustForm({
   const [newStock, setNewStock] = useState(product.stock.toString());
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
+  const isWeighable = product.is_weighable;
+  const unitLabel = isWeighable ? "kg" : "unidades";
+  const parseVal = (s: string) => (isWeighable ? parseFloat(s) : parseInt(s, 10));
 
-  const diff = parseInt(newStock) - product.stock;
+  const diff = parseVal(newStock) - product.stock;
 
   async function submit() {
-    const val = parseInt(newStock);
+    const val = parseVal(newStock);
     if (isNaN(val) || val < 0) return;
     setSaving(true);
     try {
@@ -864,7 +867,7 @@ function StockAdjustForm({
 
         <div className="bg-stone-50 rounded-md p-3 mb-4 text-sm flex justify-between">
           <span className="text-stone-600">Stock actual</span>
-          <span className="font-semibold tabular">{product.stock} unidades</span>
+          <span className="font-semibold tabular">{product.stock} {unitLabel}</span>
         </div>
 
         <label className="block mb-3">
@@ -873,18 +876,19 @@ function StockAdjustForm({
             autoFocus
             type="number"
             min={0}
+            step={isWeighable ? "0.001" : "1"}
             className="input tabular text-right h-12 text-lg"
             value={newStock}
             onChange={(e) => setNewStock(e.target.value)}
           />
         </label>
 
-        {newStock && !isNaN(parseInt(newStock)) && parseInt(newStock) !== product.stock && (
+        {newStock && !isNaN(parseVal(newStock)) && parseVal(newStock) !== product.stock && (
           <div className={clsx(
             "text-sm text-center py-2 rounded-md mb-4 font-medium",
             diff > 0 ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"
           )}>
-            {diff > 0 ? `+${diff}` : diff} unidades
+            {diff > 0 ? `+${diff}` : diff} {unitLabel}
           </div>
         )}
 
@@ -1018,9 +1022,11 @@ function ProductForm({
     initial.cost_cents ? (initial.cost_cents / 100).toString() : ""
   );
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [categories, setCategories] = useState<string[]>([]);
 
   useEffect(() => {
     api.listSuppliers().then(setSuppliers).catch(console.error);
+    api.listCategories().then((cats) => setCategories(cats.map((c) => c.name).filter(Boolean))).catch(console.error);
   }, []);
 
   function submit() {
@@ -1107,23 +1113,25 @@ function ProductForm({
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Stock actual">
+            <Field label={form.is_weighable ? "Stock actual (kg)" : "Stock actual"}>
               <input
                 type="number"
+                step={form.is_weighable ? "0.001" : "1"}
                 className="input tabular text-right"
                 value={form.stock ?? 0}
                 onChange={(e) =>
-                  setForm({ ...form, stock: parseInt(e.target.value) || 0 })
+                  setForm({ ...form, stock: (form.is_weighable ? parseFloat(e.target.value) : parseInt(e.target.value)) || 0 })
                 }
               />
             </Field>
-            <Field label="Stock mínimo">
+            <Field label={form.is_weighable ? "Stock mínimo (kg)" : "Stock mínimo"}>
               <input
                 type="number"
+                step={form.is_weighable ? "0.001" : "1"}
                 className="input tabular text-right"
                 value={form.min_stock ?? 0}
                 onChange={(e) =>
-                  setForm({ ...form, min_stock: parseInt(e.target.value) || 0 })
+                  setForm({ ...form, min_stock: (form.is_weighable ? parseFloat(e.target.value) : parseInt(e.target.value)) || 0 })
                 }
               />
             </Field>
@@ -1132,10 +1140,14 @@ function ProductForm({
           <Field label="Categoría">
             <input
               className="input"
+              list="product-category-options"
               value={form.category || ""}
               onChange={(e) => setForm({ ...form, category: e.target.value })}
               placeholder="Bebidas, golosinas, almacén…"
             />
+            <datalist id="product-category-options">
+              {categories.map((c) => <option key={c} value={c} />)}
+            </datalist>
           </Field>
 
           <Field label="Fecha de vencimiento (opcional)">

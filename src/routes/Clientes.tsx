@@ -77,9 +77,12 @@ export default function Clientes() {
     }
   }
 
-  async function handleDelete(id: number) {
-    if (!confirm("¿Eliminar este cliente?")) return;
-    await api.deleteClient(id);
+  async function handleDelete(client: Client) {
+    const msg = client.balance_cents > 0
+      ? `${client.name} tiene una deuda de ${centsToARS(client.balance_cents)}. Si lo eliminás, se pierde el registro de esa cuenta corriente. ¿Eliminar igual?`
+      : `¿Eliminar a ${client.name}?`;
+    if (!confirm(msg)) return;
+    await api.deleteClient(client.id);
     load();
   }
 
@@ -255,7 +258,7 @@ export default function Clientes() {
                     <div className="flex items-center gap-1.5">
                       <button onClick={() => setViewing(c)} className="btn-table-success">Ver cuenta</button>
                       <button onClick={() => setEditing(c)} className="btn-table-neutral">Editar</button>
-                      <button onClick={() => handleDelete(c.id)} className="btn-table-danger">Borrar</button>
+                      <button onClick={() => handleDelete(c)} className="btn-table-danger">Borrar</button>
                     </div>
                   </td>
                 </tr>
