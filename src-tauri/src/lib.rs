@@ -13,6 +13,7 @@ pub struct AppState {
     pub db: Arc<Mutex<Connection>>,
     pub db_path: PathBuf,
     pub catalog_import_cancelled: Arc<AtomicBool>,
+    pub catalog_import_running: Arc<AtomicBool>,
 }
 
 // ─── Servidor HTTP para modo tablet ──────────────────────────────────────────
@@ -299,6 +300,7 @@ pub fn run() {
                 db: db_arc,
                 db_path,
                 catalog_import_cancelled: Arc::new(AtomicBool::new(false)),
+                catalog_import_running: Arc::new(AtomicBool::new(false)),
             });
 
             Ok(())

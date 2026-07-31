@@ -1,10 +1,12 @@
 use crate::commands::{audit::log_action, err, CmdResult};
 use crate::models::{CatalogImportProgress, CatalogImportResult};
 use crate::AppState;
-use rusqlite::params;
+use parking_lot::Mutex;
+use rusqlite::{params, Connection};
 use serde::Deserialize;
 use std::collections::HashSet;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, State};
 
@@ -94,16 +96,17 @@ fn fetch_page_with_retries(page: i64, attempts: u32) -> Result<OffResponse, Stri
     Err(last_err)
 }
 
-/// Importa productos nuevos (por código de barras argentino real) desde el catálogo
-/// público de Open Food Facts. Nunca modifica productos que ya existen: si el barcode
-/// ya está en la base, se salta. Quedan activos, con precio y costo en $0 — Caja no
-/// deja vender un producto sin precio, así que no hay riesgo de venderlos gratis.
-#[tauri::command]
-pub fn import_off_catalog(app: AppHandle, state: State<AppState>) -> CmdResult<CatalogImportResult> {
-    state.catalog_import_cancelled.store(false, Ordering::SeqCst);
-
+/// El trabajo real del import, pensado para correr en su propio hilo del sistema operativo
+/// (ver `import_off_catalog` más abajo) — nunca en el hilo que atiende los comandos de Tauri,
+/// para que el resto de la app (incluido cualquier click del usuario) siga respondiendo
+/// mientras esto tarda su minuto o dos.
+fn run_import(
+    app: &AppHandle,
+    db: &Arc<Mutex<Connection>>,
+    cancelled: &Arc<AtomicBool>,
+) -> Result<CatalogImportResult, String> {
     let mut known_barcodes: HashSet<String> = {
-        let conn = state.db.lock();
+        let conn = db.lock();
         let mut stmt = conn
             .prepare("SELECT barcode FROM products WHERE barcode IS NOT NULL")
             .map_err(err)?;
@@ -123,7 +126,7 @@ pub fn import_off_catalog(app: AppHandle, state: State<AppState>) -> CmdResult<C
     let mut total_count: i64 = i64::MAX;
 
     loop {
-        if state.catalog_import_cancelled.load(Ordering::SeqCst) {
+        if cancelled.load(Ordering::SeqCst) {
             break;
         }
 
@@ -174,7 +177,7 @@ pub fn import_off_catalog(app: AppHandle, state: State<AppState>) -> CmdResult<C
         }
 
         if !new_rows.is_empty() {
-            let mut conn = state.db.lock();
+            let mut conn = db.lock();
             let tx = conn.transaction().map_err(err)?;
             for (barcode, name) in &new_rows {
                 let res = tx.execute(
@@ -204,9 +207,9 @@ pub fn import_off_catalog(app: AppHandle, state: State<AppState>) -> CmdResult<C
         std::thread::sleep(Duration::from_millis(PAGE_DELAY_MS));
     }
 
-    let cancelled = state.catalog_import_cancelled.load(Ordering::SeqCst);
+    let was_cancelled = cancelled.load(Ordering::SeqCst);
     {
-        let conn = state.db.lock();
+        let conn = db.lock();
         log_action(
             &conn,
             None,
@@ -214,7 +217,7 @@ pub fn import_off_catalog(app: AppHandle, state: State<AppState>) -> CmdResult<C
             "productos",
             None,
             Some(&format!(
-                "Nuevos: {imported}, ya existentes: {skipped_existing}, inválidos: {skipped_invalid}, páginas fallidas: {failed_pages}, cancelado: {cancelled}"
+                "Nuevos: {imported}, ya existentes: {skipped_existing}, inválidos: {skipped_invalid}, páginas fallidas: {failed_pages}, cancelado: {was_cancelled}"
             )),
         );
     }
@@ -225,8 +228,49 @@ pub fn import_off_catalog(app: AppHandle, state: State<AppState>) -> CmdResult<C
         skipped_invalid,
         failed_pages,
         scanned,
-        cancelled,
+        cancelled: was_cancelled,
+        error: None,
     })
+}
+
+/// Importa productos nuevos (por código de barras argentino real) desde el catálogo
+/// público de Open Food Facts. Nunca modifica productos que ya existen: si el barcode
+/// ya está en la base, se salta. Quedan activos, con precio y costo en $0 — Caja no
+/// deja vender un producto sin precio, así que no hay riesgo de venderlos gratis.
+///
+/// El comando en sí vuelve casi al instante: todo el trabajo (las ~150 páginas, con pausas
+/// entre cada una) corre en un hilo del sistema operativo aparte, igual que ya hace el
+/// servidor del modo tablet. El progreso y el resultado final viajan por eventos
+/// (`catalog_import_progress` / `catalog_import_done`), nunca bloqueando la respuesta
+/// del comando — así el resto de la app queda usable mientras esto corre en segundo plano.
+#[tauri::command]
+pub fn import_off_catalog(app: AppHandle, state: State<AppState>) -> CmdResult<()> {
+    if state.catalog_import_running.swap(true, Ordering::SeqCst) {
+        return Err("Ya hay una importación en curso.".into());
+    }
+    state.catalog_import_cancelled.store(false, Ordering::SeqCst);
+
+    let db = Arc::clone(&state.db);
+    let running_flag = Arc::clone(&state.catalog_import_running);
+    let cancelled_flag = Arc::clone(&state.catalog_import_cancelled);
+    let app_handle = app.clone();
+
+    std::thread::spawn(move || {
+        let result = run_import(&app_handle, &db, &cancelled_flag);
+        running_flag.store(false, Ordering::SeqCst);
+        let payload = result.unwrap_or_else(|e| CatalogImportResult {
+            imported: 0,
+            skipped_existing: 0,
+            skipped_invalid: 0,
+            failed_pages: 0,
+            scanned: 0,
+            cancelled: false,
+            error: Some(e),
+        });
+        let _ = app_handle.emit("catalog_import_done", payload);
+    });
+
+    Ok(())
 }
 
 #[tauri::command]

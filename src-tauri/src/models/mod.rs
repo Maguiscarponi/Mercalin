@@ -1036,5 +1036,6 @@ pub struct CatalogImportResult {
     pub failed_pages: i64,
     pub scanned: i64,
     pub cancelled: bool,
+    pub error: Option<String>,
 }
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import { api } from "@/lib/api";
 import { centsToARS, arsStringToCents, formatDateTime } from "@/lib/format";
@@ -1358,37 +1358,61 @@ function QuickPriceInput({ product, onSaved }: { product: Product; onSaved: (p: 
   );
 }
 
+function formatEta(seconds: number): string {
+  if (seconds < 45) return "menos de un minuto";
+  const mins = Math.round(seconds / 60);
+  return mins <= 1 ? "~1 minuto" : `~${mins} minutos`;
+}
+
 function OffImportModal({ onClose, onImported }: { onClose: () => void; onImported: () => void }) {
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState<CatalogImportProgress | null>(null);
   const [result, setResult] = useState<CatalogImportResult | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const startedAtRef = useRef<number | null>(null);
 
+  // El comando vuelve al instante (el import corre en un hilo aparte del lado del backend);
+  // todo lo que pasa mientras corre —progreso y resultado final— llega por estos dos eventos,
+  // nunca bloqueando la interfaz a la espera de una respuesta que tarda 1-2 minutos.
   useEffect(() => {
-    let unlisten: (() => void) | undefined;
-    let cancelled = false;
+    let unlistenProgress: (() => void) | undefined;
+    let unlistenDone: (() => void) | undefined;
+    let cancelledEffect = false;
+
     listen<CatalogImportProgress>("catalog_import_progress", (e) => setProgress(e.payload)).then((fn) => {
-      if (cancelled) fn();
-      else unlisten = fn;
+      if (cancelledEffect) fn();
+      else unlistenProgress = fn;
     });
-    return () => { cancelled = true; unlisten?.(); };
+    listen<CatalogImportResult>("catalog_import_done", (e) => {
+      setRunning(false);
+      if (e.payload.error) {
+        setErrorMsg(`No se pudo completar la importación: ${e.payload.error}`);
+      } else {
+        setResult(e.payload);
+        if (e.payload.imported > 0) onImported();
+      }
+    }).then((fn) => {
+      if (cancelledEffect) fn();
+      else unlistenDone = fn;
+    });
+
+    return () => { cancelledEffect = true; unlistenProgress?.(); unlistenDone?.(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function start() {
     setRunning(true);
     setErrorMsg(null);
     setResult(null);
+    setProgress(null);
+    startedAtRef.current = Date.now();
     try {
-      const res = await api.importOffCatalog();
-      setResult(res);
-      if (res.imported > 0) onImported();
+      await api.importOffCatalog();
+      // A partir de acá el resultado llega por el evento catalog_import_done.
     } catch (e) {
       console.error(e);
-      // El backend ya reintenta la primera página sola antes de rendirse, así que si llegamos
-      // acá conviene mostrar el motivo real en vez de asumir que es la conexión del usuario.
       const detail = typeof e === "string" ? e : (e as { message?: string } | undefined)?.message;
-      setErrorMsg(detail ? `No se pudo completar la importación: ${detail}` : "No se pudo completar la importación. Probá de nuevo en unos segundos.");
-    } finally {
+      setErrorMsg(detail || "No se pudo iniciar la importación. Probá de nuevo en unos segundos.");
       setRunning(false);
     }
   }
@@ -1396,6 +1420,14 @@ function OffImportModal({ onClose, onImported }: { onClose: () => void; onImport
   async function cancel() {
     try { await api.cancelOffCatalogImport(); } catch (e) { console.error(e); }
   }
+
+  const eta = (() => {
+    if (!progress || !startedAtRef.current || progress.page < 3) return null;
+    const elapsedSec = (Date.now() - startedAtRef.current) / 1000;
+    const remainingPages = Math.max(0, progress.total_pages - progress.page);
+    const secPerPage = elapsedSec / progress.page;
+    return formatEta(remainingPages * secPerPage);
+  })();
 
   return (
     <div
@@ -1411,7 +1443,8 @@ function OffImportModal({ onClose, onImported }: { onClose: () => void; onImport
               Agrega productos nuevos (nombre y código de barras) desde una base pública de productos
               argentinos — no toca ni pisa ningún producto que ya tengas cargado. Los productos nuevos
               entran sin precio ni stock; los vas completando desde la pestaña "Sin precio" o al venderlos
-              por primera vez en Caja. Necesita conexión a internet y puede tardar uno o dos minutos.
+              por primera vez en Caja. Necesita conexión a internet y puede tardar uno o dos minutos —
+              podés seguir usando el sistema normalmente mientras tanto.
             </p>
             {errorMsg && (
               <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-md px-3 py-2 mb-4">
@@ -1438,6 +1471,10 @@ function OffImportModal({ onClose, onImported }: { onClose: () => void; onImport
                 <span className="text-stone-500">Productos nuevos encontrados</span>
                 <span className="tabular font-semibold text-emerald-700">{progress?.imported ?? 0}</span>
               </div>
+              <div className="flex justify-between">
+                <span className="text-stone-500">Tiempo estimado restante</span>
+                <span className="tabular font-medium">{eta ?? "calculando…"}</span>
+              </div>
               <div className="w-full h-1.5 bg-stone-200 rounded-full overflow-hidden mt-1">
                 <div
                   className="h-full bg-indigo-600 transition-all"
@@ -1445,6 +1482,7 @@ function OffImportModal({ onClose, onImported }: { onClose: () => void; onImport
                 />
               </div>
             </div>
+            <p className="text-xs text-stone-400 mb-3 text-center">Podés seguir navegando el sistema mientras tanto.</p>
             <button onClick={cancel} className="btn btn-secondary w-full">Cancelar importación</button>
           </>
         )}

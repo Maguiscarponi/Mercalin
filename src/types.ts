@@ -912,6 +912,7 @@ export interface CatalogImportResult {
   failed_pages: number;
   scanned: number;
   cancelled: boolean;
+  error: string | null;
 }
 
 // ─── Inteligencia: Score de riesgo por proveedor ─────────────────────────────
