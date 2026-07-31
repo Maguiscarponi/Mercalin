@@ -75,6 +75,25 @@ fn fetch_page(page: i64) -> Result<OffResponse, String> {
         .map_err(|e| format!("Respuesta inesperada de Open Food Facts (página {}): {}", page, e))
 }
 
+/// La página 1 es la más sensible a un hiccup pasajero de red (DNS, TLS, un 429 momentáneo
+/// por haber probado la API varias veces seguidas): sin ella no sabemos ni cuántas páginas hay,
+/// así que vale la pena reintentar antes de abortar todo el import.
+fn fetch_page_with_retries(page: i64, attempts: u32) -> Result<OffResponse, String> {
+    let mut last_err = String::new();
+    for attempt in 0..attempts.max(1) {
+        match fetch_page(page) {
+            Ok(p) => return Ok(p),
+            Err(e) => {
+                last_err = e;
+                if attempt + 1 < attempts {
+                    std::thread::sleep(Duration::from_millis(800 * (attempt as u64 + 1)));
+                }
+            }
+        }
+    }
+    Err(last_err)
+}
+
 /// Importa productos nuevos (por código de barras argentino real) desde el catálogo
 /// público de Open Food Facts. Nunca modifica productos que ya existen: si el barcode
 /// ya está en la base, se salta. Quedan activos, con precio y costo en $0 — Caja no
@@ -108,7 +127,7 @@ pub fn import_off_catalog(app: AppHandle, state: State<AppState>) -> CmdResult<C
             break;
         }
 
-        let parsed = match fetch_page(page) {
+        let parsed = match fetch_page_with_retries(page, if page == 1 { 3 } else { 1 }) {
             Ok(p) => p,
             Err(e) => {
                 if page == 1 {

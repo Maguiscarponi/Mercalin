@@ -184,8 +184,12 @@ export default function Productos() {
           )}
         </div>
         <div className="flex gap-2">
-          <button onClick={() => setShowOffImport(true)} className="btn btn-secondary text-sm">
-            🌐 Importar catálogo público
+          <button
+            onClick={() => setShowOffImport(true)}
+            className="btn btn-secondary text-sm"
+            title="Trae automáticamente miles de productos ya cargados (nombre y código de barras) para no tener que tipearlos uno por uno"
+          >
+            🌐 Cargar productos automáticamente
           </button>
           <button onClick={() => setShowImport(true)} className="btn btn-secondary text-sm">
             📥 Importar CSV/Excel
@@ -320,8 +324,26 @@ export default function Productos() {
                     )}
                     {!loading && paginated.length === 0 && (
                       <tr>
-                        <td colSpan={6} className="text-center py-10 text-stone-400">
-                          {products.length === 0 ? 'No hay productos. Tocá "Nuevo producto" para empezar.' : "Sin resultados."}
+                        <td colSpan={6} className="text-center py-10">
+                          {products.length === 0 ? (
+                            <div className="flex flex-col items-center gap-3">
+                              <p className="text-stone-500">Todavía no cargaste ningún producto.</p>
+                              <p className="text-sm text-stone-400 max-w-sm">
+                                No hace falta tipear todo a mano: podés traer miles de productos argentinos
+                                ya cargados (nombre y código de barras) de una sola vez.
+                              </p>
+                              <div className="flex gap-2 mt-1">
+                                <button onClick={() => setShowOffImport(true)} className="btn btn-primary text-sm">
+                                  🌐 Cargar productos automáticamente
+                                </button>
+                                <button onClick={() => setEditing({})} className="btn btn-secondary text-sm">
+                                  Cargar uno a mano
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <span className="text-stone-400">Sin resultados.</span>
+                          )}
                         </td>
                       </tr>
                     )}
@@ -1362,7 +1384,10 @@ function OffImportModal({ onClose, onImported }: { onClose: () => void; onImport
       if (res.imported > 0) onImported();
     } catch (e) {
       console.error(e);
-      setErrorMsg("No se pudo completar la importación. Revisá tu conexión a internet e intentá de nuevo.");
+      // El backend ya reintenta la primera página sola antes de rendirse, así que si llegamos
+      // acá conviene mostrar el motivo real en vez de asumir que es la conexión del usuario.
+      const detail = typeof e === "string" ? e : (e as { message?: string } | undefined)?.message;
+      setErrorMsg(detail ? `No se pudo completar la importación: ${detail}` : "No se pudo completar la importación. Probá de nuevo en unos segundos.");
     } finally {
       setRunning(false);
     }
