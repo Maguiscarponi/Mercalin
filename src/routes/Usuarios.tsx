@@ -1,0 +1,340 @@
+import { useEffect, useState } from "react";
+import { api } from "@/lib/api";
+import { formatDate } from "@/lib/format";
+import type { NewUser, User, UserRole } from "@/types";
+import clsx from "clsx";
+
+const ROLES: { id: UserRole; label: string; desc: string }[] = [
+  { id: "admin", label: "Administrador", desc: "Acceso completo al sistema" },
+  { id: "supervisor", label: "Supervisor", desc: "Ventas, caja, reportes y clientes" },
+  { id: "cajero", label: "Cajero", desc: "Solo pantalla de ventas y caja" },
+];
+
+const ROLE_COLORS: Record<UserRole, string> = {
+  admin: "bg-purple-100 text-purple-700",
+  supervisor: "bg-blue-100 text-blue-700",
+  cajero: "bg-stone-100 text-stone-600",
+};
+
+export default function Usuarios() {
+  const [users, setUsers] = useState<User[]>([]);
+  const [editing, setEditing] = useState<Partial<User> | null>(null);
+  const [showPassModal, setShowPassModal] = useState<User | null>(null);
+
+  async function load() {
+    try {
+      setUsers(await api.listUsers());
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  async function handleSave(u: Partial<User> & { password?: string }) {
+    try {
+      if (u.id) {
+        await api.updateUser(u as User);
+      } else {
+        await api.createUser({
+          username: u.username!,
+          full_name: u.full_name!,
+          password: u.password || "1234",
+          role: u.role as UserRole,
+        } as NewUser);
+      }
+      setEditing(null);
+      load();
+    } catch (err) {
+      console.error(err);
+      alert("Error al guardar usuario");
+    }
+  }
+
+  async function handleDelete(id: number) {
+    if (!confirm("¿Desactivar este usuario?")) return;
+    try {
+      await api.deleteUser(id);
+      load();
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  async function handleReactivate(u: User) {
+    try {
+      await api.updateUser({ ...u, active: true });
+      load();
+    } catch (e) {
+      console.error(e);
+      alert("Error al reactivar");
+    }
+  }
+
+  const active = users.filter((u) => u.active);
+  const inactive = users.filter((u) => !u.active);
+
+  return (
+    <div className="h-full flex flex-col p-4 gap-4">
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-semibold">Usuarios y Permisos</h1>
+        <button
+          onClick={() => setEditing({ role: "cajero" })}
+          className="btn btn-primary"
+        >
+          + Nuevo usuario
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto space-y-4">
+        {/* Roles explicados */}
+        <div className="grid grid-cols-3 gap-3">
+          {ROLES.map((r) => (
+            <div key={r.id} className="card p-3">
+              <span className={clsx("text-xs font-semibold px-2 py-0.5 rounded-full", ROLE_COLORS[r.id])}>
+                {r.label}
+              </span>
+              <p className="text-xs text-stone-500 mt-1.5">{r.desc}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Usuarios activos */}
+        <div className="card">
+          <div className="px-4 py-3 border-b border-stone-200 bg-stone-50 flex items-center justify-between">
+            <h2 className="font-medium text-sm">Usuarios activos ({active.length})</h2>
+          </div>
+          {active.length === 0 ? (
+            <p className="text-center py-6 text-stone-400 text-sm">Sin usuarios registrados</p>
+          ) : (
+            <table className="w-full text-sm">
+              <thead className="text-xs text-stone-500 uppercase">
+                <tr>
+                  <th className="text-left px-4 py-2.5 font-medium">Nombre</th>
+                  <th className="text-left px-4 py-2.5 font-medium">Usuario</th>
+                  <th className="text-left px-4 py-2.5 font-medium">Rol</th>
+                  <th className="text-left px-4 py-2.5 font-medium">Creado</th>
+                  <th className="px-4 py-2.5"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {active.map((u) => (
+                  <tr key={u.id} className="border-t border-stone-100 hover:bg-stone-50">
+                    <td className="px-4 py-3 font-medium">{u.full_name}</td>
+                    <td className="px-4 py-3 font-mono text-xs text-stone-500">@{u.username}</td>
+                    <td className="px-4 py-3">
+                      <span className={clsx("text-xs font-medium px-2 py-0.5 rounded-full", ROLE_COLORS[u.role as UserRole])}>
+                        {ROLES.find((r) => r.id === u.role)?.label || u.role}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-xs text-stone-500">{formatDate(u.created_at)}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1.5">
+                        <button onClick={() => setShowPassModal(u)} className="btn-table-neutral">Contraseña</button>
+                        <button onClick={() => setEditing(u)} className="btn-table-success">Editar</button>
+                        <button onClick={() => handleDelete(u.id)} className="btn-table-danger">Desactivar</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        {/* Usuarios inactivos */}
+        {inactive.length > 0 && (
+          <div className="card">
+            <div className="px-4 py-3 border-b border-stone-200 bg-stone-50">
+              <h2 className="font-medium text-sm text-stone-500">Inactivos ({inactive.length})</h2>
+            </div>
+            <table className="w-full text-sm opacity-70">
+              <tbody>
+                {inactive.map((u) => (
+                  <tr key={u.id} className="border-t border-stone-100 hover:bg-stone-50">
+                    <td className="px-4 py-2.5 text-stone-500 line-through">{u.full_name}</td>
+                    <td className="px-4 py-2.5 font-mono text-xs text-stone-400">@{u.username}</td>
+                    <td className="px-4 py-2.5">
+                      <span className="text-xs text-stone-400">{u.role}</span>
+                    </td>
+                    <td className="px-4 py-2.5">
+                      <button onClick={() => handleReactivate(u)} className="btn-table-success">Reactivar</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {editing !== null && (
+        <UserForm
+          user={editing}
+          onSave={handleSave}
+          onCancel={() => setEditing(null)}
+        />
+      )}
+
+      {showPassModal && (
+        <ChangePasswordModal
+          user={showPassModal}
+          onClose={() => setShowPassModal(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function UserForm({
+  user,
+  onSave,
+  onCancel,
+}: {
+  user: Partial<User> & { password?: string };
+  onSave: (u: Partial<User> & { password?: string }) => void;
+  onCancel: () => void;
+}) {
+  const [form, setForm] = useState({ ...user, password: "" });
+  const isNew = !user.id;
+
+  function set(k: string, v: string) {
+    setForm((f) => ({ ...f, [k]: v }));
+  }
+
+  function submit() {
+    if (!form.full_name?.trim() || !form.username?.trim()) {
+      alert("Nombre y usuario son obligatorios");
+      return;
+    }
+    if (isNew && !form.password) {
+      alert("Ingresá una contraseña");
+      return;
+    }
+    onSave(form);
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onCancel}>
+      <div className="bg-white rounded-lg shadow-xl w-[440px] p-6" onClick={(e) => e.stopPropagation()}>
+        <h2 className="font-semibold text-lg mb-5">{isNew ? "Nuevo usuario" : "Editar usuario"}</h2>
+
+        <div className="space-y-3">
+          <Field label="Nombre completo">
+            <input
+              autoFocus
+              className="input"
+              value={form.full_name || ""}
+              onChange={(e) => set("full_name", e.target.value)}
+              placeholder="Juan Pérez"
+            />
+          </Field>
+          <Field label="Nombre de usuario">
+            <input
+              className="input font-mono"
+              value={form.username || ""}
+              onChange={(e) => set("username", e.target.value.toLowerCase().replace(/\s/g, ""))}
+              placeholder="jperez"
+            />
+          </Field>
+          {isNew && (
+            <Field label="Contraseña inicial">
+              <input
+                className="input"
+                type="password"
+                value={form.password || ""}
+                onChange={(e) => set("password", e.target.value)}
+                placeholder="Mínimo 4 caracteres"
+              />
+            </Field>
+          )}
+          <Field label="Rol">
+            <select
+              className="input"
+              value={form.role || "cajero"}
+              onChange={(e) => set("role", e.target.value)}
+            >
+              {ROLES.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.label} — {r.desc}
+                </option>
+              ))}
+            </select>
+          </Field>
+          {!isNew && (
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="active"
+                checked={form.active !== false}
+                onChange={(e) => setForm((f) => ({ ...f, active: e.target.checked }))}
+              />
+              <label htmlFor="active" className="text-sm text-stone-600">Usuario activo</label>
+            </div>
+          )}
+        </div>
+
+        <div className="flex gap-2 mt-6">
+          <button onClick={onCancel} className="btn btn-secondary flex-1">Cancelar</button>
+          <button onClick={submit} className="btn btn-primary flex-1">
+            {isNew ? "Crear usuario" : "Guardar cambios"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ChangePasswordModal({ user, onClose }: { user: User; onClose: () => void }) {
+  const [pw, setPw] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function submit() {
+    if (pw.length < 4) { alert("Mínimo 4 caracteres"); return; }
+    setSaving(true);
+    try {
+      await api.changePassword(user.id, pw);
+      onClose();
+    } catch (e) {
+      console.error(e);
+      alert("Error al cambiar contraseña");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
+      <div className="bg-white rounded-lg shadow-xl w-[360px] p-6" onClick={(e) => e.stopPropagation()}>
+        <h3 className="font-semibold mb-1">Cambiar contraseña</h3>
+        <p className="text-sm text-stone-500 mb-4">Usuario: <strong>{user.full_name}</strong></p>
+        <input
+          autoFocus
+          type="password"
+          className="input mb-4"
+          placeholder="Nueva contraseña (mín. 4 caracteres)"
+          value={pw}
+          onChange={(e) => setPw(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && submit()}
+        />
+        <div className="flex gap-2">
+          <button onClick={onClose} className="btn btn-secondary flex-1">Cancelar</button>
+          <button onClick={submit} disabled={saving} className="btn btn-primary flex-1">
+            {saving ? "Guardando…" : "Cambiar"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="block">
+      <span className="text-xs font-medium text-stone-600 block mb-1">{label}</span>
+      {children}
+    </label>
+  );
+}

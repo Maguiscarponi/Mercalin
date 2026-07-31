@@ -1,0 +1,1143 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Punto Simple POS — Análisis Estratégico y Hoja de Ruta</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    font-size: 11pt;
+    color: #1a1a2e;
+    background: #fff;
+    line-height: 1.6;
+  }
+
+  /* ── PORTADA ── */
+  .cover {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 50%, #0f172a 100%);
+    color: white;
+    text-align: center;
+    padding: 60px 40px;
+    page-break-after: always;
+  }
+  .cover-logo {
+    font-size: 64px;
+    margin-bottom: 24px;
+  }
+  .cover h1 {
+    font-size: 36pt;
+    font-weight: 800;
+    letter-spacing: -1px;
+    margin-bottom: 8px;
+  }
+  .cover .subtitle {
+    font-size: 16pt;
+    color: #94a3b8;
+    margin-bottom: 48px;
+  }
+  .cover-meta {
+    border-top: 1px solid rgba(255,255,255,0.15);
+    padding-top: 32px;
+    display: flex;
+    gap: 60px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  .cover-meta-item { text-align: center; }
+  .cover-meta-item .label { font-size: 9pt; color: #64748b; text-transform: uppercase; letter-spacing: 2px; }
+  .cover-meta-item .value { font-size: 13pt; font-weight: 700; color: #e2e8f0; margin-top: 4px; }
+  .cover-badge {
+    display: inline-block;
+    background: rgba(99,102,241,0.3);
+    border: 1px solid rgba(99,102,241,0.5);
+    color: #a5b4fc;
+    padding: 6px 18px;
+    border-radius: 999px;
+    font-size: 9pt;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 32px;
+  }
+
+  /* ── CONTENIDO ── */
+  .content { max-width: 900px; margin: 0 auto; padding: 60px 50px; }
+
+  /* ÍNDICE */
+  .toc { page-break-after: always; }
+  .toc h2 { font-size: 22pt; font-weight: 800; color: #0f172a; margin-bottom: 32px; padding-bottom: 12px; border-bottom: 3px solid #6366f1; }
+  .toc-item { display: flex; align-items: baseline; gap: 8px; padding: 8px 0; border-bottom: 1px dotted #e2e8f0; }
+  .toc-num { font-size: 9pt; font-weight: 700; color: #6366f1; min-width: 28px; }
+  .toc-title { flex: 1; font-size: 11pt; color: #334155; }
+  .toc-page { font-size: 9pt; color: #94a3b8; }
+  .toc-section { font-size: 13pt; font-weight: 700; color: #1e293b; padding-top: 16px; }
+
+  /* SECCIONES */
+  .section { margin-bottom: 56px; }
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 24px;
+    padding-bottom: 12px;
+    border-bottom: 2px solid #e2e8f0;
+  }
+  .section-num {
+    background: #6366f1;
+    color: white;
+    font-size: 10pt;
+    font-weight: 800;
+    width: 36px; height: 36px;
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .section h2 { font-size: 18pt; font-weight: 800; color: #0f172a; }
+  .section h3 { font-size: 13pt; font-weight: 700; color: #1e293b; margin: 24px 0 10px 0; }
+  .section h4 { font-size: 11pt; font-weight: 700; color: #334155; margin: 16px 0 8px 0; }
+  .section p { color: #475569; margin-bottom: 12px; }
+  .section ul, .section ol { padding-left: 20px; color: #475569; margin-bottom: 12px; }
+  .section li { margin-bottom: 6px; }
+
+  /* PAGE BREAK */
+  .page-break { page-break-before: always; }
+
+  /* CARDS */
+  .card-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 20px 0; }
+  .card-grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; margin: 20px 0; }
+  .card {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 18px;
+  }
+  .card-icon { font-size: 24px; margin-bottom: 10px; }
+  .card h4 { font-size: 11pt; font-weight: 700; color: #1e293b; margin: 0 0 6px 0; }
+  .card p { font-size: 10pt; color: #64748b; margin: 0; }
+
+  /* ALERT BOXES */
+  .alert {
+    border-radius: 10px;
+    padding: 16px 20px;
+    margin: 16px 0;
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+  }
+  .alert-icon { font-size: 18px; flex-shrink: 0; }
+  .alert-body h4 { font-size: 11pt; font-weight: 700; margin-bottom: 4px; }
+  .alert-body p { font-size: 10pt; margin: 0; }
+  .alert-red { background: #fef2f2; border-left: 4px solid #ef4444; }
+  .alert-red h4 { color: #991b1b; }
+  .alert-red p { color: #7f1d1d; }
+  .alert-yellow { background: #fffbeb; border-left: 4px solid #f59e0b; }
+  .alert-yellow h4 { color: #92400e; }
+  .alert-yellow p { color: #78350f; }
+  .alert-green { background: #f0fdf4; border-left: 4px solid #22c55e; }
+  .alert-green h4 { color: #166534; }
+  .alert-green p { color: #14532d; }
+  .alert-blue { background: #eff6ff; border-left: 4px solid #3b82f6; }
+  .alert-blue h4 { color: #1e40af; }
+  .alert-blue p { color: #1e3a8a; }
+  .alert-purple { background: #faf5ff; border-left: 4px solid #a855f7; }
+  .alert-purple h4 { color: #6b21a8; }
+  .alert-purple p { color: #581c87; }
+
+  /* TABLE */
+  table { width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 10pt; }
+  thead tr { background: #0f172a; color: white; }
+  thead th { padding: 12px 14px; text-align: left; font-weight: 700; font-size: 9pt; text-transform: uppercase; letter-spacing: 0.5px; }
+  tbody tr:nth-child(even) { background: #f8fafc; }
+  tbody tr:hover { background: #f1f5f9; }
+  td { padding: 10px 14px; border-bottom: 1px solid #e2e8f0; color: #334155; vertical-align: top; }
+  td:first-child { font-weight: 600; }
+  .tag {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 999px;
+    font-size: 9pt;
+    font-weight: 600;
+  }
+  .tag-red { background: #fef2f2; color: #dc2626; }
+  .tag-yellow { background: #fffbeb; color: #d97706; }
+  .tag-green { background: #f0fdf4; color: #16a34a; }
+  .tag-blue { background: #eff6ff; color: #2563eb; }
+  .tag-purple { background: #faf5ff; color: #9333ea; }
+  .tag-gray { background: #f1f5f9; color: #475569; }
+
+  /* INSIGHT BOX */
+  .insight-box {
+    background: #0f172a;
+    color: #e2e8f0;
+    border-radius: 14px;
+    padding: 24px 28px;
+    margin: 20px 0;
+    font-family: 'Courier New', monospace;
+    font-size: 10pt;
+    line-height: 1.8;
+  }
+  .insight-box .title {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    font-size: 11pt;
+    font-weight: 700;
+    color: #a5b4fc;
+    margin-bottom: 12px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+  .insight-line { margin: 4px 0; }
+  .insight-line .emoji { margin-right: 8px; }
+  .insight-line .dim { color: #64748b; }
+  .insight-line .bright { color: #86efac; font-weight: 600; }
+  .insight-line .warn { color: #fbbf24; }
+  .insight-line .crit { color: #f87171; }
+  .insight-line .info { color: #93c5fd; }
+  .insight-divider { border-top: 1px solid #1e3a5f; margin: 10px 0; }
+
+  /* ROADMAP */
+  .roadmap-item {
+    display: flex;
+    gap: 20px;
+    margin-bottom: 24px;
+    align-items: flex-start;
+  }
+  .roadmap-phase {
+    min-width: 110px;
+    text-align: center;
+    padding: 8px 14px;
+    border-radius: 8px;
+    font-size: 9pt;
+    font-weight: 700;
+  }
+  .phase-1 { background: #dcfce7; color: #166534; }
+  .phase-2 { background: #dbeafe; color: #1d4ed8; }
+  .phase-3 { background: #ede9fe; color: #7c3aed; }
+  .phase-4 { background: #fef9c3; color: #854d0e; }
+  .roadmap-body { flex: 1; }
+  .roadmap-body h4 { font-size: 12pt; font-weight: 700; color: #1e293b; margin-bottom: 6px; }
+  .roadmap-body p { font-size: 10pt; color: #64748b; margin: 0; }
+  .roadmap-effort {
+    font-size: 9pt;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 999px;
+    background: #f1f5f9;
+    color: #475569;
+    white-space: nowrap;
+    align-self: center;
+  }
+
+  /* PRIORITY MATRIX */
+  .matrix { display: grid; grid-template-columns: 1fr 1fr; gap: 0; border: 2px solid #e2e8f0; border-radius: 12px; overflow: hidden; margin: 20px 0; }
+  .matrix-cell { padding: 20px; border: 1px solid #e2e8f0; }
+  .matrix-cell h4 { font-size: 10pt; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; }
+  .matrix-cell ul { padding-left: 16px; font-size: 10pt; color: #475569; }
+  .matrix-cell li { margin-bottom: 5px; }
+  .mc-a { background: #f0fdf4; } .mc-a h4 { color: #16a34a; }
+  .mc-b { background: #fffbeb; } .mc-b h4 { color: #d97706; }
+  .mc-c { background: #eff6ff; } .mc-c h4 { color: #2563eb; }
+  .mc-d { background: #faf5ff; } .mc-d h4 { color: #9333ea; }
+
+  /* FOOTER */
+  .doc-footer {
+    background: #0f172a;
+    color: #64748b;
+    text-align: center;
+    padding: 32px;
+    font-size: 9pt;
+    margin-top: 60px;
+  }
+  .doc-footer span { color: #94a3b8; }
+
+  /* STATS ROW */
+  .stats-row { display: flex; gap: 16px; margin: 20px 0; flex-wrap: wrap; }
+  .stat-card {
+    flex: 1; min-width: 120px;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 16px;
+    text-align: center;
+  }
+  .stat-card .num { font-size: 26pt; font-weight: 800; color: #6366f1; line-height: 1; }
+  .stat-card .lbl { font-size: 9pt; color: #94a3b8; margin-top: 4px; }
+
+  /* HIGHLIGHT */
+  .highlight { background: linear-gradient(90deg, #6366f1, #a855f7); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+
+  /* CALLOUT */
+  .callout {
+    background: linear-gradient(135deg, #1e3a5f, #312e81);
+    color: white;
+    border-radius: 14px;
+    padding: 28px 32px;
+    margin: 24px 0;
+  }
+  .callout h3 { color: #a5b4fc; font-size: 13pt; margin-bottom: 10px; }
+  .callout p { color: #cbd5e1; font-size: 11pt; line-height: 1.7; }
+
+  /* PRINT */
+  @media print {
+    body { font-size: 10pt; }
+    .cover { min-height: auto; padding: 80px 40px; }
+    .page-break { page-break-before: always; }
+    .toc { page-break-after: always; }
+    .print-btn { display: none !important; }
+  }
+  .print-btn {
+    position: fixed;
+    bottom: 30px; right: 30px;
+    background: #6366f1;
+    color: white;
+    border: none;
+    padding: 14px 24px;
+    border-radius: 999px;
+    font-size: 11pt;
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: 0 4px 20px rgba(99,102,241,0.4);
+    z-index: 999;
+  }
+  .print-btn:hover { background: #4f46e5; }
+</style>
+</head>
+<body>
+
+<button class="print-btn" onclick="window.print()">🖨️ Guardar como PDF</button>
+
+<!-- ═══════════════════════════════════════════════════════════════ PORTADA -->
+<div class="cover">
+  <div class="cover-logo">🏪</div>
+  <div class="cover-badge">Documento Técnico Confidencial</div>
+  <h1>Punto Simple POS</h1>
+  <div class="subtitle">Análisis Estratégico Completo<br>y Hoja de Ruta de Evolución</div>
+  <div class="cover-meta">
+    <div class="cover-meta-item">
+      <div class="label">Versión</div>
+      <div class="value">2.0 — 2026</div>
+    </div>
+    <div class="cover-meta-item">
+      <div class="label">Fecha</div>
+      <div class="value">Mayo 2026</div>
+    </div>
+    <div class="cover-meta-item">
+      <div class="label">Estado</div>
+      <div class="value">Diagnóstico</div>
+    </div>
+    <div class="cover-meta-item">
+      <div class="label">Clasificación</div>
+      <div class="value">Interno</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ CONTENIDO -->
+<div class="content">
+
+<!-- ÍNDICE -->
+<div class="toc">
+  <h2>Índice</h2>
+  <div class="toc-item"><span class="toc-num toc-section">—</span><span class="toc-title toc-section">Resumen Ejecutivo</span></div>
+  <div class="toc-item"><span class="toc-num">1</span><span class="toc-title">Estado Actual del Sistema</span></div>
+  <div class="toc-item"><span class="toc-num">2</span><span class="toc-title">Diagnóstico: Puntos Débiles</span></div>
+  <div class="toc-item"><span class="toc-num">3</span><span class="toc-title">El Motor de Inteligencia de Negocio</span></div>
+  <div class="toc-item"><span class="toc-num">4</span><span class="toc-title">Dashboard Ejecutivo</span></div>
+  <div class="toc-item"><span class="toc-num">5</span><span class="toc-title">El "Consejo del Día" — Killer Feature</span></div>
+  <div class="toc-item"><span class="toc-num">6</span><span class="toc-title">Inteligencia de Stock</span></div>
+  <div class="toc-item"><span class="toc-num">7</span><span class="toc-title">CRM: Inteligencia de Clientes</span></div>
+  <div class="toc-item"><span class="toc-num">8</span><span class="toc-title">Inteligencia de Precios y Márgenes</span></div>
+  <div class="toc-item"><span class="toc-num">9</span><span class="toc-title">Inteligencia de Compras y Proveedores</span></div>
+  <div class="toc-item"><span class="toc-num">10</span><span class="toc-title">Metas, Rentabilidad Real y Punto de Equilibrio</span></div>
+  <div class="toc-item"><span class="toc-num">11</span><span class="toc-title">Mejoras de Usabilidad y Flujos Faltantes</span></div>
+  <div class="toc-item"><span class="toc-num">12</span><span class="toc-title">Exportaciones y Contabilidad</span></div>
+  <div class="toc-item"><span class="toc-num">13</span><span class="toc-title">Hoja de Ruta — Roadmap Priorizado</span></div>
+  <div class="toc-item"><span class="toc-num">14</span><span class="toc-title">Catálogo Completo de Features</span></div>
+  <div class="toc-item"><span class="toc-num">15</span><span class="toc-title">Matriz de Impacto vs Esfuerzo</span></div>
+</div>
+
+<!-- RESUMEN EJECUTIVO -->
+<div class="section page-break">
+  <div class="callout">
+    <h3>⚡ Resumen Ejecutivo</h3>
+    <p>
+      Punto Simple POS es hoy una <strong>caja registradora digital</strong> bien ejecutada:
+      vende, cobra, controla stock y maneja cuentas corrientes. Sin embargo, el sistema
+      <strong>no le habla al dueño</strong>. No avisa cuando algo va mal. No detecta
+      oportunidades. No aprende. Todo el valor de los datos acumulados
+      (ventas históricas, patrones de comportamiento, márgenes reales) está
+      dormido en la base de datos sin ser aprovechado.<br><br>
+      Este documento define la transformación de una herramienta de registro
+      en un <strong>socio inteligente del negocio</strong>: que analiza, aprende,
+      anticipa y recomienda acciones concretas al dueño.
+    </p>
+  </div>
+
+  <div class="stats-row">
+    <div class="stat-card"><div class="num">15</div><div class="lbl">Módulos funcionales actuales</div></div>
+    <div class="stat-card"><div class="num">42</div><div class="lbl">Features nuevas identificadas</div></div>
+    <div class="stat-card"><div class="num">23</div><div class="lbl">Insights automáticos posibles</div></div>
+    <div class="stat-card"><div class="num">4</div><div class="lbl">Fases de implementación</div></div>
+  </div>
+</div>
+
+<!-- SECCIÓN 1 -->
+<div class="section">
+  <div class="section-header">
+    <div class="section-num">1</div>
+    <h2>Estado Actual del Sistema</h2>
+  </div>
+
+  <p>El sistema implementa correctamente las operaciones core de un punto de venta moderno. A continuación el inventario de lo que ya existe y funciona:</p>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Módulo</th>
+        <th>Estado</th>
+        <th>Observaciones</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td>Venta en POS</td><td><span class="tag tag-green">Completo</span></td><td>Scan, búsqueda, descuentos, listas de precio, botones de acceso rápido</td></tr>
+      <tr><td>Pagos combinados</td><td><span class="tag tag-green">Completo</span></td><td>Efectivo, débito, crédito, QR, transferencia, fiado, mixto</td></tr>
+      <tr><td>Sesiones de caja</td><td><span class="tag tag-green">Completo</span></td><td>Multicaja, apertura/cierre, movimientos, saldo esperado</td></tr>
+      <tr><td>Gestión de productos</td><td><span class="tag tag-green">Completo</span></td><td>3 listas de precio, costo, stock, categorías, proveedor</td></tr>
+      <tr><td>Stock y ajustes</td><td><span class="tag tag-green">Completo</span></td><td>Ajuste manual, movimientos, alertas de stock bajo</td></tr>
+      <tr><td>Clientes / CC</td><td><span class="tag tag-green">Completo</span></td><td>Cuenta corriente, historial, pagos parciales, is_ri</td></tr>
+      <tr><td>Proveedores</td><td><span class="tag tag-green">Completo</span></td><td>Órdenes de compra, recepción, auto-órdenes</td></tr>
+      <tr><td>Presupuestos</td><td><span class="tag tag-green">Completo</span></td><td>Con estados, vencimiento, impresión</td></tr>
+      <tr><td>Devoluciones</td><td><span class="tag tag-green">Completo</span></td><td>Por venta, restock automático</td></tr>
+      <tr><td>Promociones</td><td><span class="tag tag-yellow">Básico</span></td><td>Porcentaje por producto, sin condiciones temporales</td></tr>
+      <tr><td>Reportes</td><td><span class="tag tag-yellow">Básico</span></td><td>Resumen, ventas, márgenes, stock — sin comparativas ni tendencias</td></tr>
+      <tr><td>Rubros/Categorías</td><td><span class="tag tag-green">Completo</span></td><td>CRUD con conteo de productos</td></tr>
+      <tr><td>Usuarios y roles</td><td><span class="tag tag-green">Completo</span></td><td>Admin, supervisor, cajero</td></tr>
+      <tr><td>Auditoría</td><td><span class="tag tag-green">Completo</span></td><td>Log de acciones con usuario y detalle</td></tr>
+      <tr><td>Backup</td><td><span class="tag tag-green">Completo</span></td><td>Backup manual de la base SQLite</td></tr>
+      <tr><td>Dashboard / BI</td><td><span class="tag tag-red">Ausente</span></td><td>No existe pantalla de resumen ni motor de insights</td></tr>
+      <tr><td>Metas y proyecciones</td><td><span class="tag tag-red">Ausente</span></td><td>No hay sistema de objetivos</td></tr>
+      <tr><td>CRM inteligente</td><td><span class="tag tag-red">Ausente</span></td><td>Clientes como base de datos, no como relaciones</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- SECCIÓN 2 -->
+<div class="section page-break">
+  <div class="section-header">
+    <div class="section-num">2</div>
+    <h2>Diagnóstico: Puntos Débiles</h2>
+  </div>
+
+  <div class="alert alert-red">
+    <div class="alert-icon">🔴</div>
+    <div class="alert-body">
+      <h4>Reportes: números muertos sin contexto</h4>
+      <p>Los reportes muestran totales planos. No responden la pregunta real del dueño: <em>"¿Estoy creciendo o cayendo?"</em>. Sin comparación período vs período, sin tendencia visual, sin benchmark interno. El dueño tiene que ir a 5 pestañas para entender el día.</p>
+    </div>
+  </div>
+
+  <div class="alert alert-red">
+    <div class="alert-icon">🔴</div>
+    <div class="alert-body">
+      <h4>El sistema no habla primero</h4>
+      <p>Si las ventas cayeron 30% esta semana, el sistema no dice nada. Si un producto se está por agotar, el sistema no avisa hasta que ya llegó al mínimo. El dueño solo recibe información cuando la va a buscar activamente.</p>
+    </div>
+  </div>
+
+  <div class="alert alert-yellow">
+    <div class="alert-icon">🟡</div>
+    <div class="alert-body">
+      <h4>Stock: reactivo, no predictivo</h4>
+      <p>La alerta de stock bajo llega cuando el stock ya llegó al mínimo fijo (que el dueño puso a ojo y nunca actualizó). No se calcula velocidad de venta ni se estima cuántos días de stock quedan al ritmo actual.</p>
+    </div>
+  </div>
+
+  <div class="alert alert-yellow">
+    <div class="alert-icon">🟡</div>
+    <div class="alert-body">
+      <h4>Clientes: base de datos, no relaciones</h4>
+      <p>Solo existe nombre + saldo de deuda. No hay recencia ni frecuencia. No detecta que un cliente habitual dejó de venir. No hay segmentación. Los mejores clientes del negocio son invisibles para el sistema.</p>
+    </div>
+  </div>
+
+  <div class="alert alert-yellow">
+    <div class="alert-icon">🟡</div>
+    <div class="alert-body">
+      <h4>Precios: sin inteligencia</h4>
+      <p>Los precios se actualizan a mano, producto a producto. No hay alerta de margen negativo o insuficiente. No se sabe qué 20% de productos genera el 80% de la ganancia. Actualizar por inflación requiere tocar cientos de productos individualmente.</p>
+    </div>
+  </div>
+
+  <div class="alert alert-blue">
+    <div class="alert-icon">🔵</div>
+    <div class="alert-body">
+      <h4>Flujos operativos lentos</h4>
+      <p>Recepción de mercadería es ajuste manual uno por uno. No hay importación masiva de productos por CSV. No hay conteo de inventario asistido. No hay cierre de día automático con informe.</p>
+    </div>
+  </div>
+</div>
+
+<!-- SECCIÓN 3 -->
+<div class="section page-break">
+  <div class="section-header">
+    <div class="section-num">3</div>
+    <h2>El Motor de Inteligencia de Negocio</h2>
+  </div>
+
+  <p>Todo lo siguiente es calculable <strong>sin ningún dato nuevo</strong>, solo con lo que ya está en la base de datos actual (ventas con timestamps, productos con costos, stock, clientes, movimientos):</p>
+
+  <h3>3.1 Qué se puede calcular hoy mismo</h3>
+
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-icon">🕐</div>
+      <h4>Distribución horaria de ventas</h4>
+      <p>Cada venta tiene timestamp. Se puede mapear exactamente qué horas del día concentran mayor actividad y cuáles están muertas.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">📅</div>
+      <h4>Patrón por día de semana</h4>
+      <p>Promedio de ventas por día de semana + desviación del día actual respecto al histórico de ese mismo día.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">⚡</div>
+      <h4>Velocidad de venta (units/day)</h4>
+      <p>Unidades vendidas promedio por día en los últimos 30 días por producto. Permite calcular días de stock restantes.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">💀</div>
+      <h4>Stock muerto</h4>
+      <p>Productos activos con stock > 0 que no aparecen en ventas en los últimos N días. Dinero inmovilizado sin rotar.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">👥</div>
+      <h4>RFM de clientes</h4>
+      <p>Recencia (días desde última compra), Frecuencia (intervalo entre compras) y Monto (gasto promedio por visita).</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">📈</div>
+      <h4>Tendencias de margen</h4>
+      <p>Ganancia bruta real por período, por categoría y por producto. Identificación de los productos que realmente sostienen el negocio.</p>
+    </div>
+  </div>
+
+  <h3>3.2 Arquitectura del motor de insights</h3>
+
+  <div class="alert alert-blue">
+    <div class="alert-icon">⚙️</div>
+    <div class="alert-body">
+      <h4>Flujo técnico propuesto</h4>
+      <p><strong>Datos DB (SQLite)</strong> → Motor de análisis (comandos Tauri/Rust) → Cola de insights priorizada → UI de notificaciones/dashboard. Cada insight tiene tipo, categoría, mensaje legible, acción directa sugerida y confidence score basado en cantidad de datos históricos disponibles.</p>
+    </div>
+  </div>
+
+  <h3>3.3 Los 23 insights automáticos que el sistema podría generar</h3>
+
+  <table>
+    <thead>
+      <tr><th>#</th><th>Insight</th><th>Categoría</th><th>Urgencia</th><th>Dato origen</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>1</td><td>Producto X se agota en N días al ritmo actual</td><td>Stock</td><td><span class="tag tag-red">Urgente</span></td><td>stock / velocidad</td></tr>
+      <tr><td>2</td><td>Stock muerto: $X inmovilizados en Y productos sin vender</td><td>Stock</td><td><span class="tag tag-yellow">Importante</span></td><td>sale_items + stock</td></tr>
+      <tr><td>3</td><td>Stock mínimo desactualizado en N productos</td><td>Stock</td><td><span class="tag tag-yellow">Importante</span></td><td>velocidad vs min_stock</td></tr>
+      <tr><td>4</td><td>Hoy es [día]. Históricamente tus [días] son X% mejores/peores</td><td>Ventas</td><td><span class="tag tag-green">Consejo</span></td><td>sales + created_at</td></tr>
+      <tr><td>5</td><td>Llevas $X hoy, estás Y% por debajo/encima de tu promedio del [día]</td><td>Ventas</td><td><span class="tag tag-blue">Info</span></td><td>sales diarias</td></tr>
+      <tr><td>6</td><td>Este mes bajó/subió X% vs el mes pasado</td><td>Ventas</td><td><span class="tag tag-yellow">Importante</span></td><td>ventas mensuales</td></tr>
+      <tr><td>7</td><td>Producto X aumentó N% en ventas esta semana — asegurate de tener stock</td><td>Ventas</td><td><span class="tag tag-green">Consejo</span></td><td>sale_items week vs week</td></tr>
+      <tr><td>8</td><td>Producto Y lleva 20+ días sin venderse — considerá una oferta</td><td>Ventas</td><td><span class="tag tag-green">Consejo</span></td><td>sale_items + productos</td></tr>
+      <tr><td>9</td><td>Cliente X no compra hace N días (solía venir cada Y días)</td><td>Clientes</td><td><span class="tag tag-yellow">Importante</span></td><td>sales + client_id</td></tr>
+      <tr><td>10</td><td>N clientes con CC no compraron en 30+ días y deben $X total</td><td>Clientes</td><td><span class="tag tag-red">Urgente</span></td><td>client_balance + recency</td></tr>
+      <tr><td>11</td><td>La deuda de cliente X creció N% este mes</td><td>Clientes</td><td><span class="tag tag-yellow">Importante</span></td><td>client_account</td></tr>
+      <tr><td>12</td><td>Tus 5 clientes más valiosos generan X% de tus ingresos</td><td>Clientes</td><td><span class="tag tag-blue">Info</span></td><td>sales + RFM</td></tr>
+      <tr><td>13</td><td>Producto X tiene margen negativo o inferior al X%</td><td>Precios</td><td><span class="tag tag-red">Urgente</span></td><td>cost_cents vs price_cents</td></tr>
+      <tr><td>14</td><td>Categoría X tiene margen promedio del X%, muy por debajo del resto</td><td>Precios</td><td><span class="tag tag-yellow">Importante</span></td><td>margin_by_category</td></tr>
+      <tr><td>15</td><td>20 productos generan el 80% de tu ganancia bruta</td><td>Precios</td><td><span class="tag tag-blue">Info</span></td><td>Pareto sobre margin</td></tr>
+      <tr><td>16</td><td>Los costos de N productos subieron vs última compra, pero el precio no</td><td>Precios</td><td><span class="tag tag-yellow">Importante</span></td><td>purchase_orders vs price_cents</td></tr>
+      <tr><td>17</td><td>Tu horario pico es H1-H2. Los [días] a esa hora vendés X% más</td><td>Operaciones</td><td><span class="tag tag-green">Consejo</span></td><td>distribución horaria</td></tr>
+      <tr><td>18</td><td>Hora muerta detectada: [H1-H2] tiene muy poca actividad</td><td>Operaciones</td><td><span class="tag tag-green">Consejo</span></td><td>distribución horaria</td></tr>
+      <tr><td>19</td><td>Pagos digitales: X% de tus ventas ya son por QR/transferencia</td><td>Operaciones</td><td><span class="tag tag-blue">Info</span></td><td>payment_method breakdown</td></tr>
+      <tr><td>20</td><td>Vas a necesitar recomprar X, Y, Z en los próximos 7 días</td><td>Compras</td><td><span class="tag tag-yellow">Importante</span></td><td>stock + velocidad</td></tr>
+      <tr><td>21</td><td>Proveedor X demora promedio N días en entregar</td><td>Compras</td><td><span class="tag tag-blue">Info</span></td><td>purchase_orders fechas</td></tr>
+      <tr><td>22</td><td>Si alcanzás $X hoy, cerrás el mes al N% de tu meta</td><td>Metas</td><td><span class="tag tag-green">Consejo</span></td><td>ventas + meta config</td></tr>
+      <tr><td>23</td><td>Producto con vencimiento próximo: X unidades vencen en N días</td><td>Stock</td><td><span class="tag tag-red">Urgente</span></td><td>expires_at</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- SECCIÓN 4 -->
+<div class="section page-break">
+  <div class="section-header">
+    <div class="section-num">4</div>
+    <h2>Dashboard Ejecutivo</h2>
+  </div>
+
+  <p>Hoy cuando el dueño abre la app ve la pantalla de Caja. Debería ver un <strong>dashboard de 30 segundos</strong> que le cuente cómo está el negocio antes de empezar a vender.</p>
+
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-icon">📊</div>
+      <h4>Bloque 1 — Hoy</h4>
+      <p>Ventas acumuladas hasta ahora vs mismo día semana pasada · Cantidad de transacciones · Ticket promedio · Ganancia bruta estimada del día</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">🚨</div>
+      <h4>Bloque 2 — Alertas urgentes</h4>
+      <p>Stock crítico (se agota en menos de 2 días) · Productos próximos a vencer · Cuentas corrientes vencidas o creciendo</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">📉</div>
+      <h4>Bloque 3 — Tendencia semanal</h4>
+      <p>Mini gráfico de ventas de los últimos 7 días · Comparativa vs semana anterior con flecha y porcentaje</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">🏆</div>
+      <h4>Bloque 4 — Top del día</h4>
+      <p>Los 3 productos más vendidos hoy con unidades y monto · El método de pago dominante</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">💡</div>
+      <h4>Bloque 5 — Insights del día</h4>
+      <p>1 a 3 consejos o alertas generadas automáticamente por el motor de análisis, priorizadas por urgencia</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">🎯</div>
+      <h4>Bloque 6 — Progreso hacia meta</h4>
+      <p>Barra de progreso hacia la meta diaria y mensual · Proyección de cierre de mes al ritmo actual</p>
+    </div>
+  </div>
+</div>
+
+<!-- SECCIÓN 5 -->
+<div class="section">
+  <div class="section-header">
+    <div class="section-num">5</div>
+    <h2>El "Consejo del Día" — La Killer Feature</h2>
+  </div>
+
+  <p>La característica más diferenciadora: un módulo que cada mañana presenta un briefing personalizado del negocio. Ejemplo real de cómo se vería:</p>
+
+  <div class="insight-box">
+    <div class="title">☀️ Punto Simple — Buenos días, martes 27 de mayo</div>
+    <div class="insight-divider"></div>
+    <div class="insight-line"><span class="emoji">📊</span> <span class="bright">Ayer: $47.200 en ventas</span> <span class="dim">(+8% vs el lunes pasado)</span></div>
+    <div class="insight-line"><span class="emoji">   </span> <span class="dim">→ 3 productos generaron el 62% de esa cifra</span></div>
+    <div class="insight-line"><span class="emoji">   </span> <span class="dim">→ Mejor hora: 18-19h (23% del día)</span></div>
+    <div class="insight-divider"></div>
+    <div class="insight-line"><span class="emoji">🔴</span> <span class="crit">URGENTE: Coca Cola 2.25L se agota en ~1.5 días</span></div>
+    <div class="insight-line"><span class="emoji">   </span> <span class="dim">→ 12 unidades · velocidad: 8/día · pedí hoy</span></div>
+    <div class="insight-line"><span class="emoji">🟡</span> <span class="warn">Pedro García debe $23.000 hace 45 días sin compras</span></div>
+    <div class="insight-divider"></div>
+    <div class="insight-line"><span class="emoji">💡</span> <span class="info">Es martes. Tus martes promedian $38.000. Hoy llevas $0.</span></div>
+    <div class="insight-line"><span class="emoji">💡</span> <span class="info">Galletitas Surtidas: 60 unidades sin vender en 3 semanas.</span></div>
+    <div class="insight-line"><span class="emoji">   </span> <span class="dim">→ 2x1 o 15% off podría recuperar $12.000 en efectivo</span></div>
+    <div class="insight-line"><span class="emoji">🎯</span> <span class="bright">Si llegás a $42.000 hoy → cerrás el mes al 94% de tu meta</span></div>
+  </div>
+
+  <p>Este resumen se genera automáticamente al abrir la app, sin que el dueño tenga que ir a buscar nada. Toda la información ya existe en la base de datos.</p>
+</div>
+
+<!-- SECCIÓN 6 -->
+<div class="section page-break">
+  <div class="section-header">
+    <div class="section-num">6</div>
+    <h2>Inteligencia de Stock</h2>
+  </div>
+
+  <h3>6.1 De stock mínimo fijo a stock dinámico</h3>
+  <p>El sistema actual usa un número fijo que el dueño ingresó una sola vez. El sistema inteligente calcula automáticamente:</p>
+
+  <div class="card-grid-3">
+    <div class="card">
+      <div class="card-icon">⚡</div>
+      <h4>Velocidad de venta</h4>
+      <p>Unidades promedio vendidas por día en los últimos 30 días. Se actualiza con cada venta.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">📅</div>
+      <h4>Días de stock restantes</h4>
+      <p>Stock actual ÷ velocidad diaria = días hasta agotamiento. Alerta configurable (ej: avisar con 3 días de anticipación).</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">🔄</div>
+      <h4>Stock mínimo sugerido</h4>
+      <p>Lead time del proveedor × velocidad de venta = punto de reorden real y dinámico.</p>
+    </div>
+  </div>
+
+  <h3>6.2 Detección de stock muerto</h3>
+  <div class="alert alert-yellow">
+    <div class="alert-icon">💀</div>
+    <div class="alert-body">
+      <h4>Dinero inmovilizado sin rotar</h4>
+      <p>Productos con stock > 0 que no aparecen en ventas en los últimos 30/60/90 días. El sistema calcula cuánto capital está inmovilizado y sugiere acciones: descuento, liquidación, o devolución al proveedor.</p>
+    </div>
+  </div>
+
+  <h3>6.3 Conteo de inventario asistido</h3>
+  <p>Flujo guiado para conteo físico: el sistema presenta cada producto de a uno, el usuario ingresa la cantidad contada, y al final se genera un informe de diferencias con opción de ajuste masivo.</p>
+
+  <h3>6.4 Recepción de mercadería rápida</h3>
+  <p>En vez de ajustar stock producto por producto, un flujo de "Recibí bultos de Proveedor X" que scannea o selecciona productos y actualiza stock en lote, vinculado automáticamente a la orden de compra correspondiente.</p>
+</div>
+
+<!-- SECCIÓN 7 -->
+<div class="section">
+  <div class="section-header">
+    <div class="section-num">7</div>
+    <h2>CRM: Inteligencia de Clientes</h2>
+  </div>
+
+  <h3>7.1 Análisis RFM automático</h3>
+  <p>Con los datos de ventas existentes el sistema puede clasificar automáticamente a todos los clientes según tres dimensiones:</p>
+
+  <table>
+    <thead>
+      <tr><th>Dimensión</th><th>Qué mide</th><th>Cómo se calcula</th><th>Uso</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Recencia (R)</td><td>Cuándo fue la última compra</td><td>Días desde la última venta con ese client_id</td><td>Detectar clientes ausentes</td></tr>
+      <tr><td>Frecuencia (F)</td><td>Con qué regularidad compra</td><td>Promedio de días entre compras históricas</td><td>Detectar cambio de comportamiento</td></tr>
+      <tr><td>Monto (M)</td><td>Cuánto gasta por visita</td><td>Total histórico ÷ cantidad de visitas</td><td>Segmentar por valor</td></tr>
+    </tbody>
+  </table>
+
+  <h3>7.2 Segmentación automática de clientes</h3>
+
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-icon">⭐</div>
+      <h4>VIP</h4>
+      <p>Alto monto + alta frecuencia + recencia reciente. Los que más importan. Merecen atención especial.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">✅</div>
+      <h4>Habitual</h4>
+      <p>Frecuencia regular, gasto medio. El grueso del negocio. Retenerlos es prioritario.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">⚠️</div>
+      <h4>En riesgo</h4>
+      <p>Habituales que no vienen hace más tiempo del usual. Ventana de retención activa.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">🔴</div>
+      <h4>Deudor crítico</h4>
+      <p>Cuenta corriente alta + sin compras recientes. Doble señal de alerta financiera.</p>
+    </div>
+  </div>
+
+  <h3>7.3 Alertas de clientes habituales ausentes</h3>
+  <div class="alert alert-purple">
+    <div class="alert-icon">👋</div>
+    <div class="alert-body">
+      <h4>Detección de ausencia</h4>
+      <p>Si un cliente venía cada 5 días en promedio y lleva 14 días sin aparecer, el sistema lo marca como "en riesgo" y lo muestra en el dashboard. No requiere ningún dato nuevo — solo el historial de ventas ya existente.</p>
+    </div>
+  </div>
+
+  <h3>7.4 Perfil completo del cliente</h3>
+  <p>Cada cliente podría mostrar: timeline de visitas, productos favoritos (top 5 que más compra), gasto promedio por visita, tendencia de gasto (¿está comprando más o menos?), y saldo de cuenta corriente con evolución mensual.</p>
+</div>
+
+<!-- SECCIÓN 8 -->
+<div class="section page-break">
+  <div class="section-header">
+    <div class="section-num">8</div>
+    <h2>Inteligencia de Precios y Márgenes</h2>
+  </div>
+
+  <h3>8.1 Análisis de Pareto aplicado al negocio</h3>
+  <div class="alert alert-blue">
+    <div class="alert-icon">📊</div>
+    <div class="alert-body">
+      <h4>La regla 80/20 sobre los datos reales</h4>
+      <p>Con los datos actuales (costo, precio, ventas históricas) se puede calcular exactamente qué productos generan el 80% de la ganancia bruta. En la mayoría de los negocios es sorprendente: 15-20 SKUs sostienen el negocio. Los otros 200 productos hacen ruido.</p>
+    </div>
+  </div>
+
+  <h3>8.2 Actualización masiva de precios por inflación</h3>
+  <p>En vez de actualizar producto por producto, un flujo de "Actualización por inflación" que permite:</p>
+  <ul>
+    <li>Aplicar un % de aumento a toda la tienda, una categoría, o un proveedor específico</li>
+    <li>Aplicar porcentajes diferenciados según el margen actual (los de menor margen suben más)</li>
+    <li>Preview completo antes de confirmar: ver exactamente qué cambia y cuánto</li>
+    <li>Registro de cuándo fue la última actualización por categoría</li>
+  </ul>
+
+  <h3>8.3 Alertas de margen en tiempo real</h3>
+  <p>En la pantalla de venta, cuando el cajero aplica un descuento grande, mostrar si el margen cae por debajo del mínimo configurado. El dueño puede configurar un margen mínimo (ej: 15%) y recibir alerta antes de confirmar la venta.</p>
+
+  <h3>8.4 Detección automática de desajuste costo-precio</h3>
+  <p>Cuando llega una orden de compra con precios más altos que la última, el sistema detecta automáticamente los productos donde el costo subió pero el precio de venta no fue actualizado, calculando cuánto margen se perdió.</p>
+
+  <h3>8.5 Rentabilidad por canal de pago</h3>
+  <p>Actualmente no se contabiliza el costo de los medios de pago digitales (comisiones QR, tarjeta de crédito). Agregar configuración de comisiones por método de pago permite calcular la rentabilidad real de cada venta.</p>
+</div>
+
+<!-- SECCIÓN 9 -->
+<div class="section">
+  <div class="section-header">
+    <div class="section-num">9</div>
+    <h2>Inteligencia de Compras y Proveedores</h2>
+  </div>
+
+  <h3>9.1 Lead time real por proveedor</h3>
+  <p>Las órdenes de compra ya tienen fecha de creación. Agregar fecha de recepción permite calcular el tiempo real de entrega de cada proveedor. Con ese dato, el punto de reorden se vuelve preciso: <em>stock mínimo = velocidad × lead time real</em>.</p>
+
+  <h3>9.2 Proyección de compras a 7 días</h3>
+  <div class="alert alert-green">
+    <div class="alert-icon">🛒</div>
+    <div class="alert-body">
+      <h4>Planificación automática de reposición</h4>
+      <p>"Basado en tu velocidad de venta, vas a necesitar recomprar estos productos en los próximos 7 días: Coca Cola (120u), Agua mineral 1.5L (48u), Cigarrillos X (2 cartones). Costo estimado: $87.000." Con botón directo para generar la orden.</p>
+    </div>
+  </div>
+
+  <h3>9.3 Detección de inflación de costos por proveedor</h3>
+  <p>Comparando el precio de costo en cada orden de compra, el sistema puede mostrar la inflación real de cada proveedor mes a mes. "Los costos de Proveedor X subieron 7.3% este mes."</p>
+
+  <h3>9.4 Comparativa de precios entre proveedores</h3>
+  <p>Si el mismo producto puede venir de dos proveedores diferentes, el sistema podría mostrar el historial de precios de cada uno y sugerir cuál conviene en el momento de hacer el pedido.</p>
+</div>
+
+<!-- SECCIÓN 10 -->
+<div class="section page-break">
+  <div class="section-header">
+    <div class="section-num">10</div>
+    <h2>Metas, Rentabilidad Real y Punto de Equilibrio</h2>
+  </div>
+
+  <h3>10.1 Sistema de metas</h3>
+  <p>El dueño configura una vez sus objetivos:</p>
+  <ul>
+    <li><strong>Meta de ventas diaria</strong> (ej: $50.000/día)</li>
+    <li><strong>Meta mensual</strong> (ej: $1.200.000/mes)</li>
+    <li><strong>Margen mínimo por categoría</strong></li>
+  </ul>
+  <p>El dashboard muestra el progreso en tiempo real con barra visual y proyección de cierre de mes al ritmo actual.</p>
+
+  <h3>10.2 Costos operativos y rentabilidad neta</h3>
+  <div class="alert alert-yellow">
+    <div class="alert-icon">💰</div>
+    <div class="alert-body">
+      <h4>El dato más importante que hoy falta</h4>
+      <p>El sistema conoce el costo de los productos pero no los costos operativos (alquiler, salarios, servicios). Sin ese dato, la "ganancia" que muestra el sistema es bruta. Agregar una sección de gastos fijos mensuales permite calcular la ganancia neta real.</p>
+    </div>
+  </div>
+
+  <h3>10.3 Punto de equilibrio diario</h3>
+  <p>Con los costos fijos configurados:</p>
+  <ul>
+    <li><strong>Punto de equilibrio diario</strong> = costos fijos mensuales ÷ días hábiles</li>
+    <li>El dashboard muestra: "Necesitás vender $28.000 hoy para cubrir costos fijos"</li>
+    <li>Y en tiempo real: "Cubriste el punto de equilibrio a las 14:32h ✓"</li>
+  </ul>
+
+  <h3>10.4 Proyección de cierre de mes</h3>
+  <p>Basada en el ritmo actual de ventas, proyectar el cierre del mes con tres escenarios: pesimista (ritmo actual baja 15%), base (ritmo actual), optimista (ritmo actual sube 15%). Comparativa contra el mismo mes del año anterior si hay datos.</p>
+</div>
+
+<!-- SECCIÓN 11 -->
+<div class="section">
+  <div class="section-header">
+    <div class="section-num">11</div>
+    <h2>Mejoras de Usabilidad y Flujos Faltantes</h2>
+  </div>
+
+  <h3>11.1 Importación masiva de productos</h3>
+  <p>Subir un CSV o Excel con miles de productos de una sola vez. Mapeador de columnas visual, validación antes de importar, deduplicación por código de barras. Esencial para negocios que cambian proveedor o actualizan catálogos completos.</p>
+
+  <h3>11.2 Búsqueda difusa (fuzzy search)</h3>
+  <p>Hoy si el usuario escribe "coc" debería encontrar "Coca Cola". Si escribe "coac" también. Implementar búsqueda tolerante a errores tipográficos mejora drásticamente la velocidad en el POS.</p>
+
+  <h3>11.3 Cierre de día automático con informe</h3>
+  <p>Al cerrar la última sesión de caja, generar automáticamente un "Resumen del día" en PDF que incluya: ventas por método de pago, top 5 productos, comparativa vs día anterior, ganancia bruta, movimientos de caja. Listo para guardar o imprimir.</p>
+
+  <h3>11.4 Impresión de etiquetas de precio</h3>
+  <p>Desde la pantalla de productos, seleccionar uno o varios y generar etiquetas de precio (código de barras + nombre + precio) para imprimir en impresora de etiquetas estándar o en hoja A4.</p>
+
+  <h3>11.5 Modo consulta rápida (tablet/móvil)</h3>
+  <p>Vista simplificada en la misma red local, accesible desde el teléfono del dueño para ver ventas del día, alertas urgentes y aprobar órdenes de compra sin estar en la PC.</p>
+
+  <h3>11.6 Combos y packs</h3>
+  <p>Vender X + Y juntos a un precio especial sin necesidad de crear un producto nuevo. El sistema descuenta el stock de cada componente individualmente pero cobra el precio del combo.</p>
+
+  <h3>11.7 Promociones con condiciones temporales</h3>
+  <p>Hoy las promociones son porcentajes simples. Falta: promociones activas solo en ciertos días u horarios, "2da unidad al X%", "a partir de 3 unidades X% de descuento", "llevar A + B por $X".</p>
+</div>
+
+<!-- SECCIÓN 12 -->
+<div class="section page-break">
+  <div class="section-header">
+    <div class="section-num">12</div>
+    <h2>Exportaciones y Contabilidad</h2>
+  </div>
+
+  <p>Hoy no hay forma de sacar los datos en formatos útiles para el contador o para análisis externo:</p>
+
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-icon">📋</div>
+      <h4>Libro IVA Ventas</h4>
+      <p>Para Responsable Inscripto: listado de ventas con IVA discriminado (neto + 21%), agrupado por período fiscal.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">📊</div>
+      <h4>Exportar a Excel/CSV</h4>
+      <p>Ventas, movimientos de stock, cuentas corrientes, órdenes de compra — en formatos estándar que cualquier herramienta puede consumir.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">📄</div>
+      <h4>Informe mensual para contador</h4>
+      <p>PDF listo: ventas totales, costo de ventas, ganancia bruta, desglose por categoría, cuentas por cobrar. Un botón, un archivo.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">🏦</div>
+      <h4>Conciliación de caja</h4>
+      <p>Exportar movimientos del período para conciliar con extracto bancario. Incluye efectivo, transferencias y QR por separado.</p>
+    </div>
+  </div>
+</div>
+
+<!-- SECCIÓN 13 -->
+<div class="section">
+  <div class="section-header">
+    <div class="section-num">13</div>
+    <h2>Hoja de Ruta — Roadmap Priorizado</h2>
+  </div>
+
+  <div class="roadmap-item">
+    <div class="roadmap-phase phase-1">Fase 1<br><small>Quick wins</small></div>
+    <div class="roadmap-body">
+      <h4>Dashboard con comparativa de período + Alertas urgentes</h4>
+      <p>Los datos ya están. Solo falta construir la vista. Comparativa semana vs semana, mes vs mes. Centro de alertas con stock crítico, deuda alta y vencimientos.</p>
+    </div>
+    <div class="roadmap-effort">Bajo</div>
+  </div>
+
+  <div class="roadmap-item">
+    <div class="roadmap-phase phase-1">Fase 1<br><small>Quick wins</small></div>
+    <div class="roadmap-body">
+      <h4>Velocidad de venta y días de stock restantes</h4>
+      <p>Cálculo simple sobre datos existentes. Transforma el stock de reactivo a predictivo de inmediato.</p>
+    </div>
+    <div class="roadmap-effort">Bajo</div>
+  </div>
+
+  <div class="roadmap-item">
+    <div class="roadmap-phase phase-1">Fase 1<br><small>Quick wins</small></div>
+    <div class="roadmap-body">
+      <h4>Exportación CSV / informe mensual PDF</h4>
+      <p>Valor inmediato para el dueño y el contador. Técnicamente simple.</p>
+    </div>
+    <div class="roadmap-effort">Bajo</div>
+  </div>
+
+  <div class="roadmap-item">
+    <div class="roadmap-phase phase-2">Fase 2<br><small>Inteligencia</small></div>
+    <div class="roadmap-body">
+      <h4>Motor de insights + "Consejo del Día"</h4>
+      <p>Los 23 insights automáticos descriptos. Generación del briefing matutino personalizado. La feature más diferenciadora.</p>
+    </div>
+    <div class="roadmap-effort">Medio</div>
+  </div>
+
+  <div class="roadmap-item">
+    <div class="roadmap-phase phase-2">Fase 2<br><small>Inteligencia</small></div>
+    <div class="roadmap-body">
+      <h4>Análisis RFM de clientes + detección de ausencia</h4>
+      <p>Transformar la base de clientes en un CRM mínimo funcional con segmentación automática.</p>
+    </div>
+    <div class="roadmap-effort">Medio</div>
+  </div>
+
+  <div class="roadmap-item">
+    <div class="roadmap-phase phase-2">Fase 2<br><small>Inteligencia</small></div>
+    <div class="roadmap-body">
+      <h4>Alertas de margen + detección de desajuste costo-precio</h4>
+      <p>Proteger la rentabilidad del negocio en tiempo real.</p>
+    </div>
+    <div class="roadmap-effort">Bajo</div>
+  </div>
+
+  <div class="roadmap-item">
+    <div class="roadmap-phase phase-3">Fase 3<br><small>Profundidad</small></div>
+    <div class="roadmap-body">
+      <h4>Sistema de metas + punto de equilibrio + rentabilidad neta</h4>
+      <p>Requiere que el dueño ingrese costos operativos una vez. Transforma el sistema en herramienta financiera real.</p>
+    </div>
+    <div class="roadmap-effort">Medio</div>
+  </div>
+
+  <div class="roadmap-item">
+    <div class="roadmap-phase phase-3">Fase 3<br><small>Profundidad</small></div>
+    <div class="roadmap-body">
+      <h4>Actualización masiva de precios + importación de productos</h4>
+      <p>Eliminar la fricción de gestionar catálogos grandes. Crítico para negocios con muchos SKUs.</p>
+    </div>
+    <div class="roadmap-effort">Medio</div>
+  </div>
+
+  <div class="roadmap-item">
+    <div class="roadmap-phase phase-3">Fase 3<br><small>Profundidad</small></div>
+    <div class="roadmap-body">
+      <h4>Proyección de compras + flujo de recepción de mercadería</h4>
+      <p>Cerrar el ciclo de compras con inteligencia y velocidad operativa.</p>
+    </div>
+    <div class="roadmap-effort">Medio</div>
+  </div>
+
+  <div class="roadmap-item">
+    <div class="roadmap-phase phase-4">Fase 4<br><small>Expansión</small></div>
+    <div class="roadmap-body">
+      <h4>Facturación electrónica AFIP / modo tablet / combos y promociones avanzadas</h4>
+      <p>Features de expansión para cuando el negocio creció y necesita más formalidad o más puntos de venta.</p>
+    </div>
+    <div class="roadmap-effort">Alto</div>
+  </div>
+</div>
+
+<!-- SECCIÓN 14 -->
+<div class="section page-break">
+  <div class="section-header">
+    <div class="section-num">14</div>
+    <h2>Catálogo Completo de Features</h2>
+  </div>
+
+  <table>
+    <thead>
+      <tr><th>#</th><th>Feature</th><th>Módulo</th><th>Estado</th><th>Fase</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>1</td><td>Dashboard ejecutivo con métricas del día</td><td>Dashboard</td><td><span class="tag tag-red">Pendiente</span></td><td><span class="tag tag-green">1</span></td></tr>
+      <tr><td>2</td><td>Comparativa período vs período en reportes</td><td>Reportes</td><td><span class="tag tag-red">Pendiente</span></td><td><span class="tag tag-green">1</span></td></tr>
+      <tr><td>3</td><td>Centro de alertas proactivas</td><td>Dashboard</td><td><span class="tag tag-red">Pendiente</span></td><td><span class="tag tag-green">1</span></td></tr>
+      <tr><td>4</td><td>Velocidad de venta + días de stock restantes</td><td>Stock</td><td><span class="tag tag-red">Pendiente</span></td><td><span class="tag tag-green">1</span></td></tr>
+      <tr><td>5</td><td>Exportación CSV / PDF informe mensual</td><td>Reportes</td><td><span class="tag tag-red">Pendiente</span></td><td><span class="tag tag-green">1</span></td></tr>
+      <tr><td>6</td><td>Motor de 23 insights automáticos</td><td>BI Engine</td><td><span class="tag tag-red">Pendiente</span></td><td><span class="tag tag-blue">2</span></td></tr>
+      <tr><td>7</td><td>Briefing diario / "Consejo del Día"</td><td>BI Engine</td><td><span class="tag tag-red">Pendiente</span></td><td><span class="tag tag-blue">2</span></td></tr>
+      <tr><td>8</td><td>Análisis RFM de clientes</td><td>Clientes</td><td><span class="tag tag-red">Pendiente</span></td><td><span class="tag tag-blue">2</span></td></tr>
+      <tr><td>9</td><td>Segmentación automática de clientes</td><td>Clientes</td><td><span class="tag tag-red">Pendiente</span></td><td><span class="tag tag-blue">2</span></td></tr>
+      <tr><td>10</td><td>Detección de clientes habituales ausentes</td><td>Clientes</td><td><span class="tag tag-red">Pendiente</span></td><td><span class="tag tag-blue">2</span></td></tr>
+      <tr><td>11</td><td>Alerta de margen negativo / insuficiente</td><td>Precios</td><td><span class="tag tag-red">Pendiente</span></td><td><span class="tag tag-blue">2</span></td></tr>
+      <tr><td>12</td><td>Detección costo subió / precio no actualizado</td><td>Precios</td><td><span class="tag tag-red">Pendiente</span></td><td><span class="tag tag-blue">2</span></td></tr>
+      <tr><td>13</td><td>Análisis Pareto 80/20 de rentabilidad</td><td>Reportes</td><td><span class="tag tag-red">Pendiente</span></td><td><span class="tag tag-blue">2</span></td></tr>
+      <tr><td>14</td><td>Detección de stock muerto con costo inmovilizado</td><td>Stock</td><td><span class="tag tag-red">Pendiente</span></td><td><span class="tag tag-blue">2</span></td></tr>
+      <tr><td>15</td><td>Sistema de metas diarias y mensuales</td><td>Dashboard</td><td><span class="tag tag-red">Pendiente</span></td><td><span class="tag tag-purple">3</span></td></tr>
+      <tr><td>16</td><td>Costos operativos y rentabilidad neta</td><td>Finanzas</td><td><span class="tag tag-red">Pendiente</span></td><td><span class="tag tag-purple">3</span></td></tr>
+      <tr><td>17</td><td>Punto de equilibrio diario</td><td>Finanzas</td><td><span class="tag tag-red">Pendiente</span></td><td><span class="tag tag-purple">3</span></td></tr>
+      <tr><td>18</td><td>Proyección de cierre de mes</td><td>Finanzas</td><td><span class="tag tag-red">Pendiente</span></td><td><span class="tag tag-purple">3</span></td></tr>
+      <tr><td>19</td><td>Actualización masiva de precios por inflación</td><td>Productos</td><td><span class="tag tag-red">Pendiente</span></td><td><span class="tag tag-purple">3</span></td></tr>
+      <tr><td>20</td><td>Importación masiva de productos por CSV</td><td>Productos</td><td><span class="tag tag-red">Pendiente</span></td><td><span class="tag tag-purple">3</span></td></tr>
+      <tr><td>21</td><td>Proyección de compras a 7 días</td><td>Proveedores</td><td><span class="tag tag-red">Pendiente</span></td><td><span class="tag tag-purple">3</span></td></tr>
+      <tr><td>22</td><td>Lead time real por proveedor</td><td>Proveedores</td><td><span class="tag tag-red">Pendiente</span></td><td><span class="tag tag-purple">3</span></td></tr>
+      <tr><td>23</td><td>Flujo de recepción de mercadería rápida</td><td>Stock</td><td><span class="tag tag-red">Pendiente</span></td><td><span class="tag tag-purple">3</span></td></tr>
+      <tr><td>24</td><td>Conteo de inventario asistido</td><td>Stock</td><td><span class="tag tag-red">Pendiente</span></td><td><span class="tag tag-purple">3</span></td></tr>
+      <tr><td>25</td><td>Cierre de día automático con PDF</td><td>Caja</td><td><span class="tag tag-red">Pendiente</span></td><td><span class="tag tag-purple">3</span></td></tr>
+      <tr><td>26</td><td>Libro IVA Ventas para RI</td><td>Contabilidad</td><td><span class="tag tag-red">Pendiente</span></td><td><span class="tag tag-purple">3</span></td></tr>
+      <tr><td>27</td><td>Búsqueda difusa con tolerancia a errores</td><td>POS</td><td><span class="tag tag-red">Pendiente</span></td><td><span class="tag tag-purple">3</span></td></tr>
+      <tr><td>28</td><td>Alerta de margen al aplicar descuento en POS</td><td>POS</td><td><span class="tag tag-red">Pendiente</span></td><td><span class="tag tag-purple">3</span></td></tr>
+      <tr><td>29</td><td>Combos y packs con stock por componente</td><td>POS</td><td><span class="tag tag-red">Pendiente</span></td><td><span class="tag tag-yellow">4</span></td></tr>
+      <tr><td>30</td><td>Promociones temporales (horario, día, cantidad)</td><td>Promociones</td><td><span class="tag tag-red">Pendiente</span></td><td><span class="tag tag-yellow">4</span></td></tr>
+      <tr><td>31</td><td>Impresión de etiquetas de precio</td><td>Productos</td><td><span class="tag tag-red">Pendiente</span></td><td><span class="tag tag-yellow">4</span></td></tr>
+      <tr><td>32</td><td>Modo consulta rápida tablet/móvil</td><td>UX</td><td><span class="tag tag-red">Pendiente</span></td><td><span class="tag tag-yellow">4</span></td></tr>
+      <tr><td>33</td><td>Backup automático programado</td><td>Sistema</td><td><span class="tag tag-red">Pendiente</span></td><td><span class="tag tag-yellow">4</span></td></tr>
+      <tr><td>34</td><td>Comisiones por método de pago</td><td>Finanzas</td><td><span class="tag tag-red">Pendiente</span></td><td><span class="tag tag-yellow">4</span></td></tr>
+      <tr><td>35</td><td>Comparativa de precios entre proveedores</td><td>Proveedores</td><td><span class="tag tag-red">Pendiente</span></td><td><span class="tag tag-yellow">4</span></td></tr>
+      <tr><td>36</td><td>Historial de precios de costo por producto</td><td>Productos</td><td><span class="tag tag-red">Pendiente</span></td><td><span class="tag tag-yellow">4</span></td></tr>
+      <tr><td>37</td><td>Rentabilidad por método de pago</td><td>Reportes</td><td><span class="tag tag-red">Pendiente</span></td><td><span class="tag tag-yellow">4</span></td></tr>
+      <tr><td>38</td><td>Notas y recordatorios en clientes</td><td>Clientes</td><td><span class="tag tag-red">Pendiente</span></td><td><span class="tag tag-yellow">4</span></td></tr>
+      <tr><td>39</td><td>Límites de crédito automáticos sugeridos</td><td>Clientes</td><td><span class="tag tag-red">Pendiente</span></td><td><span class="tag tag-yellow">4</span></td></tr>
+      <tr><td>40</td><td>Detección de inflación de costos por proveedor</td><td>Proveedores</td><td><span class="tag tag-red">Pendiente</span></td><td><span class="tag tag-yellow">4</span></td></tr>
+      <tr><td>41</td><td>Facturación electrónica AFIP</td><td>Fiscal</td><td><span class="tag tag-gray">Futuro</span></td><td>—</td></tr>
+      <tr><td>42</td><td>Multi-dispositivo en red local</td><td>Sistema</td><td><span class="tag tag-gray">Futuro</span></td><td>—</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- SECCIÓN 15 -->
+<div class="section page-break">
+  <div class="section-header">
+    <div class="section-num">15</div>
+    <h2>Matriz de Impacto vs Esfuerzo</h2>
+  </div>
+
+  <p>Cada feature clasificada en cuatro cuadrantes para priorización estratégica:</p>
+
+  <div class="matrix">
+    <div class="matrix-cell mc-a">
+      <h4>🟢 Alto impacto · Bajo esfuerzo<br><small>HACER PRIMERO</small></h4>
+      <ul>
+        <li>Dashboard con métricas del día</li>
+        <li>Comparativa período vs período</li>
+        <li>Velocidad de venta + días de stock</li>
+        <li>Alertas proactivas (stock, deuda)</li>
+        <li>Detección de margen negativo</li>
+        <li>Exportación CSV / informe PDF</li>
+        <li>Detección costo sube / precio no</li>
+      </ul>
+    </div>
+    <div class="matrix-cell mc-b">
+      <h4>🟡 Alto impacto · Esfuerzo medio<br><small>PLANIFICAR</small></h4>
+      <ul>
+        <li>Motor de 23 insights automáticos</li>
+        <li>"Consejo del Día" / briefing matutino</li>
+        <li>Análisis RFM + segmentación clientes</li>
+        <li>Sistema de metas y punto de equilibrio</li>
+        <li>Actualización masiva de precios</li>
+        <li>Proyección de compras a 7 días</li>
+        <li>Análisis Pareto 80/20</li>
+      </ul>
+    </div>
+    <div class="matrix-cell mc-c">
+      <h4>🔵 Impacto medio · Bajo esfuerzo<br><small>LLENAR HUECOS</small></h4>
+      <ul>
+        <li>Cierre de día automático PDF</li>
+        <li>Alerta de margen al descontar en POS</li>
+        <li>Libro IVA para RI</li>
+        <li>Impresión de etiquetas</li>
+        <li>Notas en clientes</li>
+        <li>Lead time real por proveedor</li>
+      </ul>
+    </div>
+    <div class="matrix-cell mc-d">
+      <h4>🟣 Impacto medio · Esfuerzo alto<br><small>EVALUAR</small></h4>
+      <ul>
+        <li>Importación masiva CSV</li>
+        <li>Combos y packs</li>
+        <li>Modo tablet / red local</li>
+        <li>Facturación electrónica AFIP</li>
+        <li>Backup automático en nube</li>
+        <li>Búsqueda difusa</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="callout" style="margin-top: 40px;">
+    <h3>🎯 Conclusión estratégica</h3>
+    <p>
+      El sistema tiene una base técnica sólida. La inversión para el próximo ciclo debería concentrarse
+      en las <strong>7 features de alto impacto / bajo esfuerzo</strong> del cuadrante verde: todas son
+      calculables con datos ya existentes y transforman inmediatamente la propuesta de valor del producto.
+      El "Consejo del Día" y el motor de insights son la <strong>diferenciación central</strong>
+      frente a cualquier otro POS del mercado: ningún competidor convierte los datos del
+      negocio en recomendaciones accionables y personalizadas para el dueño.
+    </p>
+  </div>
+</div>
+
+</div><!-- /content -->
+
+<div class="doc-footer">
+  <span>Punto Simple POS · Análisis Estratégico 2026 · Documento Confidencial</span><br>
+  <span style="font-size:8pt; margin-top: 6px; display:block;">Para guardar como PDF: presionar el botón "Guardar como PDF" o usar Ctrl+P → Guardar como PDF</span>
+</div>
+
+</body>
+</html>
