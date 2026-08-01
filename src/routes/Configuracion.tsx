@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
-import type { BackupInfo, ConfigEntry, DeptButton, DeviceConfig, NetworkInfo } from "@/types";
+import type { BackupInfo, ConfigEntry, DeptButton, DeviceConfig, NetworkInfo, PendingSyncOp } from "@/types";
 import { arsStringToCents, centsToARS } from "@/lib/format";
+import { usePosModeStore } from "@/stores/posMode";
 import clsx from "clsx";
 
 type Tab = "general" | "finanzas" | "backup" | "sistema";
@@ -29,6 +30,8 @@ export default function Configuracion() {
   const [connecting, setConnecting] = useState(false);
   const [connectMsg, setConnectMsg] = useState<string | null>(null);
   const [connectError, setConnectError] = useState(false);
+  const [pendingOps, setPendingOps] = useState<PendingSyncOp[]>([]);
+  const syncStatus = usePosModeStore((s) => s.syncStatus);
 
   async function load() {
     const entries = await api.getAllConfig();
@@ -38,7 +41,10 @@ export default function Configuracion() {
     try { setDeptButtons(JSON.parse(map.dept_buttons || "[]")); } catch { setDeptButtons([]); }
     api.listBackups().then(setBackups).catch(console.error);
     api.getNetworkInfo().then(setNetworkInfo).catch(console.error);
-    api.getDeviceConfig().then(setDeviceConfig).catch(console.error);
+    api.getDeviceConfig().then((dc) => {
+      setDeviceConfig(dc);
+      if (dc.mode === "client") api.listPendingSyncOps().then(setPendingOps).catch(console.error);
+    }).catch(console.error);
     api.autoBackupCheck().catch(console.error);
     setLoading(false);
   }
@@ -425,10 +431,33 @@ export default function Configuracion() {
                 <div className="mt-4 pt-4 border-t border-stone-100">
                   <p className="text-xs text-stone-500 mb-2">O conectate como cliente a otra caja que ya sea servidor:</p>
                   {deviceConfig?.mode === "client" ? (
-                    <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg">
-                      <p className="text-xs font-semibold text-emerald-800 mb-1">Conectada como cliente</p>
-                      <p className="font-mono text-sm text-emerald-700">{deviceConfig.serverAddr}</p>
-                      <button onClick={doDisconnectClient} className="text-xs text-emerald-700 underline mt-2">
+                    <div className={clsx(
+                      "p-3 border rounded-lg",
+                      syncStatus === "online" ? "bg-emerald-50 border-emerald-200" :
+                      syncStatus === "syncing" ? "bg-amber-50 border-amber-200" : "bg-red-50 border-red-200"
+                    )}>
+                      <p className={clsx(
+                        "text-xs font-semibold mb-1",
+                        syncStatus === "online" ? "text-emerald-800" : syncStatus === "syncing" ? "text-amber-800" : "text-red-800"
+                      )}>
+                        {syncStatus === "online" ? "Conectada como cliente" : syncStatus === "syncing" ? "Sincronizando…" : "Sin conexión con el servidor"}
+                      </p>
+                      <p className="font-mono text-sm text-stone-700">{deviceConfig.serverAddr}</p>
+                      {syncStatus === "offline" && (
+                        <p className="text-xs text-red-600 mt-1">Esta caja sigue vendiendo con sus propios datos y va a sincronizar sola cuando vuelva la conexión.</p>
+                      )}
+                      {pendingOps.length > 0 && (
+                        <div className="mt-2 pt-2 border-t border-stone-200">
+                          <p className="text-xs font-medium text-stone-600">
+                            {pendingOps.filter((o) => o.status === "pending").length} operación(es) pendiente(s) de sincronizar
+                            {pendingOps.some((o) => o.status === "failed") && `, ${pendingOps.filter((o) => o.status === "failed").length} con error`}
+                          </p>
+                          {pendingOps.filter((o) => o.status === "failed").slice(0, 5).map((o) => (
+                            <p key={o.id} className="text-[11px] text-red-600 mt-0.5">{o.command}: {o.last_error}</p>
+                          ))}
+                        </div>
+                      )}
+                      <button onClick={doDisconnectClient} className="text-xs text-stone-500 underline mt-2">
                         Desconectar (volver a standalone)
                       </button>
                     </div>

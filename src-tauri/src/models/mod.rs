@@ -1042,3 +1042,17 @@ pub struct CatalogImportResult {
     pub error: Option<String>,
 }
 
+// ─── Multicaja: cola de sincronización offline ────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PendingSyncOp {
+    pub id: i64,
+    pub created_at: String,
+    pub command: String,
+    pub payload_json: String,
+    pub status: String, // "pending" | "synced" | "failed"
+    pub attempts: i64,
+    pub last_error: Option<String>,
+    pub synced_at: Option<String>,
+}
+

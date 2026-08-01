@@ -509,6 +509,17 @@ export interface DeviceConfig {
   serverAddr: string | null;
 }
 
+export interface PendingSyncOp {
+  id: number;
+  created_at: string;
+  command: string;
+  payload_json: string;
+  status: "pending" | "synced" | "failed";
+  attempts: number;
+  last_error: string | null;
+  synced_at: string | null;
+}
+
 // ─── Auditoría ───────────────────────────────────────────────────────────────
 export interface AuditEntry {
   id: Id;

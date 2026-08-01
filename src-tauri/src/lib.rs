@@ -2,6 +2,8 @@ mod db;
 mod models;
 mod commands;
 mod rpc;
+mod sync_db;
+mod sync_worker;
 
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
@@ -16,6 +18,9 @@ pub struct AppState {
     pub db_path: PathBuf,
     pub catalog_import_cancelled: Arc<AtomicBool>,
     pub catalog_import_running: Arc<AtomicBool>,
+    pub sync_queue: Arc<Mutex<Connection>>,
+    // "online" | "offline" | "syncing" -- solo relevante en modo cliente.
+    pub sync_status: Arc<Mutex<String>>,
 }
 
 // ─── Servidor HTTP para modo tablet ──────────────────────────────────────────
@@ -379,6 +384,15 @@ pub fn run() {
 
             let db_arc = Arc::new(Mutex::new(conn));
 
+            let sync_queue_conn = sync_db::open_sync_queue(&app_dir)
+                .expect("no se pudo abrir la cola de sincronización");
+            let sync_queue_arc = Arc::new(Mutex::new(sync_queue_conn));
+
+            let device_config = commands::device::read_device_config(&app_dir);
+            let sync_status_arc = Arc::new(Mutex::new(
+                if device_config.mode == "client" { "offline".to_string() } else { "online".to_string() }
+            ));
+
             // Iniciar servidor de red si está habilitado el modo tablet (solo lectura)
             // o el modo servidor de multicaja (lectura + escritura vía RPC)
             {
@@ -388,7 +402,6 @@ pub fn run() {
                         .map(|v| v == "1")
                         .unwrap_or(false)
                 };
-                let device_mode = commands::device::read_device_config(&app_dir).mode;
                 let tablet_port: u16 = {
                     let c = db_arc.lock();
                     c.query_row("SELECT value FROM config WHERE key='tablet_port'", [], |r| r.get::<_, String>(0))
@@ -396,10 +409,23 @@ pub fn run() {
                         .and_then(|s| s.parse().ok())
                         .unwrap_or(7979)
                 };
-                if tablet_enabled || device_mode == "server" {
+                if tablet_enabled || device_config.mode == "server" {
                     let db_clone = Arc::clone(&db_arc);
                     let app_handle = app.handle().clone();
                     start_network_server(app_handle, db_clone, tablet_port);
+                }
+            }
+
+            // En modo cliente: hilo de fondo que vigila la conexión con el
+            // servidor, vacía la cola de operaciones pendientes al reconectar,
+            // y refresca productos/clientes/usuarios/config desde el servidor.
+            if device_config.mode == "client" {
+                if let Some(server_addr) = device_config.server_addr.clone() {
+                    let app_handle = app.handle().clone();
+                    let db_clone = Arc::clone(&db_arc);
+                    let queue_clone = Arc::clone(&sync_queue_arc);
+                    let status_clone = Arc::clone(&sync_status_arc);
+                    sync_worker::run_sync_worker(app_handle, db_clone, queue_clone, status_clone, server_addr);
                 }
             }
 
@@ -408,6 +434,8 @@ pub fn run() {
                 db_path,
                 catalog_import_cancelled: Arc::new(AtomicBool::new(false)),
                 catalog_import_running: Arc::new(AtomicBool::new(false)),
+                sync_queue: sync_queue_arc,
+                sync_status: sync_status_arc,
             });
 
             Ok(())
@@ -558,6 +586,9 @@ pub fn run() {
             commands::device::set_device_config,
             commands::device::bootstrap_from_server,
             commands::device::disconnect_client,
+            sync_worker::get_sync_status,
+            sync_worker::list_pending_sync_ops,
+            sync_worker::enqueue_sync_op,
             // ARCA — Facturación electrónica
             commands::arca::get_arca_config,
             commands::arca::save_arca_config,

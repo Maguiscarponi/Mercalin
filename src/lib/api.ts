@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { rpc } from "@/lib/rpc";
 import type {
-  DeviceConfig,
+  DeviceConfig, PendingSyncOp,
   ArcaConfig, ArcaConfigInput, ElectronicInvoice, InvoiceInput,
   AuditEntry,
   BackupInfo,
@@ -420,6 +420,12 @@ export const api = {
 
   disconnectClient: () =>
     invoke<void>("disconnect_client"),
+
+  getSyncStatus: () =>
+    invoke<"online" | "offline" | "syncing">("get_sync_status"),
+
+  listPendingSyncOps: () =>
+    invoke<PendingSyncOp[]>("list_pending_sync_ops"),
 
   // ─── ARCA / Facturación electrónica ──────────────────────────────────────────
   getArcaConfig: () =>

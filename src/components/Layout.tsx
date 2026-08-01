@@ -12,7 +12,7 @@ import {
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
 import { ensureCatalogImportListeners } from "@/stores/catalogImport";
-import { usePosModeStore } from "@/stores/posMode";
+import { ensureSyncStatusListener, usePosModeStore } from "@/stores/posMode";
 import type { UserRole } from "@/types";
 
 type NavLinkDef = {
@@ -109,6 +109,7 @@ export default function Layout() {
   const logout = useAuthStore((s) => s.logout);
   const userRole = (user?.role as UserRole) ?? "cajero";
   const posModeMode = usePosModeStore((s) => s.mode);
+  const syncStatus = usePosModeStore((s) => s.syncStatus);
   const isFocusMode = FOCUS_MODE_ROUTES.has(location.pathname);
   const focusLabel = NAV_GROUPS.flatMap((g) => g.links).find((l) => l.to === location.pathname)?.label ?? "";
 
@@ -117,7 +118,7 @@ export default function Layout() {
   }, []);
 
   useEffect(() => { ensureCatalogImportListeners(); }, []);
-  useEffect(() => { usePosModeStore.getState().hydrate(); }, []);
+  useEffect(() => { usePosModeStore.getState().hydrate(); ensureSyncStatusListener(); }, []);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -223,6 +224,24 @@ export default function Layout() {
             );
           })}
         </nav>
+
+        {/* Estado de sincronización (solo modo cliente) */}
+        {posModeMode === "client" && (
+          <div className={clsx(
+            "border-t border-zinc-700 flex items-center gap-1.5",
+            sidebarOpen ? "px-3 py-2" : "py-2 justify-center"
+          )}>
+            <span className={clsx(
+              "w-2 h-2 rounded-full shrink-0",
+              syncStatus === "online" ? "bg-emerald-400" : syncStatus === "syncing" ? "bg-amber-400" : "bg-red-500"
+            )} />
+            {sidebarOpen && (
+              <span className="text-[10px] text-zinc-400">
+                {syncStatus === "online" ? "Conectada al servidor" : syncStatus === "syncing" ? "Sincronizando…" : "Sin conexión — vendiendo local"}
+              </span>
+            )}
+          </div>
+        )}
 
         {/* Footer / usuario */}
         <div className={clsx(
