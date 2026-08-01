@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
-import type { BackupInfo, ConfigEntry, DeptButton, NetworkInfo } from "@/types";
+import type { BackupInfo, ConfigEntry, DeptButton, DeviceConfig, NetworkInfo } from "@/types";
 import { arsStringToCents, centsToARS } from "@/lib/format";
 import clsx from "clsx";
 
@@ -24,6 +24,11 @@ export default function Configuracion() {
   const [backing, setBacking] = useState(false);
   const [backupMsg, setBackupMsg] = useState<string | null>(null);
   const [networkInfo, setNetworkInfo] = useState<NetworkInfo | null>(null);
+  const [deviceConfig, setDeviceConfig] = useState<DeviceConfig | null>(null);
+  const [serverAddrInput, setServerAddrInput] = useState("");
+  const [connecting, setConnecting] = useState(false);
+  const [connectMsg, setConnectMsg] = useState<string | null>(null);
+  const [connectError, setConnectError] = useState(false);
 
   async function load() {
     const entries = await api.getAllConfig();
@@ -33,8 +38,39 @@ export default function Configuracion() {
     try { setDeptButtons(JSON.parse(map.dept_buttons || "[]")); } catch { setDeptButtons([]); }
     api.listBackups().then(setBackups).catch(console.error);
     api.getNetworkInfo().then(setNetworkInfo).catch(console.error);
+    api.getDeviceConfig().then(setDeviceConfig).catch(console.error);
     api.autoBackupCheck().catch(console.error);
     setLoading(false);
+  }
+
+  async function setServerMode(enabled: boolean) {
+    const next: DeviceConfig = { mode: enabled ? "server" : "standalone", serverAddr: null };
+    await api.setDeviceConfig(next);
+    setDeviceConfig(next);
+  }
+
+  async function doConnectAsClient() {
+    const addr = serverAddrInput.trim();
+    if (!addr) return;
+    setConnecting(true);
+    setConnectMsg(null);
+    setConnectError(false);
+    try {
+      const msg = await api.bootstrapFromServer(addr);
+      setConnectMsg(msg);
+      setDeviceConfig({ mode: "client", serverAddr: addr });
+    } catch (e) {
+      setConnectError(true);
+      setConnectMsg(e instanceof Error ? e.message : "No se pudo conectar.");
+    } finally {
+      setConnecting(false);
+    }
+  }
+
+  async function doDisconnectClient() {
+    await api.disconnectClient();
+    setDeviceConfig({ mode: "standalone", serverAddr: null });
+    setConnectMsg(null);
   }
 
   useEffect(() => { load(); }, []);
@@ -351,28 +387,68 @@ export default function Configuracion() {
             </section>
 
             <section className="card p-5">
-              <h2 className="font-semibold text-sm mb-1">Modo servidor (multicaja) — en desarrollo</h2>
+              <h2 className="font-semibold text-sm mb-1">Multicaja (varias cajas en la misma red) — en desarrollo</h2>
               <p className="text-xs text-stone-500 mb-4">
-                Preparación para tener varias cajas vendiendo en la misma red. Activalo en la PC que va a
-                actuar de "servidor" (la que guarda los datos reales). Todavía no hay una pantalla para
-                conectar las demás cajas como "cliente" — eso viene en una próxima actualización.
+                Preparación para tener varias cajas vendiendo en la misma red, compartiendo el mismo stock.
+                Por ahora las dos cajas necesitan estar siempre conectadas entre sí (sin wifi, la caja
+                "cliente" todavía no puede seguir vendiendo sola) — eso viene en una próxima actualización.
               </p>
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">Activar modo servidor</span>
-                <label className="relative inline-flex cursor-pointer">
-                  <input type="checkbox" className="sr-only peer" checked={config.pos_mode === "server"}
-                    onChange={(e) => setField("pos_mode", e.target.checked ? "server" : "standalone")} />
-                  <div className="w-9 h-5 bg-stone-200 peer-checked:bg-indigo-500 rounded-full transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:w-4 after:h-4 after:transition-all peer-checked:after:translate-x-4" />
-                </label>
-              </div>
-              {networkInfo?.enabled && config.pos_mode === "server" && (
-                <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-lg mt-3">
-                  <p className="text-xs font-semibold text-indigo-800 mb-1">Servidor multicaja activo</p>
-                  <p className="font-mono text-sm text-indigo-700">http://{networkInfo.ip}:{networkInfo.port}</p>
+              <p className="text-xs font-medium text-stone-600 mb-4">
+                Modo actual de esta caja:{" "}
+                <span className="font-mono">
+                  {deviceConfig?.mode === "server" ? "Servidor" : deviceConfig?.mode === "client" ? "Cliente" : "Standalone (normal)"}
+                </span>
+              </p>
+
+              {deviceConfig?.mode !== "client" && (
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium">Activar modo servidor</span>
+                  <label className="relative inline-flex cursor-pointer">
+                    <input type="checkbox" className="sr-only peer" checked={deviceConfig?.mode === "server"}
+                      onChange={(e) => setServerMode(e.target.checked)} />
+                    <div className="w-9 h-5 bg-stone-200 peer-checked:bg-indigo-500 rounded-full transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:w-4 after:h-4 after:transition-all peer-checked:after:translate-x-4" />
+                  </label>
                 </div>
               )}
-              {config.pos_mode === "server" && !networkInfo?.enabled && (
-                <p className="text-xs text-stone-400 mt-3">Guardá y reiniciá la app para activar el servidor.</p>
+              {networkInfo?.enabled && deviceConfig?.mode === "server" && (
+                <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-lg mt-3">
+                  <p className="text-xs font-semibold text-indigo-800 mb-1">Servidor multicaja activo</p>
+                  <p className="font-mono text-sm text-indigo-700">{networkInfo.ip}:{networkInfo.port}</p>
+                  <p className="text-xs text-indigo-600 mt-1">Usá esa dirección en las cajas "cliente" para conectarlas.</p>
+                </div>
+              )}
+              {deviceConfig?.mode === "server" && !networkInfo?.enabled && (
+                <p className="text-xs text-stone-400 mt-3">Reiniciá la app para activar el servidor.</p>
+              )}
+
+              {deviceConfig?.mode !== "server" && (
+                <div className="mt-4 pt-4 border-t border-stone-100">
+                  <p className="text-xs text-stone-500 mb-2">O conectate como cliente a otra caja que ya sea servidor:</p>
+                  {deviceConfig?.mode === "client" ? (
+                    <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg">
+                      <p className="text-xs font-semibold text-emerald-800 mb-1">Conectada como cliente</p>
+                      <p className="font-mono text-sm text-emerald-700">{deviceConfig.serverAddr}</p>
+                      <button onClick={doDisconnectClient} className="text-xs text-emerald-700 underline mt-2">
+                        Desconectar (volver a standalone)
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex gap-2">
+                      <input
+                        className="input font-mono flex-1"
+                        placeholder="192.168.1.5:7979"
+                        value={serverAddrInput}
+                        onChange={(e) => setServerAddrInput(e.target.value)}
+                      />
+                      <button onClick={doConnectAsClient} disabled={connecting || !serverAddrInput.trim()} className="btn btn-secondary shrink-0">
+                        {connecting ? "Conectando…" : "Conectar"}
+                      </button>
+                    </div>
+                  )}
+                  {connectMsg && (
+                    <p className={clsx("text-xs mt-2", connectError ? "text-red-600" : "text-emerald-600")}>{connectMsg}</p>
+                  )}
+                </div>
               )}
             </section>
 

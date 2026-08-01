@@ -1,5 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
+import { rpc } from "@/lib/rpc";
 import type {
+  DeviceConfig,
   ArcaConfig, ArcaConfigInput, ElectronicInvoice, InvoiceInput,
   AuditEntry,
   BackupInfo,
@@ -30,404 +32,419 @@ import type {
 export const api = {
   // ─── Productos ──────────────────────────────────────────────────────
   findProductByBarcode: (barcode: string) =>
-    invoke<Product | null>("find_product_by_barcode", { barcode }),
+    rpc<Product | null>("find_product_by_barcode", { barcode }),
 
   getProduct: (id: number) =>
-    invoke<Product>("get_product", { id }),
+    rpc<Product>("get_product", { id }),
 
   // includeGhosts: true trae también los precargados sin precio (para activarlos buscando/
   // escaneando en Caja o en "Agregar producto"). El resto del sistema (catálogo real, combos,
   // promociones, reportes, etc.) usa el default false a propósito.
   listProducts: (query = "", includeGhosts = false) =>
-    invoke<Product[]>("list_products", { query, includeGhosts }),
+    rpc<Product[]>("list_products", { query, includeGhosts }),
 
   createProduct: (product: NewProduct) =>
-    invoke<Product>("create_product", { product }),
+    rpc<Product>("create_product", { product }),
 
   updateProduct: (product: Product) =>
-    invoke<Product>("update_product", { product }),
+    rpc<Product>("update_product", { product }),
 
   deleteProduct: (id: number) =>
-    invoke<void>("delete_product", { id }),
+    rpc<void>("delete_product", { id }),
 
   listExpiringProducts: (days = 30) =>
-    invoke<ExpiringProduct[]>("list_expiring_products", { days }),
+    rpc<ExpiringProduct[]>("list_expiring_products", { days }),
 
   listProductVelocities: () =>
-    invoke<ProductVelocity[]>("list_product_velocities"),
+    rpc<ProductVelocity[]>("list_product_velocities"),
 
   listCategories: () =>
-    invoke<CategoryStat[]>("list_categories"),
+    rpc<CategoryStat[]>("list_categories"),
 
   renameCategory: (oldName: string, newName: string) =>
-    invoke<number>("rename_category", { oldName, newName }),
+    rpc<number>("rename_category", { oldName, newName }),
 
   deleteCategory: (name: string) =>
-    invoke<number>("delete_category", { name }),
+    rpc<number>("delete_category", { name }),
 
   // ─── Ventas ─────────────────────────────────────────────────────────
   createSale: (input: SaleInput) =>
-    invoke<Sale>("create_sale", { input }),
+    rpc<Sale>("create_sale", { input }),
 
   getSale: (id: number) =>
-    invoke<Sale>("get_sale", { id }),
+    rpc<Sale>("get_sale", { id }),
 
   getSaleWithItems: (id: number) =>
-    invoke<SaleWithItems>("get_sale_with_items", { id }),
+    rpc<SaleWithItems>("get_sale_with_items", { id }),
 
   listSales: (date: string, limit = 100) =>
-    invoke<Sale[]>("list_sales", { date, limit }),
+    rpc<Sale[]>("list_sales", { date, limit }),
 
   listSalesRange: (fromDate: string, toDate: string, limit = 300) =>
-    invoke<Sale[]>("list_sales_range", { fromDate, toDate, limit }),
+    rpc<Sale[]>("list_sales_range", { fromDate, toDate, limit }),
 
   cancelSale: (id: number) =>
-    invoke<void>("cancel_sale", { id }),
+    rpc<void>("cancel_sale", { id }),
 
   // ─── Reportes ───────────────────────────────────────────────────────
   dailyReport: (date: string) =>
-    invoke<DailyReport>("daily_report", { date }),
+    rpc<DailyReport>("daily_report", { date }),
 
   rangeReport: (fromDate: string, toDate: string) =>
-    invoke<DailyReport>("range_report", { fromDate, toDate }),
+    rpc<DailyReport>("range_report", { fromDate, toDate }),
 
   topProducts: (dateFrom: string, dateTo: string, limit = 10) =>
-    invoke<TopProduct[]>("top_products", { dateFrom, dateTo, limit }),
+    rpc<TopProduct[]>("top_products", { dateFrom, dateTo, limit }),
 
   salesByCategory: (dateFrom: string, dateTo: string) =>
-    invoke<[string, number][]>("sales_by_category", { dateFrom, dateTo }),
+    rpc<[string, number][]>("sales_by_category", { dateFrom, dateTo }),
 
   // ─── Stock ──────────────────────────────────────────────────────────
   adjustStock: (input: StockAdjustInput) =>
-    invoke<void>("adjust_stock", { input }),
+    rpc<void>("adjust_stock", { input }),
 
   listLowStock: () =>
-    invoke<LowStockProduct[]>("list_low_stock"),
+    rpc<LowStockProduct[]>("list_low_stock"),
 
   listStockMovements: (productId: number, limit = 50) =>
-    invoke<StockMovement[]>("list_stock_movements", { productId, limit }),
+    rpc<StockMovement[]>("list_stock_movements", { productId, limit }),
 
   // ─── Caja ───────────────────────────────────────────────────────────
   getCurrentSession: () =>
-    invoke<CashSession | null>("get_current_session"),
+    rpc<CashSession | null>("get_current_session"),
 
   listOpenSessions: () =>
-    invoke<CashSession[]>("list_open_sessions"),
+    rpc<CashSession[]>("list_open_sessions"),
 
   listCashSessions: (limit = 30) =>
-    invoke<CashSession[]>("list_cash_sessions", { limit }),
+    rpc<CashSession[]>("list_cash_sessions", { limit }),
 
   openCashSession: (input: OpenSessionInput) =>
-    invoke<CashSession>("open_cash_session", { input }),
+    rpc<CashSession>("open_cash_session", { input }),
 
   closeCashSession: (input: CloseSessionInput) =>
-    invoke<CashSession>("close_cash_session", { input }),
+    rpc<CashSession>("close_cash_session", { input }),
 
   addCashMovement: (input: NewCashMovement) =>
-    invoke<CashMovement>("add_cash_movement", { input }),
+    rpc<CashMovement>("add_cash_movement", { input }),
 
   listCashMovements: (sessionId: number) =>
-    invoke<CashMovement[]>("list_cash_movements", { sessionId }),
+    rpc<CashMovement[]>("list_cash_movements", { sessionId }),
 
   getSessionSalesTotal: (sessionId: number) =>
-    invoke<number>("get_session_sales_total", { sessionId }),
+    rpc<number>("get_session_sales_total", { sessionId }),
 
   getSessionAllSalesTotal: (sessionId: number) =>
-    invoke<number>("get_session_all_sales_total", { sessionId }),
+    rpc<number>("get_session_all_sales_total", { sessionId }),
 
   // ─── Clientes ───────────────────────────────────────────────────────
   listClients: (query = "") =>
-    invoke<Client[]>("list_clients", { query }),
+    rpc<Client[]>("list_clients", { query }),
 
   getClient: (id: number) =>
-    invoke<Client>("get_client", { id }),
+    rpc<Client>("get_client", { id }),
 
   createClient: (client: NewClient) =>
-    invoke<Client>("create_client", { client }),
+    rpc<Client>("create_client", { client }),
 
   updateClient: (client: Client) =>
-    invoke<Client>("update_client", { client }),
+    rpc<Client>("update_client", { client }),
 
   deleteClient: (id: number) =>
-    invoke<void>("delete_client", { id }),
+    rpc<void>("delete_client", { id }),
 
   clientAccountHistory: (clientId: number) =>
-    invoke<ClientAccountEntry[]>("client_account_history", { clientId }),
+    rpc<ClientAccountEntry[]>("client_account_history", { clientId }),
 
   registerClientPayment: (input: ClientPaymentInput) =>
-    invoke<Client>("register_client_payment", { input }),
+    rpc<Client>("register_client_payment", { input }),
 
   // ─── Proveedores ────────────────────────────────────────────────────
   listSuppliers: () =>
-    invoke<Supplier[]>("list_suppliers"),
+    rpc<Supplier[]>("list_suppliers"),
 
   createSupplier: (supplier: NewSupplier) =>
-    invoke<Supplier>("create_supplier", { supplier }),
+    rpc<Supplier>("create_supplier", { supplier }),
 
   updateSupplier: (supplier: Supplier) =>
-    invoke<Supplier>("update_supplier", { supplier }),
+    rpc<Supplier>("update_supplier", { supplier }),
 
   deleteSupplier: (id: number) =>
-    invoke<void>("delete_supplier", { id }),
+    rpc<void>("delete_supplier", { id }),
 
   createPurchaseOrder: (order: NewPurchaseOrder) =>
-    invoke<PurchaseOrder>("create_purchase_order", { order }),
+    rpc<PurchaseOrder>("create_purchase_order", { order }),
 
   listPurchaseOrders: (supplierId?: number) =>
-    invoke<PurchaseOrder[]>("list_purchase_orders", { supplierId: supplierId ?? null }),
+    rpc<PurchaseOrder[]>("list_purchase_orders", { supplierId: supplierId ?? null }),
 
   receivePurchaseOrder: (orderId: number) =>
-    invoke<PurchaseOrder>("receive_purchase_order", { orderId }),
+    rpc<PurchaseOrder>("receive_purchase_order", { orderId }),
 
   cancelPurchaseOrder: (orderId: number) =>
-    invoke<void>("cancel_purchase_order", { orderId }),
+    rpc<void>("cancel_purchase_order", { orderId }),
 
   getPurchaseItems: (orderId: number) =>
-    invoke<PurchaseOrderItem[]>("get_purchase_items", { orderId }),
+    rpc<PurchaseOrderItem[]>("get_purchase_items", { orderId }),
 
   // ─── Configuración ──────────────────────────────────────────────────
   getConfig: (key: string) =>
-    invoke<string | null>("get_config", { key }),
+    rpc<string | null>("get_config", { key }),
 
   setConfig: (entry: ConfigEntry) =>
-    invoke<void>("set_config", { entry }),
+    rpc<void>("set_config", { entry }),
 
   getAllConfig: () =>
-    invoke<ConfigEntry[]>("get_all_config"),
+    rpc<ConfigEntry[]>("get_all_config"),
 
   setMultipleConfig: (entries: ConfigEntry[]) =>
-    invoke<void>("set_multiple_config", { entries }),
+    rpc<void>("set_multiple_config", { entries }),
 
   // ─── Usuarios ───────────────────────────────────────────────────────────────
   listUsers: () =>
-    invoke<User[]>("list_users"),
+    rpc<User[]>("list_users"),
 
   createUser: (user: NewUser) =>
-    invoke<User>("create_user", { user }),
+    rpc<User>("create_user", { user }),
 
   updateUser: (user: User) =>
-    invoke<User>("update_user", { user }),
+    rpc<User>("update_user", { user }),
 
   changePassword: (userId: number, newPassword: string) =>
-    invoke<void>("change_password", { userId, newPassword }),
+    rpc<void>("change_password", { userId, newPassword }),
 
   deleteUser: (id: number) =>
-    invoke<void>("delete_user", { id }),
+    rpc<void>("delete_user", { id }),
 
   // ─── Reportes adicionales ────────────────────────────────────────────────────
   salesByUser: (fromDate: string, toDate: string) =>
-    invoke<SalesByUser[]>("sales_by_user", { fromDate, toDate }),
+    rpc<SalesByUser[]>("sales_by_user", { fromDate, toDate }),
 
   // ─── Auditoría ──────────────────────────────────────────────────────────────
   listAuditLog: (limit = 200) =>
-    invoke<AuditEntry[]>("list_audit_log", { limit }),
+    rpc<AuditEntry[]>("list_audit_log", { limit }),
 
   // ─── Promociones ────────────────────────────────────────────────────────────
   listPromotions: () =>
-    invoke<Promotion[]>("list_promotions"),
+    rpc<Promotion[]>("list_promotions"),
 
   createPromotion: (promo: NewPromotion) =>
-    invoke<Promotion>("create_promotion", { promo }),
+    rpc<Promotion>("create_promotion", { promo }),
 
   updatePromotion: (promo: Promotion) =>
-    invoke<Promotion>("update_promotion", { promo }),
+    rpc<Promotion>("update_promotion", { promo }),
 
   togglePromotion: (id: number) =>
-    invoke<Promotion>("toggle_promotion", { id }),
+    rpc<Promotion>("toggle_promotion", { id }),
 
   deletePromotion: (id: number) =>
-    invoke<void>("delete_promotion", { id }),
+    rpc<void>("delete_promotion", { id }),
 
   // ─── Devoluciones ───────────────────────────────────────────────────────────
   createReturn: (input: NewReturn) =>
-    invoke<ReturnRecord>("create_return", { input }),
+    rpc<ReturnRecord>("create_return", { input }),
 
   listReturns: (limit = 100) =>
-    invoke<ReturnRecord[]>("list_returns", { limit }),
+    rpc<ReturnRecord[]>("list_returns", { limit }),
 
   getReturnWithItems: (id: number) =>
-    invoke<ReturnWithItems>("get_return_with_items", { id }),
+    rpc<ReturnWithItems>("get_return_with_items", { id }),
 
   // ─── Márgenes ───────────────────────────────────────────────────────────────
   marginReport: (fromDate: string, toDate: string) =>
-    invoke<MarginProduct[]>("margin_report", { fromDate, toDate }),
+    rpc<MarginProduct[]>("margin_report", { fromDate, toDate }),
 
   marginByCategory: (fromDate: string, toDate: string) =>
-    invoke<MarginCategory[]>("margin_by_category", { fromDate, toDate }),
+    rpc<MarginCategory[]>("margin_by_category", { fromDate, toDate }),
 
   reorderBySupplier: () =>
-    invoke<ReorderItem[]>("reorder_by_supplier"),
+    rpc<ReorderItem[]>("reorder_by_supplier"),
 
   // ─── Presupuestos ────────────────────────────────────────────────────────────
   listQuotes: () =>
-    invoke<Quote[]>("list_quotes"),
+    rpc<Quote[]>("list_quotes"),
 
   getQuoteWithItems: (id: number) =>
-    invoke<QuoteWithItems>("get_quote_with_items", { id }),
+    rpc<QuoteWithItems>("get_quote_with_items", { id }),
 
   createQuote: (quote: NewQuote) =>
-    invoke<Quote>("create_quote", { quote }),
+    rpc<Quote>("create_quote", { quote }),
 
   updateQuoteStatus: (id: number, status: string) =>
-    invoke<Quote>("update_quote_status", { id, status }),
+    rpc<Quote>("update_quote_status", { id, status }),
 
   deleteQuote: (id: number) =>
-    invoke<void>("delete_quote", { id }),
+    rpc<void>("delete_quote", { id }),
 
   // ─── Proveedores (auto-orders) ───────────────────────────────────────────────
   generateAutoOrders: () =>
-    invoke<PurchaseOrder[]>("generate_auto_orders"),
+    rpc<PurchaseOrder[]>("generate_auto_orders"),
 
   // ─── Autenticación ───────────────────────────────────────────────────────────
   login: (username: string, password: string) =>
-    invoke<User>("login", { username, password }),
+    rpc<User>("login", { username, password }),
 
   // ─── Backup ─────────────────────────────────────────────────────────────────
   backupDatabase: () =>
-    invoke<string>("backup_database"),
+    rpc<string>("backup_database"),
 
   listBackups: () =>
-    invoke<BackupInfo[]>("list_backups"),
+    rpc<BackupInfo[]>("list_backups"),
 
   deleteBackup: (name: string) =>
-    invoke<void>("delete_backup", { name }),
+    rpc<void>("delete_backup", { name }),
 
   autoBackupCheck: () =>
-    invoke<boolean>("auto_backup_check"),
+    rpc<boolean>("auto_backup_check"),
 
   // ─── Dashboard ──────────────────────────────────────────────────────────────
   getDashboard: () =>
-    invoke<DashboardData>("get_dashboard"),
+    rpc<DashboardData>("get_dashboard"),
 
   // ─── Insights (motor BI) ────────────────────────────────────────────────────
   getInsights: () =>
-    invoke<Insight[]>("get_insights"),
+    rpc<Insight[]>("get_insights"),
 
   // ─── RFM de clientes ────────────────────────────────────────────────────────
   getClientsRfm: () =>
-    invoke<ClientRfm[]>("get_clients_rfm"),
+    rpc<ClientRfm[]>("get_clients_rfm"),
 
   // ─── Stock muerto ────────────────────────────────────────────────────────────
   getDeadStock: (days = 30) =>
-    invoke<DeadStockItem[]>("get_dead_stock", { days }),
+    rpc<DeadStockItem[]>("get_dead_stock", { days }),
 
   // ─── Desajuste costo/precio ──────────────────────────────────────────────────
   getPriceDesync: () =>
-    invoke<PriceSyncAlert[]>("get_price_desync"),
+    rpc<PriceSyncAlert[]>("get_price_desync"),
 
   // ─── Inteligencia de negocio ─────────────────────────────────────────────────
   getMinStockSuggestions: () =>
-    invoke<MinStockSuggestion[]>("get_min_stock_suggestions"),
+    rpc<MinStockSuggestion[]>("get_min_stock_suggestions"),
 
   applyMinStockSuggestions: (suggestions: MinStockSuggestion[]) =>
-    invoke<number>("apply_min_stock_suggestions", { suggestions }),
+    rpc<number>("apply_min_stock_suggestions", { suggestions }),
 
   getPriceImpactProjections: () =>
-    invoke<PriceImpactItem[]>("get_price_impact_projections"),
+    rpc<PriceImpactItem[]>("get_price_impact_projections"),
 
   getProductAffinity: () =>
-    invoke<ProductAffinity[]>("get_product_affinity"),
+    rpc<ProductAffinity[]>("get_product_affinity"),
 
   getSupplierRiskScores: () =>
-    invoke<SupplierRiskScore[]>("get_supplier_risk_scores"),
+    rpc<SupplierRiskScore[]>("get_supplier_risk_scores"),
 
   // ─── Fase 3: Precios masivos ─────────────────────────────────────────────────
   previewBulkUpdatePrices: (input: BulkPriceInput) =>
-    invoke<BulkPricePreviewItem[]>("preview_bulk_update_prices", { input }),
+    rpc<BulkPricePreviewItem[]>("preview_bulk_update_prices", { input }),
 
   applyBulkUpdatePrices: (input: BulkPriceInput) =>
-    invoke<number>("apply_bulk_update_prices", { input }),
+    rpc<number>("apply_bulk_update_prices", { input }),
 
   importProductsCsv: (rows: CsvProductRow[]) =>
-    invoke<ImportResult>("import_products_csv", { rows }),
+    rpc<ImportResult>("import_products_csv", { rows }),
 
   // ─── Fase 3: Proveedores ──────────────────────────────────────────────────────
   getSupplierLeadTimes: () =>
-    invoke<SupplierLeadTime[]>("get_supplier_lead_times"),
+    rpc<SupplierLeadTime[]>("get_supplier_lead_times"),
 
   getPurchaseProjections: () =>
-    invoke<PurchaseProjection[]>("get_purchase_projections"),
+    rpc<PurchaseProjection[]>("get_purchase_projections"),
 
   getSupplierCostInflation: () =>
-    invoke<CostInflationItem[]>("get_supplier_cost_inflation"),
+    rpc<CostInflationItem[]>("get_supplier_cost_inflation"),
 
   // ─── Fase 3: Reportes ────────────────────────────────────────────────────────
   getIvaReport: (fromDate: string, toDate: string) =>
-    invoke<IvaReportItem[]>("get_iva_report", { fromDate, toDate }),
+    rpc<IvaReportItem[]>("get_iva_report", { fromDate, toDate }),
 
   // ─── Fase 3: Inventario ───────────────────────────────────────────────────────
   listInventoryCount: () =>
-    invoke<InventoryCountItem[]>("list_inventory_count"),
+    rpc<InventoryCountItem[]>("list_inventory_count"),
 
   applyInventoryCount: (adjustments: CountAdjustment[]) =>
-    invoke<number>("apply_inventory_count", { adjustments }),
+    rpc<number>("apply_inventory_count", { adjustments }),
 
   // ─── Lotes (FEFO) ────────────────────────────────────────────────────────────
   listProductLots: (productId: number) =>
-    invoke<ProductLot[]>("list_product_lots", { productId }),
+    rpc<ProductLot[]>("list_product_lots", { productId }),
 
   listExpiringLots: (days = 60) =>
-    invoke<ExpiringLot[]>("list_expiring_lots", { days }),
+    rpc<ExpiringLot[]>("list_expiring_lots", { days }),
 
   addProductLot: (input: NewProductLot) =>
-    invoke<ProductLot>("add_product_lot", { input }),
+    rpc<ProductLot>("add_product_lot", { input }),
 
   retireLot: (lotId: number) =>
-    invoke<void>("retire_lot", { lotId }),
+    rpc<void>("retire_lot", { lotId }),
 
   updateLotExpiry: (lotId: number, expiresAt: string | null) =>
-    invoke<void>("update_lot_expiry", { lotId, expiresAt }),
+    rpc<void>("update_lot_expiry", { lotId, expiresAt }),
 
   // ─── Combos y packs ──────────────────────────────────────────────────────────
   listCombos: () =>
-    invoke<ComboWithItems[]>("list_combos"),
+    rpc<ComboWithItems[]>("list_combos"),
 
   listActiveCombos: () =>
-    invoke<ComboWithItems[]>("list_active_combos"),
+    rpc<ComboWithItems[]>("list_active_combos"),
 
   findComboByBarcode: (barcode: string) =>
-    invoke<ComboWithItems | null>("find_combo_by_barcode", { barcode }),
+    rpc<ComboWithItems | null>("find_combo_by_barcode", { barcode }),
 
   createCombo: (input: NewCombo) =>
-    invoke<ComboWithItems>("create_combo", { input }),
+    rpc<ComboWithItems>("create_combo", { input }),
 
   updateCombo: (id: number, input: NewCombo) =>
-    invoke<ComboWithItems>("update_combo", { id, input }),
+    rpc<ComboWithItems>("update_combo", { id, input }),
 
   toggleCombo: (id: number) =>
-    invoke<Combo>("toggle_combo", { id }),
+    rpc<Combo>("toggle_combo", { id }),
 
   deleteCombo: (id: number) =>
-    invoke<void>("delete_combo", { id }),
+    rpc<void>("delete_combo", { id }),
 
   // ─── Fase 4: Red / Tablet ────────────────────────────────────────────────────
   getNetworkInfo: () =>
     invoke<NetworkInfo>("get_network_info"),
 
+  // ─── Multicaja: modo de este equipo ─────────────────────────────────────────
+  // Siempre local (invoke directo) — describen a ESTE equipo, nunca tiene
+  // sentido pedírselos a otra caja por red.
+  getDeviceConfig: () =>
+    invoke<DeviceConfig>("get_device_config"),
+
+  setDeviceConfig: (config: DeviceConfig) =>
+    invoke<void>("set_device_config", { config }),
+
+  bootstrapFromServer: (serverAddr: string) =>
+    invoke<string>("bootstrap_from_server", { serverAddr }),
+
+  disconnectClient: () =>
+    invoke<void>("disconnect_client"),
+
   // ─── ARCA / Facturación electrónica ──────────────────────────────────────────
   getArcaConfig: () =>
-    invoke<ArcaConfig | null>("get_arca_config"),
+    rpc<ArcaConfig | null>("get_arca_config"),
 
   saveArcaConfig: (input: ArcaConfigInput) =>
-    invoke<void>("save_arca_config", { input }),
+    rpc<void>("save_arca_config", { input }),
 
   generateArcaKeypair: () =>
-    invoke<string>("generate_arca_keypair"),
+    rpc<string>("generate_arca_keypair"),
 
   loadArcaCertificate: (certPem: string) =>
-    invoke<string>("load_arca_certificate", { certPem }),
+    rpc<string>("load_arca_certificate", { certPem }),
 
   testArcaConnection: () =>
-    invoke<string>("test_arca_connection"),
+    rpc<string>("test_arca_connection"),
 
   issueElectronicInvoice: (input: InvoiceInput) =>
-    invoke<ElectronicInvoice>("issue_electronic_invoice", { input }),
+    rpc<ElectronicInvoice>("issue_electronic_invoice", { input }),
 
   listElectronicInvoices: (limit = 200) =>
-    invoke<ElectronicInvoice[]>("list_electronic_invoices", { limit }),
+    rpc<ElectronicInvoice[]>("list_electronic_invoices", { limit }),
 
   retryPendingInvoices: () =>
-    invoke<number>("retry_pending_invoices"),
+    rpc<number>("retry_pending_invoices"),
 
   // ─── Import de catálogo público (Open Food Facts) ──────────────────────
   // El comando solo dispara el import en un hilo aparte y vuelve al instante;

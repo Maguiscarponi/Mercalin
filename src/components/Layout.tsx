@@ -12,6 +12,7 @@ import {
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
 import { ensureCatalogImportListeners } from "@/stores/catalogImport";
+import { usePosModeStore } from "@/stores/posMode";
 import type { UserRole } from "@/types";
 
 type NavLinkDef = {
@@ -21,6 +22,9 @@ type NavLinkDef = {
   key: string;
   altKey?: string;
   minRole?: UserRole;
+  // Oculto para una caja en modo "cliente" — pensado para pantallas donde
+  // administrar cuentas desde una caja cualquiera generaría confusión.
+  serverOnly?: boolean;
 };
 
 const ROLE_LEVEL: Record<UserRole, number> = { cajero: 1, supervisor: 2, admin: 3 };
@@ -57,7 +61,7 @@ const NAV_GROUPS: Array<{ label: string; links: NavLinkDef[] }> = [
       { to: "/presupuestos", label: "Presupuestos",     icon: FileText,        key: "",               minRole: "supervisor" },
       { to: "/promociones",  label: "Promociones",      icon: Percent,         key: "",               minRole: "supervisor" },
       { to: "/facturacion",  label: "Facturación",      icon: Receipt,         key: "",               minRole: "supervisor" },
-      { to: "/usuarios",     label: "Usuarios",         icon: Lock,            key: "",               minRole: "admin" },
+      { to: "/usuarios",     label: "Usuarios",         icon: Lock,            key: "",               minRole: "admin", serverOnly: true },
     ],
   },
   {
@@ -104,6 +108,7 @@ export default function Layout() {
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
   const userRole = (user?.role as UserRole) ?? "cajero";
+  const posModeMode = usePosModeStore((s) => s.mode);
   const isFocusMode = FOCUS_MODE_ROUTES.has(location.pathname);
   const focusLabel = NAV_GROUPS.flatMap((g) => g.links).find((l) => l.to === location.pathname)?.label ?? "";
 
@@ -112,6 +117,7 @@ export default function Layout() {
   }, []);
 
   useEffect(() => { ensureCatalogImportListeners(); }, []);
+  useEffect(() => { usePosModeStore.getState().hydrate(); }, []);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -172,7 +178,7 @@ export default function Layout() {
         {/* Links */}
         <nav className="flex-1 py-3 overflow-y-auto overflow-x-hidden">
           {NAV_GROUPS.map((group) => {
-            const links = group.links.filter((l) => hasAccess(userRole, l.minRole));
+            const links = group.links.filter((l) => hasAccess(userRole, l.minRole) && (!l.serverOnly || posModeMode !== "client"));
             if (!links.length) return null;
             return (
               <div key={group.label} className="mb-1">

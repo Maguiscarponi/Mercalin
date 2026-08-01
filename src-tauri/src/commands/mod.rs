@@ -5,6 +5,7 @@ pub mod caja;
 pub mod catalog_import;
 pub mod combos;
 pub mod dashboard;
+pub mod device;
 pub mod insights;
 pub mod clients;
 pub mod config;

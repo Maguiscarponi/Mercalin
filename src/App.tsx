@@ -21,6 +21,16 @@ import Inventario from "./routes/Inventario";
 import Combos from "./routes/Combos";
 import Facturacion from "./routes/Facturacion";
 import { useAuthStore } from "./stores/auth";
+import { usePosModeStore } from "./stores/posMode";
+
+// Cubre el acceso directo por URL a pantallas que el nav ya oculta en modo
+// cliente (ver `serverOnly` en Layout.tsx) — ocultar el link del menú no
+// alcanza si alguien escribe la ruta a mano.
+function RequireServerMode({ children }: { children: React.ReactNode }) {
+  const mode = usePosModeStore((s) => s.mode);
+  if (mode === "client") return <Navigate to="/dashboard" replace />;
+  return <>{children}</>;
+}
 
 export default function App() {
   const user = useAuthStore((s) => s.user);
@@ -40,7 +50,7 @@ export default function App() {
         <Route path="/vencimientos" element={<Vencimientos />} />
         <Route path="/etiquetas" element={<Etiquetas />} />
         <Route path="/promociones" element={<Promociones />} />
-        <Route path="/usuarios" element={<Usuarios />} />
+        <Route path="/usuarios" element={<RequireServerMode><Usuarios /></RequireServerMode>} />
         <Route path="/reportes" element={<Reportes />} />
         <Route path="/devoluciones" element={<Devoluciones />} />
         <Route path="/rubros" element={<Rubros />} />

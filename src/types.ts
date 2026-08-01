@@ -502,6 +502,13 @@ export interface NetworkInfo {
   enabled: boolean;
 }
 
+export type PosMode = "standalone" | "server" | "client";
+
+export interface DeviceConfig {
+  mode: PosMode;
+  serverAddr: string | null;
+}
+
 // ─── Auditoría ───────────────────────────────────────────────────────────────
 export interface AuditEntry {
   id: Id;

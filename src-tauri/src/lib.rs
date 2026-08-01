@@ -154,6 +154,32 @@ fn handle_network_request(
     let url = request.url().to_string();
     let method = request.method().as_str().to_uppercase();
 
+    // Snapshot completo de la base, usado por una caja "cliente" nueva para
+    // clonar los datos del servidor antes de arrancar en modo cliente. Se
+    // maneja aparte porque la respuesta es binaria, no JSON/texto como el
+    // resto de las rutas de acá abajo.
+    if url == "/api/db_snapshot" && method == "GET" {
+        let tmp_path = std::env::temp_dir().join(format!("kiosco_snapshot_{}.db", std::process::id()));
+        let vacuum_ok = {
+            let conn = db.lock();
+            conn.execute("VACUUM INTO ?1", rusqlite::params![tmp_path.to_string_lossy()]).is_ok()
+        };
+        let bytes = if vacuum_ok { std::fs::read(&tmp_path).ok() } else { None };
+        let _ = std::fs::remove_file(&tmp_path);
+        let response = match bytes {
+            Some(data) => tiny_http::Response::from_data(data)
+                .with_status_code(200)
+                .with_header(tiny_http::Header::from_bytes("Content-Type", "application/octet-stream").unwrap())
+                .with_header(tiny_http::Header::from_bytes("Access-Control-Allow-Origin", "*").unwrap())
+                .boxed(),
+            None => tiny_http::Response::from_string("Error generando la copia de la base")
+                .with_status_code(500)
+                .boxed(),
+        };
+        let _ = request.respond(response);
+        return;
+    }
+
     let (status, content_type, body) = if url == "/" || url.is_empty() {
             let html = tablet_html(local_ip, port);
             (200, "text/html; charset=utf-8", html)
@@ -287,23 +313,25 @@ struct NetworkInfo {
 
 #[tauri::command]
 fn get_network_info(state: tauri::State<AppState>) -> NetworkInfo {
-    let (tablet_enabled, pos_mode, port) = {
+    let (tablet_enabled, port) = {
         let conn = state.db.lock();
         let tablet_enabled: String = conn.query_row(
             "SELECT value FROM config WHERE key='tablet_mode_enabled'", [], |r| r.get(0)
         ).unwrap_or_else(|_| "0".to_string());
-        let pos_mode: String = conn.query_row(
-            "SELECT value FROM config WHERE key='pos_mode'", [], |r| r.get(0)
-        ).unwrap_or_else(|_| "standalone".to_string());
         let port: String = conn.query_row(
             "SELECT value FROM config WHERE key='tablet_port'", [], |r| r.get(0)
         ).unwrap_or_else(|_| "7979".to_string());
-        (tablet_enabled, pos_mode, port)
+        (tablet_enabled, port)
     };
+    let device_mode = state
+        .db_path
+        .parent()
+        .map(|dir| commands::device::read_device_config(dir).mode)
+        .unwrap_or_else(|| "standalone".to_string());
     NetworkInfo {
         ip: get_local_ip(),
         port,
-        enabled: tablet_enabled == "1" || pos_mode == "server",
+        enabled: tablet_enabled == "1" || device_mode == "server",
     }
 }
 
@@ -321,6 +349,29 @@ pub fn run() {
             std::fs::create_dir_all(&app_dir).ok();
 
             let db_path = app_dir.join("kiosco.db");
+
+            // Si esta caja recién se conectó como "cliente" (ver
+            // `commands::device::bootstrap_from_server`), hay una copia de la
+            // base del servidor esperando en un archivo de staging. La
+            // canjeamos acá, antes de abrir la conexión real, para no tener
+            // que reemplazar un archivo mientras ya está en uso.
+            let pending_bootstrap = app_dir.join("kiosco.db.pending-client-bootstrap");
+            if pending_bootstrap.exists() {
+                if db_path.exists() {
+                    let backup_path = app_dir.join(format!(
+                        "kiosco.db.pre-cliente-{}.bak",
+                        chrono::Utc::now().format("%Y%m%d%H%M%S")
+                    ));
+                    if let Err(e) = std::fs::rename(&db_path, &backup_path) {
+                        eprintln!("[punto-simple] No se pudo respaldar la base anterior: {}", e);
+                    }
+                }
+                match std::fs::rename(&pending_bootstrap, &db_path) {
+                    Ok(()) => println!("[punto-simple] Base reemplazada por la copia del servidor (modo cliente)."),
+                    Err(e) => eprintln!("[punto-simple] No se pudo aplicar la copia del servidor: {}", e),
+                }
+            }
+
             println!("[punto-simple] DB en: {}", db_path.display());
 
             let conn = db::open_and_migrate(&db_path)
@@ -337,11 +388,7 @@ pub fn run() {
                         .map(|v| v == "1")
                         .unwrap_or(false)
                 };
-                let pos_mode: String = {
-                    let c = db_arc.lock();
-                    c.query_row("SELECT value FROM config WHERE key='pos_mode'", [], |r| r.get::<_, String>(0))
-                        .unwrap_or_else(|_| "standalone".to_string())
-                };
+                let device_mode = commands::device::read_device_config(&app_dir).mode;
                 let tablet_port: u16 = {
                     let c = db_arc.lock();
                     c.query_row("SELECT value FROM config WHERE key='tablet_port'", [], |r| r.get::<_, String>(0))
@@ -349,7 +396,7 @@ pub fn run() {
                         .and_then(|s| s.parse().ok())
                         .unwrap_or(7979)
                 };
-                if tablet_enabled || pos_mode == "server" {
+                if tablet_enabled || device_mode == "server" {
                     let db_clone = Arc::clone(&db_arc);
                     let app_handle = app.handle().clone();
                     start_network_server(app_handle, db_clone, tablet_port);
@@ -506,6 +553,11 @@ pub fn run() {
             commands::stock::apply_inventory_count,
             // Fase 4 — Red
             get_network_info,
+            // Multicaja — modo servidor/cliente
+            commands::device::get_device_config,
+            commands::device::set_device_config,
+            commands::device::bootstrap_from_server,
+            commands::device::disconnect_client,
             // ARCA — Facturación electrónica
             commands::arca::get_arca_config,
             commands::arca::save_arca_config,
