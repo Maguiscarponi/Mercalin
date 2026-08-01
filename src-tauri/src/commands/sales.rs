@@ -29,6 +29,57 @@ pub fn create_sale(input: SaleInput, state: State<AppState>) -> CmdResult<Sale> 
     let mut conn = state.db.lock();
     let tx = conn.transaction().map_err(err)?;
 
+    // Validar stock disponible antes de tocar nada, para no descontar la mitad
+    // de un carrito grande si un ítem del final no tiene stock suficiente.
+    for item in &input.items {
+        if let Some(cid) = item.combo_id {
+            let components: Vec<(i64, f64)> = {
+                let mut s = tx
+                    .prepare("SELECT product_id, qty FROM combo_items WHERE combo_id=?1")
+                    .map_err(err)?;
+                let rows: Vec<(i64, f64)> = s
+                    .query_map(params![cid], |r| {
+                        Ok((r.get::<_, i64>(0)?, r.get::<_, f64>(1)?))
+                    })
+                    .map_err(err)?
+                    .filter_map(|r| r.ok())
+                    .collect();
+                rows
+            };
+            for (pid, component_qty) in components {
+                let needed = (component_qty * item.qty) as i64;
+                let (stock, name): (i64, String) = tx
+                    .query_row(
+                        "SELECT stock, name FROM products WHERE id=?1",
+                        params![pid],
+                        |r| Ok((r.get(0)?, r.get(1)?)),
+                    )
+                    .map_err(err)?;
+                if stock < needed {
+                    return Err(format!(
+                        "No hay stock suficiente de \"{}\" (quedan {}, se necesitan {})",
+                        name, stock, needed
+                    ));
+                }
+            }
+        } else if let Some(pid) = item.product_id {
+            let needed = item.qty as i64;
+            let (stock, name): (i64, String) = tx
+                .query_row(
+                    "SELECT stock, name FROM products WHERE id=?1",
+                    params![pid],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .map_err(err)?;
+            if stock < needed {
+                return Err(format!(
+                    "No hay stock suficiente de \"{}\" (quedan {}, se pidieron {})",
+                    name, stock, needed
+                ));
+            }
+        }
+    }
+
     let subtotal_cents: i64 = input
         .items
         .iter()

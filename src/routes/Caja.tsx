@@ -40,6 +40,12 @@ export default function Caja() {
   // recalcular el descuento (2x1/3x2/mínimo) cada vez que cambia la cantidad.
   const promoProductsRef = useRef<Record<string, Product>>({});
 
+  // Ítem del carrito que pide más cantidad de la que hay en stock — bloquea el cobro.
+  const stockIssueItem = cart.items.find(
+    (item) => item.product_id && stockMap[item.product_id] !== undefined && item.qty > stockMap[item.product_id]
+  );
+  const hasStockIssue = stockIssueItem !== undefined;
+
   useEffect(() => {
     Promise.all([
       api.listOpenSessions(),
@@ -73,13 +79,13 @@ export default function Caja() {
         const isOtherInput = (target.tagName === "INPUT" || target.tagName === "TEXTAREA") && target !== scanRef.current;
         if (!isOtherInput && !payOpen && !showPriceCheck && !showClientSearch && !pendingPriceProduct) {
           const scanEmpty = !(scanRef.current?.value.trim());
-          if (scanEmpty && cart.items.length > 0 && session !== null) {
+          if (scanEmpty && cart.items.length > 0 && session !== null && !hasStockIssue) {
             e.preventDefault();
             setPayOpen(true);
           }
         }
       }
-      if (e.key === "F2" && cart.items.length > 0 && session !== null && !payOpen && !showPriceCheck && !pendingPriceProduct) {
+      if (e.key === "F2" && cart.items.length > 0 && session !== null && !hasStockIssue && !payOpen && !showPriceCheck && !pendingPriceProduct) {
         e.preventDefault(); setPayOpen(true);
       }
       if (e.key === "F3" && !payOpen && !pendingPriceProduct) {
@@ -93,7 +99,7 @@ export default function Caja() {
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [cart.items.length, session, payOpen, showPriceCheck, showClientSearch, pendingPriceProduct]);
+  }, [cart.items.length, session, payOpen, showPriceCheck, showClientSearch, pendingPriceProduct, hasStockIssue]);
 
   function handleSearchChange(value: string) {
     setScanValue(value);
@@ -655,10 +661,21 @@ ${itemsHtml}
             </div>
           )}
 
+          {/* Sin stock suficiente — bloquea el cobro */}
+          {stockIssueItem && (
+            <div className="px-4 py-2 bg-red-50 border border-red-300 rounded-lg text-xs text-red-800 flex items-center gap-2 shrink-0">
+              <span className="font-bold">⚠</span>
+              <span>
+                No hay stock suficiente de <strong>{stockIssueItem.name}</strong> (quedan{" "}
+                {stockIssueItem.product_id ? stockMap[stockIssueItem.product_id] : 0}). Bajá la cantidad para poder cobrar.
+              </span>
+            </div>
+          )}
+
           {/* COBRAR — botón dominante */}
           <button
             onClick={() => setPayOpen(true)}
-            disabled={cart.items.length === 0 || session === null}
+            disabled={cart.items.length === 0 || session === null || hasStockIssue}
             className="w-full rounded-xl bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-black text-2xl disabled:opacity-35 disabled:cursor-not-allowed flex items-center justify-center gap-3 transition-colors shrink-0"
             style={{ height: "80px" }}
           >

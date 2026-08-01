@@ -146,7 +146,8 @@ export default function PaymentModal({ totalCents, sessionId, isRi, onClose, onC
       setCompletedSale(sw);
     } catch (err) {
       console.error("Error al guardar la venta:", err);
-      alert("Error al guardar la venta. Revisá la consola.");
+      const message = typeof err === "string" ? err : err instanceof Error ? err.message : "Error al guardar la venta.";
+      alert(message);
     } finally {
       setSubmitting(false);
     }
