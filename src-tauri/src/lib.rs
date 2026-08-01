@@ -1,13 +1,15 @@
 mod db;
 mod models;
 mod commands;
+mod rpc;
 
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use parking_lot::Mutex;
 use rusqlite::Connection;
-use tauri::Manager;
+use serde_json::Value;
+use tauri::{AppHandle, Manager};
 
 pub struct AppState {
     pub db: Arc<Mutex<Connection>>,
@@ -115,21 +117,70 @@ setInterval(loadAll,60000);
 </html>"#, ip=ip, port=port)
 }
 
-fn run_tablet_server(db: Arc<Mutex<Connection>>, port: u16) {
+// Levanta el servidor de red (modo tablet de solo lectura + RPC de multicaja)
+// en un pool chico de hilos worker que comparten el mismo `tiny_http::Server`.
+// No acelera el acceso a la base (ya serializado por `Mutex<Connection>`), pero
+// evita que una caja con red lenta bloquee a las demás mientras arma el request.
+// La función no bloquea: spawnea los workers y vuelve enseguida.
+fn start_network_server(app: AppHandle, db: Arc<Mutex<Connection>>, port: u16) {
     let server = match tiny_http::Server::http(format!("0.0.0.0:{}", port)) {
-        Ok(s) => s,
-        Err(e) => { eprintln!("[tablet] Error al iniciar servidor en puerto {}: {}", port, e); return; }
+        Ok(s) => Arc::new(s),
+        Err(e) => { eprintln!("[network] Error al iniciar servidor en puerto {}: {}", port, e); return; }
     };
     let local_ip = get_local_ip();
-    println!("[tablet] Servidor tablet en http://{}:{}", local_ip, port);
+    println!("[network] Servidor de red en http://{}:{}", local_ip, port);
 
-    for request in server.incoming_requests() {
-        let url = request.url().to_string();
-        let method = request.method().as_str().to_uppercase();
+    const WORKERS: usize = 4;
+    for _ in 0..WORKERS {
+        let server = Arc::clone(&server);
+        let db = Arc::clone(&db);
+        let app = app.clone();
+        let local_ip = local_ip.clone();
+        std::thread::spawn(move || {
+            for request in server.incoming_requests() {
+                handle_network_request(&app, &db, &local_ip, port, request);
+            }
+        });
+    }
+}
 
-        let (status, content_type, body) = if url == "/" || url.is_empty() {
-            let html = tablet_html(&local_ip, port);
+fn handle_network_request(
+    app: &AppHandle,
+    db: &Arc<Mutex<Connection>>,
+    local_ip: &str,
+    port: u16,
+    mut request: tiny_http::Request,
+) {
+    let url = request.url().to_string();
+    let method = request.method().as_str().to_uppercase();
+
+    let (status, content_type, body) = if url == "/" || url.is_empty() {
+            let html = tablet_html(local_ip, port);
             (200, "text/html; charset=utf-8", html)
+        } else if url == "/api/health" && method == "GET" {
+            (200, "application/json", r#"{"ok":true}"#.to_string())
+        } else if let Some(command) = url.strip_prefix("/api/rpc/").filter(|_| method == "POST") {
+            let mut content = String::new();
+            let _ = request.as_reader().read_to_string(&mut content);
+            let parsed_result: Result<Value, String> = if content.trim().is_empty() {
+                Ok(serde_json::json!({}))
+            } else {
+                serde_json::from_str(&content).map_err(|e| format!("JSON inválido: {}", e))
+            };
+            match parsed_result {
+                Ok(parsed) => {
+                    let result = crate::rpc::dispatch(app, command, parsed);
+                    let body = match result {
+                        Ok(data) => serde_json::json!({"ok": true, "data": data}).to_string(),
+                        Err(e) => serde_json::json!({"ok": false, "error": e}).to_string(),
+                    };
+                    (200, "application/json", body)
+                }
+                Err(e) => {
+                    let body = serde_json::json!({"ok": false, "error": e}).to_string();
+                    (400, "application/json", body)
+                }
+            }
         } else if url == "/api/today" && method == "GET" {
             let body = {
                 let conn = db.lock();
@@ -219,13 +270,12 @@ fn run_tablet_server(db: Arc<Mutex<Connection>>, port: u16) {
             (404, "text/plain", "Not found".to_string())
         };
 
-        let response = tiny_http::Response::from_string(body)
-            .with_status_code(status)
-            .with_header(tiny_http::Header::from_bytes("Content-Type", content_type).unwrap())
-            .with_header(tiny_http::Header::from_bytes("Access-Control-Allow-Origin", "*").unwrap());
+    let response = tiny_http::Response::from_string(body)
+        .with_status_code(status)
+        .with_header(tiny_http::Header::from_bytes("Content-Type", content_type).unwrap())
+        .with_header(tiny_http::Header::from_bytes("Access-Control-Allow-Origin", "*").unwrap());
 
-        let _ = request.respond(response);
-    }
+    let _ = request.respond(response);
 }
 
 #[derive(serde::Serialize)]
@@ -237,20 +287,23 @@ struct NetworkInfo {
 
 #[tauri::command]
 fn get_network_info(state: tauri::State<AppState>) -> NetworkInfo {
-    let (enabled, port) = {
+    let (tablet_enabled, pos_mode, port) = {
         let conn = state.db.lock();
-        let enabled: String = conn.query_row(
+        let tablet_enabled: String = conn.query_row(
             "SELECT value FROM config WHERE key='tablet_mode_enabled'", [], |r| r.get(0)
         ).unwrap_or_else(|_| "0".to_string());
+        let pos_mode: String = conn.query_row(
+            "SELECT value FROM config WHERE key='pos_mode'", [], |r| r.get(0)
+        ).unwrap_or_else(|_| "standalone".to_string());
         let port: String = conn.query_row(
             "SELECT value FROM config WHERE key='tablet_port'", [], |r| r.get(0)
         ).unwrap_or_else(|_| "7979".to_string());
-        (enabled, port)
+        (tablet_enabled, pos_mode, port)
     };
     NetworkInfo {
         ip: get_local_ip(),
         port,
-        enabled: enabled == "1",
+        enabled: tablet_enabled == "1" || pos_mode == "server",
     }
 }
 
@@ -275,13 +328,19 @@ pub fn run() {
 
             let db_arc = Arc::new(Mutex::new(conn));
 
-            // Iniciar servidor tablet si está habilitado
+            // Iniciar servidor de red si está habilitado el modo tablet (solo lectura)
+            // o el modo servidor de multicaja (lectura + escritura vía RPC)
             {
                 let tablet_enabled: bool = {
                     let c = db_arc.lock();
                     c.query_row("SELECT value FROM config WHERE key='tablet_mode_enabled'", [], |r| r.get::<_, String>(0))
                         .map(|v| v == "1")
                         .unwrap_or(false)
+                };
+                let pos_mode: String = {
+                    let c = db_arc.lock();
+                    c.query_row("SELECT value FROM config WHERE key='pos_mode'", [], |r| r.get::<_, String>(0))
+                        .unwrap_or_else(|_| "standalone".to_string())
                 };
                 let tablet_port: u16 = {
                     let c = db_arc.lock();
@@ -290,9 +349,10 @@ pub fn run() {
                         .and_then(|s| s.parse().ok())
                         .unwrap_or(7979)
                 };
-                if tablet_enabled {
+                if tablet_enabled || pos_mode == "server" {
                     let db_clone = Arc::clone(&db_arc);
-                    std::thread::spawn(move || run_tablet_server(db_clone, tablet_port));
+                    let app_handle = app.handle().clone();
+                    start_network_server(app_handle, db_clone, tablet_port);
                 }
             }
 

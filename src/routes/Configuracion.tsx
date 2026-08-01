@@ -351,6 +351,32 @@ export default function Configuracion() {
             </section>
 
             <section className="card p-5">
+              <h2 className="font-semibold text-sm mb-1">Modo servidor (multicaja) — en desarrollo</h2>
+              <p className="text-xs text-stone-500 mb-4">
+                Preparación para tener varias cajas vendiendo en la misma red. Activalo en la PC que va a
+                actuar de "servidor" (la que guarda los datos reales). Todavía no hay una pantalla para
+                conectar las demás cajas como "cliente" — eso viene en una próxima actualización.
+              </p>
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium">Activar modo servidor</span>
+                <label className="relative inline-flex cursor-pointer">
+                  <input type="checkbox" className="sr-only peer" checked={config.pos_mode === "server"}
+                    onChange={(e) => setField("pos_mode", e.target.checked ? "server" : "standalone")} />
+                  <div className="w-9 h-5 bg-stone-200 peer-checked:bg-indigo-500 rounded-full transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:w-4 after:h-4 after:transition-all peer-checked:after:translate-x-4" />
+                </label>
+              </div>
+              {networkInfo?.enabled && config.pos_mode === "server" && (
+                <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-lg mt-3">
+                  <p className="text-xs font-semibold text-indigo-800 mb-1">Servidor multicaja activo</p>
+                  <p className="font-mono text-sm text-indigo-700">http://{networkInfo.ip}:{networkInfo.port}</p>
+                </div>
+              )}
+              {config.pos_mode === "server" && !networkInfo?.enabled && (
+                <p className="text-xs text-stone-400 mt-3">Guardá y reiniciá la app para activar el servidor.</p>
+              )}
+            </section>
+
+            <section className="card p-5">
               <h2 className="font-semibold text-sm mb-3">Acerca del sistema</h2>
               <dl className="text-sm space-y-1.5 text-stone-600">
                 <div className="flex justify-between"><dt>Versión</dt><dd className="font-mono">0.4.0</dd></div>
