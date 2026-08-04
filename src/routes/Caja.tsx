@@ -35,6 +35,7 @@ export default function Caja() {
   const [promos, setPromos] = useState<Promotion[]>([]);
   const [promoToast, setPromoToast] = useState<string | null>(null);
   const [pendingPriceProduct, setPendingPriceProduct] = useState<Product | null>(null);
+  const [quickProducts, setQuickProducts] = useState<Product[]>([]);
   const scanRef = useRef<HTMLInputElement>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Producto detrás de cada línea del carrito con promo aplicada, para poder
@@ -71,6 +72,20 @@ export default function Caja() {
   }, []);
 
   useEffect(() => { scanRef.current?.focus(); }, []);
+
+  // Grilla de acceso rápido: en vez de botones de departamento configurados a mano,
+  // se auto-completa con los productos que más se agarran en los últimos 30 días
+  // (por cantidad, no por facturación — importa la frecuencia real de venta).
+  useEffect(() => {
+    const dateFrom = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+    api.topProductsByQty(dateFrom, todayISO(), 8)
+      .then(async (top) => {
+        const ids = top.map((t) => t.product_id).filter((id): id is number => id != null);
+        const products = await Promise.all(ids.map((id) => api.getProduct(id).catch(() => null)));
+        setQuickProducts(products.filter((p): p is Product => !!p && p.active));
+      })
+      .catch(console.error);
+  }, []);
 
 
   useEffect(() => {
@@ -741,6 +756,26 @@ ${itemsHtml}
                 📄 Presupuesto
               </button>
             </div>
+            {/* Grilla de acceso rápido — auto-ordenada por venta real, sin configurar nada */}
+            {quickProducts.length > 0 && (
+              <div>
+                <div className="text-[11px] uppercase tracking-wide font-semibold text-stone-400 mb-1.5">Más vendidos</div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {quickProducts.map((p) => (
+                    <button
+                      key={p.id}
+                      onClick={() => addProductSafely(p)}
+                      title={p.name}
+                      className="text-left px-2.5 py-2 bg-stone-50 hover:bg-indigo-50 border border-stone-200 hover:border-indigo-200 rounded-lg text-xs"
+                    >
+                      <div className="font-medium truncate">{p.name}</div>
+                      <div className="tabular text-stone-500 font-mono mt-0.5">{centsToARS(getPriceForList(p))}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Botones de departamento */}
             {deptButtons.length > 0 && (
               <div>

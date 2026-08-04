@@ -172,6 +172,53 @@ pub fn top_products(
     Ok(out)
 }
 
+// Misma agregación que top_products pero ordenada por cantidad vendida (no por
+// facturación) y solo productos reales (product_id no nulo) — para la grilla de
+// acceso rápido de Caja, donde importa qué se agarra más seguido, no qué generó
+// más plata (un producto caro vendido poco no debería ganarle a uno barato y frecuente).
+#[tauri::command]
+pub fn top_products_by_qty(
+    date_from: String,
+    date_to: String,
+    limit: i64,
+    state: State<AppState>,
+) -> CmdResult<Vec<TopProduct>> {
+    let conn = state.db.lock();
+    let to = format!("{}T23:59:59", date_to);
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT si.product_id, si.name,
+                    SUM(si.qty) as total_qty,
+                    SUM(si.qty * si.unit_price_cents) as total_cents
+             FROM sale_items si
+             JOIN sales s ON si.sale_id = s.id
+             WHERE datetime(s.created_at, 'localtime') >= ?1 AND datetime(s.created_at, 'localtime') <= ?2
+                   AND si.product_id IS NOT NULL
+             GROUP BY si.product_id, si.name
+             ORDER BY total_qty DESC
+             LIMIT ?3",
+        )
+        .map_err(err)?;
+
+    let rows = stmt
+        .query_map(params![date_from, to, limit], |row| {
+            Ok(TopProduct {
+                product_id: row.get("product_id")?,
+                name: row.get("name")?,
+                total_qty: row.get("total_qty")?,
+                total_cents: row.get("total_cents")?,
+            })
+        })
+        .map_err(err)?;
+
+    let mut out = Vec::new();
+    for r in rows {
+        out.push(r.map_err(err)?);
+    }
+    Ok(out)
+}
+
 #[tauri::command]
 pub fn sales_by_category(
     date_from: String,

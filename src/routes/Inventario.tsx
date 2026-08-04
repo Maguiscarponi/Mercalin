@@ -1,14 +1,39 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import type { CountAdjustment, InventoryCountItem } from "@/types";
 import clsx from "clsx";
+import { Barcode } from "lucide-react";
 import HelpButton from "@/components/HelpModal";
 import { confirmAction, showToast } from "@/stores/dialogs";
+import { useDebouncedValue } from "@/lib/useDebouncedValue";
 
 type Step = "inicio" | "contando" | "revision" | "aplicado";
 
 interface CountedItem extends InventoryCountItem {
   counted: number | "";
+}
+
+// Guardado incremental del conteo en progreso: si se cierra la app (o se corta la luz)
+// a mitad de un conteo, al volver a "Iniciar conteo" se ofrece retomarlo en vez de perderlo.
+const DRAFT_KEY = "kiosco_inventario_draft_v1";
+
+interface DraftShape {
+  savedAt: string;
+  items: { product_id: number; counted: number }[];
+}
+
+function loadDraft(): DraftShape | null {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as DraftShape;
+  } catch {
+    return null;
+  }
+}
+
+function clearDraft() {
+  localStorage.removeItem(DRAFT_KEY);
 }
 
 export default function Inventario() {
@@ -19,12 +44,59 @@ export default function Inventario() {
   const [result, setResult] = useState<number | null>(null);
   const [filterCat, setFilterCat] = useState("");
   const [search, setSearch] = useState("");
+  const [scanValue, setScanValue] = useState("");
+  const [pendingFocusId, setPendingFocusId] = useState<number | null>(null);
+
+  const barcodeRef = useRef<HTMLInputElement | null>(null);
+  const qtyRefs = useRef<Record<number, HTMLInputElement | null>>({});
+
+  // Foco automático campo-a-campo: al escanear un código, se mueve el foco a la
+  // celda de cantidad correspondiente en vez de obligar a buscar la fila con el mouse.
+  useEffect(() => {
+    if (pendingFocusId === null) return;
+    const el = qtyRefs.current[pendingFocusId];
+    el?.focus();
+    el?.select();
+    setPendingFocusId(null);
+  }, [pendingFocusId]);
+
+  // Guardado incremental: cada vez que cambian las cantidades contadas (con debounce
+  // para no escribir en cada tecla), se persiste en localStorage.
+  const debouncedProducts = useDebouncedValue(products, 500);
+  useEffect(() => {
+    if (step !== "contando") return;
+    const items = debouncedProducts
+      .filter((p) => p.counted !== "")
+      .map((p) => ({ product_id: p.product_id, counted: Number(p.counted) }));
+    if (items.length === 0) {
+      clearDraft();
+      return;
+    }
+    localStorage.setItem(DRAFT_KEY, JSON.stringify({ savedAt: new Date().toISOString(), items } satisfies DraftShape));
+  }, [debouncedProducts, step]);
 
   async function startCount() {
     setLoading(true);
     try {
       const items = await api.listInventoryCount();
-      setProducts(items.map((p) => ({ ...p, counted: "" })));
+      let counted: CountedItem[] = items.map((p) => ({ ...p, counted: "" }));
+
+      const draft = loadDraft();
+      if (draft && draft.items.length > 0) {
+        const draftDate = new Date(draft.savedAt).toLocaleString("es-AR", { dateStyle: "short", timeStyle: "short" });
+        const resume = await confirmAction(
+          `Hay un conteo sin terminar guardado el ${draftDate} (${draft.items.length} producto${draft.items.length !== 1 ? "s" : ""} contado${draft.items.length !== 1 ? "s" : ""}).`,
+          { title: "¿Retomar el conteo anterior?", confirmLabel: "Retomar" }
+        );
+        if (resume) {
+          const byId = new Map(draft.items.map((d) => [d.product_id, d.counted]));
+          counted = counted.map((p) => byId.has(p.product_id) ? { ...p, counted: byId.get(p.product_id)! } : p);
+        } else {
+          clearDraft();
+        }
+      }
+
+      setProducts(counted);
       setStep("contando");
     } catch (e) {
       console.error(e);
@@ -32,6 +104,20 @@ export default function Inventario() {
     } finally {
       setLoading(false);
     }
+  }
+
+  function handleScan() {
+    const code = scanValue.trim();
+    setScanValue("");
+    if (!code) return;
+    const match = products.find((p) => p.barcode === code);
+    if (!match) {
+      showToast({ message: `Código "${code}" no encontrado en el conteo`, tone: "danger" });
+      return;
+    }
+    setFilterCat("");
+    setSearch("");
+    setPendingFocusId(match.product_id);
   }
 
   function setCount(productId: number, value: string) {
@@ -65,6 +151,7 @@ export default function Inventario() {
     setApplying(true);
     try {
       const count = await api.applyInventoryCount(adjustments);
+      clearDraft();
       setResult(count);
       setStep("aplicado");
     } catch (e) {
@@ -147,7 +234,7 @@ export default function Inventario() {
         <div className="flex items-center gap-2">
           {step === "contando" && (
             <>
-              <button onClick={() => { setStep("inicio"); setProducts([]); }} className="btn btn-secondary text-sm">
+              <button onClick={() => { clearDraft(); setStep("inicio"); setProducts([]); }} className="btn btn-secondary text-sm">
                 Cancelar
               </button>
               <button
@@ -175,6 +262,26 @@ export default function Inventario() {
           )}
         </div>
       </div>
+
+      {/* Escaneo rápido — solo en modo contando */}
+      {step === "contando" && (
+        <div className="flex items-center gap-2 rounded-lg border-2 border-indigo-200 bg-indigo-50/50 px-3 py-2">
+          <Barcode className="w-5 h-5 text-indigo-500 shrink-0" />
+          <input
+            ref={barcodeRef}
+            autoFocus
+            type="text"
+            className="input text-sm flex-1 bg-white"
+            placeholder="Escaneá el código de barras…"
+            value={scanValue}
+            onChange={(e) => setScanValue(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleScan(); } }}
+          />
+          <span className="text-xs text-indigo-400 shrink-0 hidden sm:inline">
+            El foco salta a la cantidad — Enter la confirma y vuelve acá
+          </span>
+        </div>
+      )}
 
       {/* Filtros — solo en modo contando */}
       {step === "contando" && (
@@ -234,6 +341,7 @@ export default function Inventario() {
                   {step === "contando" ? (
                     <td className="px-4 py-2.5 text-right">
                       <input
+                        ref={(el) => { qtyRefs.current[p.product_id] = el; }}
                         type="number"
                         min={0}
                         step="0.001"
@@ -244,6 +352,13 @@ export default function Inventario() {
                         placeholder="—"
                         value={p.counted}
                         onChange={(e) => setCount(p.product_id, e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            barcodeRef.current?.focus();
+                            barcodeRef.current?.select();
+                          }
+                        }}
                       />
                     </td>
                   ) : (

@@ -478,6 +478,7 @@ pub fn run() {
             commands::stock::list_low_stock,
             commands::stock::list_stock_movements,
             commands::stock::top_products,
+            commands::stock::top_products_by_qty,
             commands::stock::sales_by_category,
             commands::stock::reorder_by_supplier,
             // Caja

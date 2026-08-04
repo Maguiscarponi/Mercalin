@@ -99,6 +99,9 @@ export const api = {
   topProducts: (dateFrom: string, dateTo: string, limit = 10) =>
     rpc<TopProduct[]>("top_products", { dateFrom, dateTo, limit }),
 
+  topProductsByQty: (dateFrom: string, dateTo: string, limit = 10) =>
+    rpc<TopProduct[]>("top_products_by_qty", { dateFrom, dateTo, limit }),
+
   salesByCategory: (dateFrom: string, dateTo: string) =>
     rpc<[string, number][]>("sales_by_category", { dateFrom, dateTo }),
 

@@ -86,6 +86,7 @@ pub fn dispatch(app: &AppHandle, command: &str, body: Value) -> RpcResult {
         "list_low_stock" => crate::commands::stock::list_low_stock[],
         "list_stock_movements" => crate::commands::stock::list_stock_movements[product_id: i64, limit: i64],
         "top_products" => crate::commands::stock::top_products[date_from: String, date_to: String, limit: i64],
+        "top_products_by_qty" => crate::commands::stock::top_products_by_qty[date_from: String, date_to: String, limit: i64],
         "sales_by_category" => crate::commands::stock::sales_by_category[date_from: String, date_to: String],
         "reorder_by_supplier" => crate::commands::stock::reorder_by_supplier[],
         "get_dead_stock" => crate::commands::stock::get_dead_stock[days: i64],
