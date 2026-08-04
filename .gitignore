@@ -38,3 +38,6 @@ src-tauri/gen/
 *.db-journal
 *.sqlite
 *.sqlite3
+# Excepción: la plantilla de catálogo SÍ se versiona (ver generate_catalog_template) —
+# es un insumo de build, no una base de datos de prueba de una corrida local.
+!src-tauri/resources/template.db
