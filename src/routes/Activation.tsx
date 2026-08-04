@@ -12,6 +12,7 @@ import { useAuthStore } from "@/stores/auth";
 // persona en el mismo paso, sin una segunda pantalla de login redundante.
 export default function Activation({ onActivated }: { onActivated: () => void }) {
   const setUser = useAuthStore((s) => s.setUser);
+  const [businessName, setBusinessName] = useState("");
   const [email, setEmail] = useState("");
   const [key, setKey] = useState("");
   const [password, setPassword] = useState("");
@@ -20,12 +21,15 @@ export default function Activation({ onActivated }: { onActivated: () => void })
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!email.trim() || !key.trim() || !password) return;
+    if (!businessName.trim() || !email.trim() || !key.trim() || !password) return;
     setLoading(true);
     setError(null);
     try {
       await api.activateLicense(email.trim(), key.trim());
       const user = await api.claimAdminAccount(email.trim(), password);
+      // El nombre del negocio se guarda después de activar/loguear a propósito: si
+      // la clave resulta inválida, no queremos haber tocado nada todavía.
+      await api.setConfig({ key: "business_name", value: businessName.trim() });
       setUser(user);
       onActivated();
     } catch (err) {
@@ -49,10 +53,22 @@ export default function Activation({ onActivated }: { onActivated: () => void })
         <div className="bg-white rounded-2xl shadow-sm border border-stone-200 p-8">
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
+              <label className="block text-sm font-medium text-stone-700 mb-1.5">Nombre del negocio</label>
+              <input
+                type="text"
+                autoFocus
+                className="input w-full"
+                placeholder="Ej: Kiosco Don Jorge"
+                value={businessName}
+                onChange={(e) => setBusinessName(e.target.value)}
+                disabled={loading}
+              />
+            </div>
+
+            <div>
               <label className="block text-sm font-medium text-stone-700 mb-1.5">Mail</label>
               <input
                 type="email"
-                autoFocus
                 className="input w-full"
                 placeholder="vos@tunegocio.com"
                 value={email}
@@ -93,7 +109,7 @@ export default function Activation({ onActivated }: { onActivated: () => void })
 
             <button
               type="submit"
-              disabled={loading || !email.trim() || !key.trim() || !password}
+              disabled={loading || !businessName.trim() || !email.trim() || !key.trim() || !password}
               className="btn btn-primary w-full py-2.5 text-base disabled:opacity-40"
             >
               {loading ? "Activando…" : "Activar y entrar"}
