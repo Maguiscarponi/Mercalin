@@ -4,6 +4,7 @@ import type { BackupInfo, ConfigEntry, DeptButton, DeviceConfig, NetworkInfo, Pe
 import { arsStringToCents, centsToARS } from "@/lib/format";
 import { usePosModeStore } from "@/stores/posMode";
 import { confirmAction, showToast } from "@/stores/dialogs";
+import Field from "@/components/ui/Field";
 import clsx from "clsx";
 
 type Tab = "general" | "finanzas" | "backup" | "sistema";
@@ -497,11 +498,3 @@ export default function Configuracion() {
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label className="block">
-      <span className="text-xs font-medium text-stone-600 block mb-1">{label}</span>
-      {children}
-    </label>
-  );
-}

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { centsToARS, arsStringToCents, formatDateTime } from "@/lib/format";
 import { confirmAction, showToast } from "@/stores/dialogs";
+import Field from "@/components/ui/Field";
 import type { NewSupplier, Product, PurchaseOrder, PurchaseOrderItem, Supplier, PurchaseProjection, SupplierLeadTime, CostInflationItem, SupplierRiskScore } from "@/types";
 
 export default function Proveedores() {
@@ -819,14 +820,6 @@ function SupplierForm({
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label className="block">
-      <span className="text-xs font-medium text-stone-600 block mb-1">{label}</span>
-      {children}
-    </label>
-  );
-}
 
 function SupplierProductsModal({
   supplier, onClose, onNewOrder,

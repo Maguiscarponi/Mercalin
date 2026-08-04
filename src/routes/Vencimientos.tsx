@@ -12,8 +12,12 @@ function daysLabel(days: number) {
   return `${days} días`;
 }
 
+// "Vencido" usa un color categóricamente distinto (violeta oscuro, no una
+// variación más de rojo) a propósito: ya pasó, no es lo mismo que "todavía
+// se puede actuar" (crítico/próximo), y antes eran dos rojos casi idénticos
+// que costaba distinguir de un vistazo en la sección que más urge revisar.
 function urgencyClass(days: number) {
-  if (days < 0) return "bg-red-100 text-red-800 border-red-200";
+  if (days < 0) return "bg-violet-100 text-violet-900 border-violet-300";
   if (days <= 3) return "bg-red-50 text-red-700 border-red-200";
   if (days <= 7) return "bg-amber-50 text-amber-700 border-amber-200";
   if (days <= 30) return "bg-yellow-50 text-yellow-700 border-yellow-200";
@@ -21,7 +25,7 @@ function urgencyClass(days: number) {
 }
 
 function badgeClass(days: number) {
-  if (days < 0) return "bg-red-600 text-white";
+  if (days < 0) return "bg-violet-700 text-white";
   if (days <= 3) return "bg-red-500 text-white";
   if (days <= 7) return "bg-amber-500 text-white";
   if (days <= 30) return "bg-yellow-500 text-white";
@@ -140,7 +144,7 @@ export default function Vencimientos() {
 
       {/* Resumen */}
       <div className="grid grid-cols-4 gap-3">
-        <SummaryCard label="Lotes vencidos" count={expired.length} color="text-red-700" bg="bg-red-50 border-red-200" />
+        <SummaryCard label="Lotes vencidos" count={expired.length} color="text-violet-800" bg="bg-violet-50 border-violet-200" />
         <SummaryCard label="Críticos (≤3 días)" count={critical.length} color="text-red-600" bg="bg-red-50 border-red-100" />
         <SummaryCard label="Próximos (≤7 días)" count={soon.length} color="text-amber-700" bg="bg-amber-50 border-amber-200" />
         <SummaryCard label={`Próximos ${days} días`} count={upcoming.length} color="text-stone-600" bg="bg-stone-50 border-stone-200" />

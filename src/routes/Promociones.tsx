@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { centsToARS, arsStringToCents, todayISO } from "@/lib/format";
 import { confirmAction, showToast } from "@/stores/dialogs";
+import Field from "@/components/ui/Field";
 import type { NewPromotion, Product, Promotion, PromoAppliesTo, PromoType } from "@/types";
 import clsx from "clsx";
 
@@ -484,11 +485,3 @@ function PromoForm({
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label className="block">
-      <span className="text-xs font-medium text-stone-600 block mb-1">{label}</span>
-      {children}
-    </label>
-  );
-}

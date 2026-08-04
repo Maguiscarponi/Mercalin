@@ -8,6 +8,7 @@ import { confirmAction, showToast } from "@/stores/dialogs";
 import type { BulkPriceInput, BulkPricePreviewItem, CatalogImportResult, CsvProductRow, DeadStockItem, ImportResult, LowStockProduct, MinStockSuggestion, PriceImpactItem, PriceSyncAlert, Product, ProductVelocity, StockMovement, Supplier } from "@/types";
 import clsx from "clsx";
 import HelpButton from "@/components/HelpModal";
+import Field from "@/components/ui/Field";
 
 function VelocityBadge({ v }: { v: ProductVelocity | undefined }) {
   if (!v) return null;
@@ -1325,14 +1326,6 @@ function ProductForm({
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label className="block">
-      <span className="text-xs font-medium text-stone-600 block mb-1">{label}</span>
-      {children}
-    </label>
-  );
-}
 
 function QuickPriceInput({ product, onSaved }: { product: Product; onSaved: (p: Product) => void }) {
   const [value, setValue] = useState("");

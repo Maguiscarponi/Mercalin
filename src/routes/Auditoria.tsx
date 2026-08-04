@@ -129,8 +129,7 @@ export default function Auditoria() {
               <tr>
                 <th className="text-left px-4 py-2.5 font-medium">Fecha y hora</th>
                 <th className="text-left px-4 py-2.5 font-medium">Acción</th>
-                <th className="text-left px-4 py-2.5 font-medium">Entidad</th>
-                <th className="text-left px-4 py-2.5 font-medium">ID</th>
+                <th className="text-left px-4 py-2.5 font-medium">Registro</th>
                 <th className="text-left px-4 py-2.5 font-medium">Detalle</th>
               </tr>
             </thead>
@@ -148,11 +147,11 @@ export default function Auditoria() {
                       {ACTION_LABELS[entry.action] ?? entry.action}
                     </span>
                   </td>
-                  <td className="px-4 py-2.5 text-stone-600 capitalize">
-                    {ENTITY_LABELS[entry.entity] ?? entry.entity}
-                  </td>
-                  <td className="px-4 py-2.5 font-mono text-xs text-stone-400">
-                    {entry.entity_id ? `#${entry.entity_id}` : "—"}
+                  <td className="px-4 py-2.5 text-stone-700">
+                    <span className="capitalize">{ENTITY_LABELS[entry.entity] ?? entry.entity}</span>
+                    {entry.entity_id && (
+                      <span className="ml-1.5 font-mono text-xs text-stone-400">#{entry.entity_id}</span>
+                    )}
                   </td>
                   <td className="px-4 py-2.5 text-stone-500 text-xs">
                     {entry.detail || "—"}
