@@ -47,7 +47,7 @@ export default function Login() {
                 type="text"
                 autoFocus
                 className="input w-full"
-                placeholder="admin"
+                placeholder="vos@tunegocio.com"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 disabled={loading}
@@ -83,10 +83,6 @@ export default function Login() {
             </button>
           </form>
         </div>
-
-        <p className="text-center text-xs text-stone-400 mt-6">
-          Primera vez: usuario <code className="font-mono bg-stone-200 px-1 rounded">admin</code> contraseña <code className="font-mono bg-stone-200 px-1 rounded">admin</code>
-        </p>
       </div>
     </div>
   );

@@ -102,6 +102,49 @@ pub fn delete_user(id: i64, state: State<AppState>) -> CmdResult<()> {
     Ok(())
 }
 
+// Se llama una sola vez, justo después de activar la licencia (ver Activation.tsx):
+// "adopta" la cuenta admin/admin que ya viene sembrada de fábrica, poniéndole el
+// mail real del comprador como usuario y la contraseña que eligió. Así el login
+// de todos los días es con su mail, no con credenciales genéricas que cualquiera
+// que instale la app conoce de antemano.
+#[tauri::command]
+pub fn claim_admin_account(email: String, password: String, state: State<AppState>) -> CmdResult<User> {
+    if password.len() < 4 {
+        return Err("La contraseña debe tener al menos 4 caracteres".to_string());
+    }
+    let conn = state.db.lock();
+    let hash = hash_password(&password);
+    let normalized_email = email.trim().to_lowercase();
+
+    let existing: Option<i64> = conn
+        .query_row("SELECT id FROM users WHERE username=?1", params![normalized_email], |r| r.get(0))
+        .ok();
+
+    let user_id = if let Some(id) = existing {
+        conn.execute("UPDATE users SET password_hash=?1 WHERE id=?2", params![hash, id]).map_err(err)?;
+        id
+    } else {
+        let renamed = conn.execute(
+            "UPDATE users SET username=?1, password_hash=?2 WHERE username='admin' AND role='admin'",
+            params![normalized_email, hash],
+        ).map_err(err)?;
+        if renamed > 0 {
+            conn.query_row("SELECT id FROM users WHERE username=?1", params![normalized_email], |r| r.get(0)).map_err(err)?
+        } else {
+            conn.execute(
+                "INSERT INTO users (username,full_name,password_hash,role) VALUES (?1,?2,?3,'admin')",
+                params![normalized_email, "Administrador", hash],
+            ).map_err(err)?;
+            conn.last_insert_rowid()
+        }
+    };
+
+    let mut stmt = conn
+        .prepare("SELECT id,username,full_name,role,active,created_at FROM users WHERE id=?1")
+        .map_err(err)?;
+    stmt.query_row(params![user_id], row_to_user).map_err(err)
+}
+
 #[tauri::command]
 pub fn login(username: String, password: String, state: State<AppState>) -> CmdResult<User> {
     let conn = state.db.lock();

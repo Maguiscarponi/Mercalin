@@ -433,6 +433,9 @@ export const api = {
   activateLicense: (email: string, key: string) =>
     invoke<LicenseStatus>("activate_license", { email, key }),
 
+  claimAdminAccount: (email: string, password: string) =>
+    invoke<User>("claim_admin_account", { email, password }),
+
   getSyncStatus: () =>
     invoke<"online" | "offline" | "syncing">("get_sync_status"),
 

@@ -522,6 +522,7 @@ pub fn run() {
             commands::users::change_password,
             commands::users::delete_user,
             commands::users::login,
+            commands::users::claim_admin_account,
             // Promociones
             commands::promotions::list_promotions,
             commands::promotions::create_promotion,
