@@ -208,14 +208,23 @@ pub fn list_expiring_products(days: i64, state: State<AppState>) -> CmdResult<Ve
     Ok(out)
 }
 
+// Lista todas las categorías: las que ya tienen productos (derivadas de
+// products.category) unidas con las que se crearon de antemano sin ningún
+// producto todavía (tabla `categories`). El bucket "(sin categoria)" se arma
+// aparte porque no tiene sentido "crearlo" como categoría de antemano.
 #[tauri::command]
 pub fn list_categories(state: State<AppState>) -> CmdResult<Vec<CategoryStat>> {
     let conn = state.db.lock();
     let mut stmt = conn
         .prepare(
-            "SELECT COALESCE(category,'(sin categoria)') as name, COUNT(*) as product_count
-             FROM products WHERE active=1
-             GROUP BY category ORDER BY category",
+            "SELECT names.name as name, COUNT(p.id) as product_count
+             FROM (
+                 SELECT DISTINCT category AS name FROM products WHERE active=1 AND category IS NOT NULL
+                 UNION
+                 SELECT name FROM categories
+             ) names
+             LEFT JOIN products p ON p.category = names.name AND p.active = 1
+             GROUP BY names.name ORDER BY names.name",
         )
         .map_err(err)?;
     let rows = stmt
@@ -228,7 +237,32 @@ pub fn list_categories(state: State<AppState>) -> CmdResult<Vec<CategoryStat>> {
         .map_err(err)?;
     let mut out = Vec::new();
     for r in rows { out.push(r.map_err(err)?); }
+
+    let sin_categoria: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM products WHERE active=1 AND category IS NULL",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
+    if sin_categoria > 0 {
+        out.push(CategoryStat { name: "(sin categoria)".to_string(), product_count: sin_categoria });
+    }
     Ok(out)
+}
+
+// Crea una categoría vacía, sin necesidad de asignarla a un producto todavía
+// (antes la única forma de "crear" un rubro era usarlo en Productos).
+#[tauri::command]
+pub fn create_category(name: String, state: State<AppState>) -> CmdResult<()> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err("El nombre de la categoría no puede estar vacío".to_string());
+    }
+    let conn = state.db.lock();
+    conn.execute("INSERT OR IGNORE INTO categories (name) VALUES (?1)", params![name])
+        .map_err(err)?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -320,6 +354,10 @@ pub fn rename_category(old_name: String, new_name: String, state: State<AppState
         "UPDATE products SET category=?1, updated_at=datetime('now','localtime') WHERE category=?2",
         params![new_name, old_name],
     ).map_err(err)?;
+    // Si la categoría vieja/nueva vive en la tabla de categorías vacías, la
+    // renombramos ahí también (o la sacamos si ya tenía productos y quedó vacía).
+    conn.execute("DELETE FROM categories WHERE name=?1", params![old_name]).map_err(err)?;
+    conn.execute("INSERT OR IGNORE INTO categories (name) VALUES (?1)", params![new_name]).map_err(err)?;
     Ok(n as i64)
 }
 
@@ -330,6 +368,7 @@ pub fn delete_category(name: String, state: State<AppState>) -> CmdResult<i64> {
         "UPDATE products SET category=NULL, updated_at=datetime('now','localtime') WHERE category=?1",
         params![name],
     ).map_err(err)?;
+    conn.execute("DELETE FROM categories WHERE name=?1", params![name]).map_err(err)?;
     Ok(n as i64)
 }
 

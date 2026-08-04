@@ -193,6 +193,14 @@ CREATE TABLE IF NOT EXISTS config (
     updated_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Categorías creadas de antemano, sin productos todavía. La lista que ve el
+-- usuario (list_categories) es la unión de esta tabla con las categorías que
+-- ya tienen productos -- no hace falta migrar nada acá, las que ya existen
+-- en products.category aparecen igual sin estar en esta tabla.
+CREATE TABLE IF NOT EXISTS categories (
+    name            TEXT PRIMARY KEY
+);
+
 CREATE TABLE IF NOT EXISTS audit_log (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id         INTEGER,

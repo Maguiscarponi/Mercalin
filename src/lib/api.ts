@@ -61,6 +61,9 @@ export const api = {
   listCategories: () =>
     rpc<CategoryStat[]>("list_categories"),
 
+  createCategory: (name: string) =>
+    rpc<void>("create_category", { name }),
+
   renameCategory: (oldName: string, newName: string) =>
     rpc<number>("rename_category", { oldName, newName }),
 

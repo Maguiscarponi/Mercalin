@@ -1918,14 +1918,14 @@ function BulkPriceModal({ onClose, onSaved }: { onClose: () => void; onSaved: ()
                 onChange={(e) => { setFilterType(e.target.value as BulkPriceInput["filter_type"]); setFilterValue(""); resetPreview(); }}
               >
                 <option value="all">Todos los productos</option>
-                <option value="category">Por rubro (categoría)</option>
+                <option value="category">Por categoría</option>
                 <option value="supplier">Por proveedor (ID)</option>
               </select>
             </div>
 
             {filterType === "category" && (
               <div>
-                <label className="text-xs font-medium text-stone-600 block mb-1">Nombre del rubro</label>
+                <label className="text-xs font-medium text-stone-600 block mb-1">Nombre de la categoría</label>
                 <input
                   autoFocus
                   className="input w-full"
@@ -2003,7 +2003,7 @@ function BulkPriceModal({ onClose, onSaved }: { onClose: () => void; onSaved: ()
                     <thead className="text-xs text-stone-500 uppercase bg-stone-50 sticky top-0">
                       <tr>
                         <th className="text-left px-3 py-2">Producto</th>
-                        <th className="text-left px-3 py-2">Rubro</th>
+                        <th className="text-left px-3 py-2">Categoría</th>
                         <th className="text-right px-3 py-2">Precio actual</th>
                         <th className="text-right px-3 py-2">Precio nuevo</th>
                         {updateCost && <th className="text-right px-3 py-2">Costo nuevo</th>}

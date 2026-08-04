@@ -44,7 +44,7 @@ export const NAV_GROUPS: Array<{ label: string; links: NavLinkDef[] }> = [
     links: [
       { to: "/productos",    label: "Productos",        icon: Package,         key: "F5", altKey: "4", minRole: "supervisor" },
       { to: "/proveedores",  label: "Proveedores",      icon: Truck,           key: "F6", altKey: "5", minRole: "supervisor" },
-      { to: "/rubros",       label: "Rubros",           icon: Tag,             key: "",                minRole: "supervisor" },
+      { to: "/categorias",   label: "Categorías",       icon: Tag,             key: "",                minRole: "supervisor" },
       { to: "/vencimientos", label: "Vencimientos",     icon: Calendar,        key: "",                minRole: "supervisor" },
       { to: "/inventario",   label: "Inventario",       icon: ClipboardList,   key: "",                minRole: "supervisor" },
       { to: "/etiquetas",    label: "Etiquetas",        icon: Layers,          key: "",                minRole: "supervisor" },

@@ -600,7 +600,7 @@ export interface MarginCategory {
   margin_pct: number;
 }
 
-// ─── Rubros ──────────────────────────────────────────────────────────────────
+// ─── Categorías ─────────────────────────────────────────────────────────────
 export interface CategoryStat {
   name: string;
   product_count: number;

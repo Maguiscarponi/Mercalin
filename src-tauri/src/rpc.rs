@@ -50,6 +50,7 @@ pub fn dispatch(app: &AppHandle, command: &str, body: Value) -> RpcResult {
         "get_product" => crate::commands::products::get_product[id: i64],
         "list_expiring_products" => crate::commands::products::list_expiring_products[days: i64],
         "list_categories" => crate::commands::products::list_categories[],
+        "create_category" => crate::commands::products::create_category[name: String],
         "list_product_velocities" => crate::commands::products::list_product_velocities[],
         "get_price_desync" => crate::commands::products::get_price_desync[],
         "rename_category" => crate::commands::products::rename_category[old_name: String, new_name: String],

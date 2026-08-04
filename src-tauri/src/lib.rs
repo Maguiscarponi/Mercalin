@@ -450,6 +450,7 @@ pub fn run() {
             commands::products::delete_product,
             commands::products::list_expiring_products,
             commands::products::list_categories,
+            commands::products::create_category,
             commands::products::rename_category,
             commands::products::delete_category,
             commands::products::list_product_velocities,

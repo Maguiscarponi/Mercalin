@@ -15,7 +15,7 @@ import Usuarios from "./routes/Usuarios";
 import Promociones from "./routes/Promociones";
 import Auditoria from "./routes/Auditoria";
 import Devoluciones from "./routes/Devoluciones";
-import Rubros from "./routes/Rubros";
+import Categorias from "./routes/Categorias";
 import Presupuestos from "./routes/Presupuestos";
 import Inventario from "./routes/Inventario";
 import Combos from "./routes/Combos";
@@ -71,7 +71,7 @@ export default function App() {
         <Route path="/usuarios" element={<RequireRole path="/usuarios"><RequireServerMode><Usuarios /></RequireServerMode></RequireRole>} />
         <Route path="/reportes" element={<RequireRole path="/reportes"><Reportes /></RequireRole>} />
         <Route path="/devoluciones" element={<RequireRole path="/devoluciones"><Devoluciones /></RequireRole>} />
-        <Route path="/rubros" element={<RequireRole path="/rubros"><Rubros /></RequireRole>} />
+        <Route path="/categorias" element={<RequireRole path="/categorias"><Categorias /></RequireRole>} />
         <Route path="/presupuestos" element={<RequireRole path="/presupuestos"><Presupuestos /></RequireRole>} />
         <Route path="/configuracion" element={<RequireRole path="/configuracion"><Configuracion /></RequireRole>} />
         <Route path="/auditoria" element={<RequireRole path="/auditoria"><Auditoria /></RequireRole>} />
