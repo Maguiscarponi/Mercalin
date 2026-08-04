@@ -432,12 +432,14 @@ export default function Productos() {
                 </table>
               </div>
 
-              {/* Paginación */}
-              {totalPages > 1 && (
-                <div className="border-t border-stone-200 px-4 py-2.5 flex items-center justify-between bg-stone-50 shrink-0">
-                  <span className="text-sm text-stone-500">
-                    {filtered.length} productos · página {page} de {totalPages}
-                  </span>
+              {/* Total + paginación — visible siempre, no solo cuando hay más de una página,
+                  para que el total de productos sea confiable de un vistazo */}
+              <div className="border-t border-stone-200 px-4 py-2.5 flex items-center justify-between bg-stone-50 shrink-0">
+                <span className="text-sm text-stone-500">
+                  {filtered.length} producto{filtered.length !== 1 ? "s" : ""}
+                  {totalPages > 1 && <> · página {page} de {totalPages}</>}
+                </span>
+                {totalPages > 1 && (
                   <div className="flex items-center gap-1">
                     <button
                       onClick={() => setPage(1)}
@@ -460,8 +462,8 @@ export default function Productos() {
                       className="btn-table-neutral disabled:opacity-40 disabled:cursor-default"
                     >»</button>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           );
         })() : tab === "sin_precio" ? (() => {
@@ -520,15 +522,18 @@ export default function Productos() {
                   </tbody>
                 </table>
               </div>
-              {totalPages > 1 && (
-                <div className="border-t border-stone-200 px-4 py-2.5 flex items-center justify-between bg-stone-50 shrink-0">
-                  <span className="text-sm text-stone-500">{filtered.length} productos · página {page} de {totalPages}</span>
+              <div className="border-t border-stone-200 px-4 py-2.5 flex items-center justify-between bg-stone-50 shrink-0">
+                <span className="text-sm text-stone-500">
+                  {filtered.length} producto{filtered.length !== 1 ? "s" : ""}
+                  {totalPages > 1 && <> · página {page} de {totalPages}</>}
+                </span>
+                {totalPages > 1 && (
                   <div className="flex items-center gap-1">
                     <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1} className="btn-table-neutral disabled:opacity-40 disabled:cursor-default">‹ Anterior</button>
                     <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages} className="btn-table-neutral disabled:opacity-40 disabled:cursor-default">Siguiente ›</button>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           );
         })() : null
