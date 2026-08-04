@@ -3,6 +3,8 @@ import { api } from "@/lib/api";
 import { centsToARS, arsStringToCents, formatDateTime } from "@/lib/format";
 import { confirmAction, showToast } from "@/stores/dialogs";
 import Field from "@/components/ui/Field";
+import { useEscapeToClose } from "@/lib/useEscapeToClose";
+import ModalCloseButton from "@/components/ui/ModalCloseButton";
 import type { NewSupplier, Product, PurchaseOrder, PurchaseOrderItem, Supplier, PurchaseProjection, SupplierLeadTime, CostInflationItem, SupplierRiskScore } from "@/types";
 
 export default function Proveedores() {
@@ -536,10 +538,12 @@ function OrderDetailModal({
   onReceive: (id: number) => void;
   onCancel: (id: number) => void;
 }) {
+  useEscapeToClose(onClose);
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-white rounded-lg shadow-xl w-[520px] max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
-        <div className="p-5 border-b border-stone-200">
+      <div className="relative bg-white rounded-lg shadow-xl w-[520px] max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <ModalCloseButton onClick={onClose} />
+        <div className="p-5 border-b border-stone-200 pr-10">
           <h2 className="font-semibold">Orden #{order.id} — {order.supplier_name}</h2>
           <p className="text-xs text-stone-400 mt-0.5">{formatDateTime(order.ordered_at)}</p>
         </div>
@@ -675,6 +679,7 @@ function NewOrderForm({
   const [items, setItems] = useState<OrderItem[]>([{ name: "", unit_cost: "", qty: "1", product_id: null }]);
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
+  useEscapeToClose(onCancel);
 
   function addItem() {
     setItems([...items, { name: "", unit_cost: "", qty: "1", product_id: null }]);
@@ -721,8 +726,9 @@ function NewOrderForm({
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onCancel}>
-      <div className="bg-white rounded-lg shadow-xl w-[620px] max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
-        <div className="p-5 border-b border-stone-200">
+      <div className="relative bg-white rounded-lg shadow-xl w-[620px] max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <ModalCloseButton onClick={onCancel} />
+        <div className="p-5 border-b border-stone-200 pr-10">
           <h2 className="font-semibold">Nueva orden — {supplier.name}</h2>
           <p className="text-xs text-stone-400 mt-0.5">Buscá un producto del catálogo o escribí el nombre manualmente</p>
         </div>
@@ -772,6 +778,7 @@ function SupplierForm({
   onSave: (s: Partial<Supplier>) => void;
 }) {
   const [form, setForm] = useState<Partial<Supplier>>(initial);
+  useEscapeToClose(onCancel);
 
   function f(key: keyof Supplier) {
     return (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
@@ -780,7 +787,8 @@ function SupplierForm({
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onCancel}>
-      <div className="bg-white rounded-lg shadow-xl w-[480px] p-6" onClick={(e) => e.stopPropagation()}>
+      <div className="relative bg-white rounded-lg shadow-xl w-[480px] p-6" onClick={(e) => e.stopPropagation()}>
+        <ModalCloseButton onClick={onCancel} />
         <h2 className="text-lg font-semibold mb-4">{form.id ? "Editar proveedor" : "Nuevo proveedor"}</h2>
 
         <div className="space-y-3">
@@ -830,6 +838,7 @@ function SupplierProductsModal({
 }) {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
+  useEscapeToClose(onClose);
 
   useEffect(() => {
     api.listProducts("").then((all) => {

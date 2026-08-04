@@ -3,6 +3,8 @@ import { api } from "@/lib/api";
 import { centsToARS, arsStringToCents, formatDateTime } from "@/lib/format";
 import type { CashSession, CashMovement } from "@/types";
 import { showToast } from "@/stores/dialogs";
+import { useEscapeToClose } from "@/lib/useEscapeToClose";
+import ModalCloseButton from "@/components/ui/ModalCloseButton";
 import clsx from "clsx";
 
 interface Props {
@@ -48,15 +50,19 @@ export function CashSessionPanel({ session, onClose, onClosed }: Props) {
 
   // Saldo físico = apertura + ventas en efectivo + ingresos manuales - egresos
   const saldoEsperado = session.opening_cents + ventasEfectivo + ingresos - egresos;
+  // Desactivado mientras hay un modal encima (Movimiento/Cerrar caja): si no, un solo
+  // Escape cerraría los dos a la vez, sin dar chance de confirmar el de arriba.
+  useEscapeToClose(onClose, !showMovement && !showClose);
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
       <div
-        className="bg-white rounded-lg shadow-xl w-[560px] max-h-[90vh] flex flex-col"
+        className="relative bg-white rounded-lg shadow-xl w-[560px] max-h-[90vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
+        <ModalCloseButton onClick={onClose} />
         <div className="p-5 border-b border-stone-200">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between pr-6">
             <h2 className="text-lg font-semibold">Sesión de caja #{session.id}</h2>
             <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-emerald-50 text-emerald-700 text-xs rounded-md">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
@@ -190,6 +196,7 @@ function MovementForm({
   const [amountStr, setAmountStr] = useState("");
   const [concept, setConcept] = useState("");
   const [saving, setSaving] = useState(false);
+  useEscapeToClose(onCancel);
 
   async function submit() {
     const amount = arsStringToCents(amountStr);
@@ -213,7 +220,8 @@ function MovementForm({
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60]" onClick={onCancel}>
-      <div className="bg-white rounded-lg shadow-xl w-[380px] p-6" onClick={(e) => e.stopPropagation()}>
+      <div className="relative bg-white rounded-lg shadow-xl w-[380px] p-6" onClick={(e) => e.stopPropagation()}>
+        <ModalCloseButton onClick={onCancel} />
         <h3 className="font-semibold mb-4">Registrar movimiento</h3>
 
         <div className="flex gap-2 mb-4">
@@ -292,6 +300,7 @@ function CloseForm({
   const [closingStr, setClosingStr] = useState("");
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
+  useEscapeToClose(onCancel);
 
   const closingCents = arsStringToCents(closingStr);
   const diff = closingCents - saldoEsperado;
@@ -315,7 +324,8 @@ function CloseForm({
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60]" onClick={onCancel}>
-      <div className="bg-white rounded-lg shadow-xl w-[400px] p-6" onClick={(e) => e.stopPropagation()}>
+      <div className="relative bg-white rounded-lg shadow-xl w-[400px] p-6" onClick={(e) => e.stopPropagation()}>
+        <ModalCloseButton onClick={onCancel} />
         <h3 className="font-semibold mb-1">Cerrar caja</h3>
         <p className="text-sm text-stone-500 mb-5">Ingresá el efectivo contado al cierre.</p>
 
@@ -384,6 +394,7 @@ export function OpenCashForm({ onCancel, onOpened }: OpenFormProps) {
   const [amountStr, setAmountStr] = useState("");
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
+  useEscapeToClose(onCancel);
 
   async function submit() {
     setSaving(true);
@@ -404,7 +415,8 @@ export function OpenCashForm({ onCancel, onOpened }: OpenFormProps) {
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onCancel}>
-      <div className="bg-white rounded-lg shadow-xl w-[380px] p-6" onClick={(e) => e.stopPropagation()}>
+      <div className="relative bg-white rounded-lg shadow-xl w-[380px] p-6" onClick={(e) => e.stopPropagation()}>
+        <ModalCloseButton onClick={onCancel} />
         <h2 className="text-lg font-semibold mb-1">Abrir caja</h2>
         <p className="text-sm text-stone-500 mb-5">Ingresá el efectivo inicial en caja.</p>
 

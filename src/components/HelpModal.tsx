@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { helpContent } from "@/lib/helpContent";
+import { useEscapeToClose } from "@/lib/useEscapeToClose";
 
 export default function HelpButton({ module }: { module: string }) {
   const [open, setOpen] = useState(false);
   const content = helpContent[module];
+  useEscapeToClose(() => setOpen(false), open);
   if (!content) return null;
 
   return (

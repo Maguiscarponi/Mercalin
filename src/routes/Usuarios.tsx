@@ -3,6 +3,8 @@ import { api } from "@/lib/api";
 import { formatDate } from "@/lib/format";
 import { confirmAction, showToast } from "@/stores/dialogs";
 import Field from "@/components/ui/Field";
+import { useEscapeToClose } from "@/lib/useEscapeToClose";
+import ModalCloseButton from "@/components/ui/ModalCloseButton";
 import type { NewUser, User, UserRole } from "@/types";
 import clsx from "clsx";
 
@@ -204,6 +206,7 @@ function UserForm({
 }) {
   const [form, setForm] = useState({ ...user, password: "" });
   const isNew = !user.id;
+  useEscapeToClose(onCancel);
 
   function set(k: string, v: string) {
     setForm((f) => ({ ...f, [k]: v }));
@@ -223,7 +226,8 @@ function UserForm({
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onCancel}>
-      <div className="bg-white rounded-lg shadow-xl w-[440px] p-6" onClick={(e) => e.stopPropagation()}>
+      <div className="relative bg-white rounded-lg shadow-xl w-[440px] p-6" onClick={(e) => e.stopPropagation()}>
+        <ModalCloseButton onClick={onCancel} />
         <h2 className="font-semibold text-lg mb-5">{isNew ? "Nuevo usuario" : "Editar usuario"}</h2>
 
         <div className="space-y-3">
@@ -295,6 +299,7 @@ function UserForm({
 function ChangePasswordModal({ user, onClose }: { user: User; onClose: () => void }) {
   const [pw, setPw] = useState("");
   const [saving, setSaving] = useState(false);
+  useEscapeToClose(onClose);
 
   async function submit() {
     if (pw.length < 4) { showToast({ message: "Mínimo 4 caracteres", tone: "danger" }); return; }
@@ -313,7 +318,8 @@ function ChangePasswordModal({ user, onClose }: { user: User; onClose: () => voi
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-white rounded-lg shadow-xl w-[360px] p-6" onClick={(e) => e.stopPropagation()}>
+      <div className="relative bg-white rounded-lg shadow-xl w-[360px] p-6" onClick={(e) => e.stopPropagation()}>
+        <ModalCloseButton onClick={onClose} />
         <h3 className="font-semibold mb-1">Cambiar contraseña</h3>
         <p className="text-sm text-stone-500 mb-4">Usuario: <strong>{user.full_name}</strong></p>
         <input

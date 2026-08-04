@@ -6,6 +6,8 @@ import { centsToARS, formatDateTime, todayISO } from "@/lib/format";
 import type { DailyReport, IvaReportItem, MarginCategory, MarginProduct, Product, ProductAffinity, ReorderItem, Sale, SaleWithItems, SalesByUser, TopProduct } from "@/types";
 import { markReportesVisited } from "@/components/OnboardingChecklist";
 import { confirmAction, showToast } from "@/stores/dialogs";
+import { useEscapeToClose } from "@/lib/useEscapeToClose";
+import ModalCloseButton from "@/components/ui/ModalCloseButton";
 import clsx from "clsx";
 
 const METHOD_LABELS: Record<string, string> = {
@@ -1178,10 +1180,12 @@ function PrintReport({
 function SaleDetailModal({ sw, onClose, onCancel }: { sw: SaleWithItems; onClose: () => void; onCancel: (id: number) => void }) {
   const { sale, items } = sw;
   const cancelled = sale.notes?.includes("[ANULADA]");
+  useEscapeToClose(onClose);
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-white rounded-lg shadow-xl w-[520px] max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
-        <div className="p-5 border-b border-stone-200 flex items-start justify-between">
+      <div className="relative bg-white rounded-lg shadow-xl w-[520px] max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <ModalCloseButton onClick={onClose} />
+        <div className="p-5 border-b border-stone-200 flex items-start justify-between pr-6">
           <div>
             <h2 className="font-semibold">Venta #{sale.id}</h2>
             <p className="text-xs text-stone-400 mt-0.5">{formatDateTime(sale.created_at)}</p>

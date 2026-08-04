@@ -4,6 +4,8 @@ import { api } from "@/lib/api";
 import { centsToARS, arsStringToCents } from "@/lib/format";
 import { playError, playSuccess } from "@/lib/sound";
 import { showToast } from "@/stores/dialogs";
+import { useEscapeToClose } from "@/lib/useEscapeToClose";
+import ModalCloseButton from "@/components/ui/ModalCloseButton";
 import type { PaymentMethod, PaymentSplit, SaleWithItems } from "@/types";
 import clsx from "clsx";
 import TicketPrint from "./TicketPrint";
@@ -46,6 +48,9 @@ export default function PaymentModal({ totalCents, sessionId, isRi, onClose, onC
   const [businessAddress, setBusinessAddress] = useState("");
   const [ticketFooter, setTicketFooter]   = useState("¡Gracias por su compra!");
   const cart = useCart();
+  // Sin Escape en la pantalla de "venta confirmada": es intencional, para no
+  // descartar sin querer el ticket recién cobrado antes de imprimirlo.
+  useEscapeToClose(onClose, !completedSale);
 
   const isEffective = method === "efectivo";
   const isFiado     = method === "cuenta_corriente";
@@ -208,8 +213,9 @@ export default function PaymentModal({ totalCents, sessionId, isRi, onClose, onC
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-white rounded-lg shadow-xl w-[500px] p-6" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-4">
+      <div className="relative bg-white rounded-lg shadow-xl w-[500px] p-6" onClick={(e) => e.stopPropagation()}>
+        <ModalCloseButton onClick={onClose} />
+        <div className="flex items-center justify-between mb-4 pr-8">
           <h2 className="text-lg font-semibold">Cobrar venta</h2>
           <button
             onClick={() => setSplitMode((m) => !m)}

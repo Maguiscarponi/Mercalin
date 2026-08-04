@@ -3,6 +3,8 @@ import { api } from "@/lib/api";
 import { centsToARS, arsStringToCents, formatDateTime } from "@/lib/format";
 import { confirmAction, showToast } from "@/stores/dialogs";
 import Field from "@/components/ui/Field";
+import { useEscapeToClose } from "@/lib/useEscapeToClose";
+import ModalCloseButton from "@/components/ui/ModalCloseButton";
 import type { Client, ClientAccountEntry, ClientRfm, ClientSegment, NewClient } from "@/types";
 import clsx from "clsx";
 
@@ -297,6 +299,7 @@ function ClientAccountModal({ client, onClose }: { client: Client; onClose: () =
   const [payError, setPayError] = useState<string | null>(null);
   const [currentClient, setCurrentClient] = useState(client);
   const [accountTab, setAccountTab] = useState<"cuenta" | "compras">("cuenta");
+  useEscapeToClose(onClose);
 
   async function load() {
     const [h, c] = await Promise.all([
@@ -334,9 +337,10 @@ function ClientAccountModal({ client, onClose }: { client: Client; onClose: () =
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-white rounded-lg shadow-xl w-[580px] max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+      <div className="relative bg-white rounded-lg shadow-xl w-[580px] max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <ModalCloseButton onClick={onClose} />
         <div className="p-5 border-b border-stone-200">
-          <div className="flex justify-between items-start">
+          <div className="flex justify-between items-start pr-6">
             <div>
               <h2 className="font-semibold text-lg">{currentClient.name}</h2>
               <p className="text-sm text-stone-500 mt-0.5">
@@ -480,6 +484,7 @@ function ClientForm({
     initial.credit_limit_cents ? (initial.credit_limit_cents / 100).toString() : ""
   );
   const [nameError, setNameError] = useState(false);
+  useEscapeToClose(onCancel);
 
   function f(key: keyof Client) {
     return (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
@@ -496,7 +501,8 @@ function ClientForm({
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onCancel}>
-      <div className="bg-white rounded-lg shadow-xl w-[480px] p-6" onClick={(e) => e.stopPropagation()}>
+      <div className="relative bg-white rounded-lg shadow-xl w-[480px] p-6" onClick={(e) => e.stopPropagation()}>
+        <ModalCloseButton onClick={onCancel} />
         <h2 className="text-lg font-semibold mb-4">{form.id ? "Editar cliente" : "Nuevo cliente"}</h2>
 
         <div className="space-y-3">

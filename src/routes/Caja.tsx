@@ -4,6 +4,8 @@ import { api } from "@/lib/api";
 import { centsToARS, arsStringToCents, formatDateTime, todayISO } from "@/lib/format";
 import { printHtml } from "@/lib/printHtml";
 import { playError, playScan } from "@/lib/sound";
+import { useEscapeToClose } from "@/lib/useEscapeToClose";
+import ModalCloseButton from "@/components/ui/ModalCloseButton";
 import clsx from "clsx";
 import PaymentModal from "@/components/PaymentModal";
 import { CashSessionPanel, OpenCashForm } from "./Caja_Sesion";
@@ -885,6 +887,7 @@ ${itemsHtml}
 function ClientSearch({ onSelect, onClose }: { onSelect: (c: Client) => void; onClose: () => void }) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<Client[]>([]);
+  useEscapeToClose(onClose);
 
   useEffect(() => {
     api.listClients(query).then(setResults).catch(console.error);
@@ -892,7 +895,8 @@ function ClientSearch({ onSelect, onClose }: { onSelect: (c: Client) => void; on
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-white rounded-lg shadow-xl w-[420px] p-5" onClick={(e) => e.stopPropagation()}>
+      <div className="relative bg-white rounded-lg shadow-xl w-[420px] p-5" onClick={(e) => e.stopPropagation()}>
+        <ModalCloseButton onClick={onClose} />
         <h3 className="font-semibold mb-3">Seleccionar cliente</h3>
         <input
           autoFocus
@@ -937,6 +941,7 @@ function SetPriceModal({
   const [priceStr, setPriceStr] = useState("");
   const [saving, setSaving] = useState(false);
   const cents = arsStringToCents(priceStr);
+  useEscapeToClose(onCancel);
 
   async function submit() {
     if (cents <= 0 || saving) return;
@@ -954,7 +959,8 @@ function SetPriceModal({
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onCancel}>
-      <div className="bg-white rounded-lg shadow-xl w-[380px] p-6" onClick={(e) => e.stopPropagation()}>
+      <div className="relative bg-white rounded-lg shadow-xl w-[380px] p-6" onClick={(e) => e.stopPropagation()}>
+        <ModalCloseButton onClick={onCancel} />
         <h3 className="font-semibold mb-1">Precio no cargado</h3>
         <p className="text-sm text-stone-500 mb-4">
           <strong>{product.name}</strong> todavía no tiene un precio de venta. Cargalo para agregarlo a esta
@@ -989,6 +995,7 @@ function PriceCheckModal({ onClose }: { onClose: () => void }) {
   const [found, setFound] = useState<Product | null>(null);
   const [notFound, setNotFound] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEscapeToClose(onClose);
 
   function handleChange(v: string) {
     setQuery(v); setFound(null); setNotFound(false);
@@ -1016,10 +1023,11 @@ function PriceCheckModal({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-white rounded-lg shadow-xl w-[380px] p-5" onClick={(e) => e.stopPropagation()}>
+      <div className="relative bg-white rounded-lg shadow-xl w-[380px] p-5" onClick={(e) => e.stopPropagation()}>
+        <ModalCloseButton onClick={onClose} />
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-semibold">Consulta de precio</h3>
-          <span className="text-xs text-stone-400 font-mono">F3 / Esc</span>
+          <span className="text-xs text-stone-400 font-mono mr-6">F3 / Esc</span>
         </div>
         <input
           autoFocus

@@ -3,6 +3,8 @@ import { api } from "@/lib/api";
 import { centsToARS, formatDateTime, todayISO } from "@/lib/format";
 import type { CashSession, CashMovement } from "@/types";
 import { CashSessionPanel, OpenCashForm } from "./Caja_Sesion";
+import { useEscapeToClose } from "@/lib/useEscapeToClose";
+import ModalCloseButton from "@/components/ui/ModalCloseButton";
 import clsx from "clsx";
 
 export default function CajaGestion() {
@@ -199,11 +201,13 @@ function SessionDetailModal({
   const efectivoVentas = byMethod["efectivo"] ?? 0;
   const expected = session.opening_cents + efectivoVentas + ingresos - egresos;
   const diff = session.closing_cents != null ? session.closing_cents - expected : null;
+  useEscapeToClose(onClose);
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-white rounded-lg shadow-xl w-[540px] max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
-        <div className="p-5 border-b border-stone-200">
+      <div className="relative bg-white rounded-lg shadow-xl w-[540px] max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <ModalCloseButton onClick={onClose} />
+        <div className="p-5 border-b border-stone-200 pr-10">
           <h2 className="font-semibold">Sesión #{session.id}</h2>
           <p className="text-xs text-stone-400 mt-0.5">
             {formatDateTime(session.opened_at)}

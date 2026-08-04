@@ -9,6 +9,8 @@ import type { BulkPriceInput, BulkPricePreviewItem, CatalogImportResult, CsvProd
 import clsx from "clsx";
 import HelpButton from "@/components/HelpModal";
 import Field from "@/components/ui/Field";
+import { useEscapeToClose } from "@/lib/useEscapeToClose";
+import ModalCloseButton from "@/components/ui/ModalCloseButton";
 
 function VelocityBadge({ v }: { v: ProductVelocity | undefined }) {
   if (!v) return null;
@@ -953,6 +955,7 @@ function StockAdjustForm({
   const [newStock, setNewStock] = useState(product.stock.toString());
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
+  useEscapeToClose(onCancel);
   const isWeighable = product.is_weighable;
   const unitLabel = isWeighable ? "kg" : "unidades";
   const parseVal = (s: string) => (isWeighable ? parseFloat(s) : parseInt(s, 10));
@@ -980,7 +983,8 @@ function StockAdjustForm({
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onCancel}>
-      <div className="bg-white rounded-lg shadow-xl w-[380px] p-6" onClick={(e) => e.stopPropagation()}>
+      <div className="relative bg-white rounded-lg shadow-xl w-[380px] p-6" onClick={(e) => e.stopPropagation()}>
+        <ModalCloseButton onClick={onCancel} />
         <h2 className="text-lg font-semibold mb-1">Ajustar stock</h2>
         <p className="text-sm text-stone-500 mb-4">{product.name}</p>
 
@@ -1042,6 +1046,7 @@ function StockMovementsModal({
 }) {
   const [movements, setMovements] = useState<StockMovement[]>([]);
   const [loading, setLoading] = useState(true);
+  useEscapeToClose(onClose);
 
   useEffect(() => {
     api.listStockMovements(product.id).then((m) => {
@@ -1059,8 +1064,9 @@ function StockMovementsModal({
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-white rounded-lg shadow-xl w-[540px] max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
-        <div className="p-5 border-b border-stone-200">
+      <div className="relative bg-white rounded-lg shadow-xl w-[540px] max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <ModalCloseButton onClick={onClose} />
+        <div className="p-5 border-b border-stone-200 pr-10">
           <h2 className="font-semibold">Historial de stock</h2>
           <p className="text-sm text-stone-500 mt-0.5">{product.name}</p>
         </div>
@@ -1142,6 +1148,7 @@ function ProductForm({
   );
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
+  useEscapeToClose(onCancel);
 
   useEffect(() => {
     api.listSuppliers().then(setSuppliers).catch(console.error);
@@ -1164,10 +1171,11 @@ function ProductForm({
       onClick={onCancel}
     >
       <div
-        className="bg-white rounded-lg shadow-xl w-[480px] max-h-[90vh] flex flex-col"
+        className="relative bg-white rounded-lg shadow-xl w-[480px] max-h-[90vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="p-6 pb-4 border-b border-stone-200">
+        <ModalCloseButton onClick={onCancel} />
+        <div className="p-6 pb-4 border-b border-stone-200 pr-10">
           <h2 className="text-lg font-semibold">
             {form.id ? "Editar producto" : "Nuevo producto"}
           </h2>
@@ -1474,6 +1482,7 @@ function AgregarProductoRow({ product, onSaved }: { product: Product; onSaved: (
 function OffImportModal({ onClose, onImported }: { onClose: () => void; onImported: () => void }) {
   const { running, progress, result, errorMsg, startedAt } = useCatalogImport();
   const prevResultRef = useRef<CatalogImportResult | null>(null);
+  useEscapeToClose(onClose);
 
   useEffect(() => {
     if (result && result !== prevResultRef.current) {
@@ -1601,6 +1610,7 @@ function ImportCsvModal({ onClose, onImported }: { onClose: () => void; onImport
   const [importing, setImporting] = useState(false);
   const [result, setResult] = useState<ImportResult | null>(null);
   const [parseError, setParseError] = useState<string | null>(null);
+  useEscapeToClose(onClose);
 
   function parseCsvText(text: string): CsvProductRow[] {
     const lines = text.split(/\r?\n/).filter((l) => l.trim());
@@ -1848,6 +1858,7 @@ function BulkPriceModal({ onClose, onSaved }: { onClose: () => void; onSaved: ()
   const [applying, setApplying] = useState(false);
   const [appliedCount, setAppliedCount] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  useEscapeToClose(onClose);
 
   function buildInput(): BulkPriceInput {
     return {

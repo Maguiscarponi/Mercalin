@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { centsToARS, arsStringToCents } from "@/lib/format";
 import { confirmAction, showToast } from "@/stores/dialogs";
+import { useEscapeToClose } from "@/lib/useEscapeToClose";
+import ModalCloseButton from "@/components/ui/ModalCloseButton";
 import type { Combo, ComboWithItems, NewCombo, NewComboItem, Product } from "@/types";
 import clsx from "clsx";
 
@@ -208,6 +210,7 @@ function ComboForm({ cw, onSave, onCancel }: {
   onCancel: () => void;
 }) {
   const isNew = !cw;
+  useEscapeToClose(onCancel);
   const [name, setName] = useState(cw?.combo.name ?? "");
   const [barcode, setBarcode] = useState(cw?.combo.barcode ?? "");
   const [priceStr, setPriceStr] = useState(cw ? (cw.combo.price_cents / 100).toString() : "");
@@ -271,7 +274,8 @@ function ComboForm({ cw, onSave, onCancel }: {
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onCancel}>
-      <div className="bg-white rounded-lg shadow-xl w-[520px] max-h-[90vh] overflow-y-auto p-6" onClick={(e) => e.stopPropagation()}>
+      <div className="relative bg-white rounded-lg shadow-xl w-[520px] max-h-[90vh] overflow-y-auto p-6" onClick={(e) => e.stopPropagation()}>
+        <ModalCloseButton onClick={onCancel} />
         <h2 className="font-semibold text-lg mb-5">{isNew ? "Nuevo combo" : "Editar combo"}</h2>
 
         <div className="space-y-4">

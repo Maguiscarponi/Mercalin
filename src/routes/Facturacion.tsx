@@ -3,6 +3,8 @@ import { api } from "@/lib/api";
 import { centsToARS } from "@/lib/format";
 import type { ArcaConfig, ArcaConfigInput, ElectronicInvoice } from "@/types";
 import { showToast } from "@/stores/dialogs";
+import { useEscapeToClose } from "@/lib/useEscapeToClose";
+import ModalCloseButton from "@/components/ui/ModalCloseButton";
 import clsx from "clsx";
 
 type Tab = "facturas" | "configuracion";
@@ -379,10 +381,12 @@ function ArcaSetup({ arcaConfig, onRefresh }: { arcaConfig: ArcaConfig | null; o
 
 function InvoiceDetail({ inv, onClose }: { inv: ElectronicInvoice; onClose: () => void }) {
   const ivaRate = inv.neto_cents > 0 ? ((inv.iva_cents / inv.neto_cents) * 100).toFixed(0) : "0";
+  useEscapeToClose(onClose);
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-white rounded-xl shadow-2xl w-[440px] p-6" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-start justify-between mb-4">
+      <div className="relative bg-white rounded-xl shadow-2xl w-[440px] p-6" onClick={(e) => e.stopPropagation()}>
+        <ModalCloseButton onClick={onClose} />
+        <div className="flex items-start justify-between mb-4 pr-6">
           <div>
             <h2 className="font-semibold text-lg">Factura {inv.invoice_type}</h2>
             <p className="text-sm text-stone-500 font-mono mt-0.5">{formatCbteNro(inv.cbte_nro, inv.punto_venta)}</p>

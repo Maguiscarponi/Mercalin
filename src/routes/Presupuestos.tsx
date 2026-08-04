@@ -3,6 +3,8 @@ import { api } from "@/lib/api";
 import { centsToARS, arsStringToCents, formatDateTime, todayISO } from "@/lib/format";
 import { confirmAction, showToast } from "@/stores/dialogs";
 import { printHtml } from "@/lib/printHtml";
+import { useEscapeToClose } from "@/lib/useEscapeToClose";
+import ModalCloseButton from "@/components/ui/ModalCloseButton";
 import type { Client, NewQuote, NewQuoteItem, Product, Quote, QuoteWithItems, QuoteStatus } from "@/types";
 import clsx from "clsx";
 
@@ -167,6 +169,7 @@ function QuoteDetailModal({
   onDelete: (id: number) => void;
 }) {
   const { quote, items } = qw;
+  useEscapeToClose(onClose);
 
   function printQuote() {
     const html = `<html><head><title>Presupuesto #${quote.id}</title>
@@ -193,8 +196,9 @@ function QuoteDetailModal({
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-white rounded-lg shadow-xl w-[560px] max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
-        <div className="p-5 border-b border-stone-200 flex justify-between items-start">
+      <div className="relative bg-white rounded-lg shadow-xl w-[560px] max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <ModalCloseButton onClick={onClose} />
+        <div className="p-5 border-b border-stone-200 flex justify-between items-start pr-6">
           <div>
             <h2 className="font-semibold text-lg">Presupuesto #{quote.id}</h2>
             {quote.client_name && <p className="text-sm text-stone-500">{quote.client_name}</p>}
@@ -285,6 +289,7 @@ function QuoteForm({ onCancel, onSaved }: { onCancel: () => void; onSaved: () =>
   ]);
   const [saving, setSaving] = useState(false);
   const [productQuery, setProductQuery] = useState("");
+  useEscapeToClose(onCancel);
 
   useEffect(() => {
     Promise.all([api.listClients(""), api.listProducts("")]).then(([c, p]) => {
@@ -366,8 +371,9 @@ function QuoteForm({ onCancel, onSaved }: { onCancel: () => void; onSaved: () =>
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onCancel}>
-      <div className="bg-white rounded-lg shadow-xl w-[680px] max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
-        <div className="p-5 border-b border-stone-200">
+      <div className="relative bg-white rounded-lg shadow-xl w-[680px] max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <ModalCloseButton onClick={onCancel} />
+        <div className="p-5 border-b border-stone-200 pr-10">
           <h2 className="font-semibold text-lg">Nuevo presupuesto</h2>
         </div>
 

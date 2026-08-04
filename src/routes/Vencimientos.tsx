@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { formatDate, todayISO } from "@/lib/format";
 import { confirmAction, showToast } from "@/stores/dialogs";
+import { useEscapeToClose } from "@/lib/useEscapeToClose";
+import ModalCloseButton from "@/components/ui/ModalCloseButton";
 import type { ExpiringLot, NewProductLot, Product } from "@/types";
 import clsx from "clsx";
 
@@ -251,6 +253,7 @@ function EditExpiryModal({
 }) {
   const [date, setDate] = useState(lot.expires_at.slice(0, 10));
   const [saving, setSaving] = useState(false);
+  useEscapeToClose(onClose);
 
   async function save() {
     setSaving(true);
@@ -267,7 +270,8 @@ function EditExpiryModal({
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-white rounded-lg shadow-xl w-80 p-6" onClick={(e) => e.stopPropagation()}>
+      <div className="relative bg-white rounded-lg shadow-xl w-80 p-6" onClick={(e) => e.stopPropagation()}>
+        <ModalCloseButton onClick={onClose} />
         <h2 className="font-semibold mb-1">Editar vencimiento del lote</h2>
         <p className="text-sm text-stone-500 mb-4">{lot.product_name} · {lot.qty} unidades</p>
         <label className="block mb-5">
@@ -305,6 +309,7 @@ function AddLotModal({
   const [expiresAt, setExpiresAt] = useState("");
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
+  useEscapeToClose(onClose);
 
   useEffect(() => {
     api.listProducts("").then(setProducts).catch(console.error);
@@ -335,7 +340,8 @@ function AddLotModal({
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-white rounded-lg shadow-xl w-96 p-6" onClick={(e) => e.stopPropagation()}>
+      <div className="relative bg-white rounded-lg shadow-xl w-96 p-6" onClick={(e) => e.stopPropagation()}>
+        <ModalCloseButton onClick={onClose} />
         <h2 className="font-semibold mb-4">Agregar lote manual</h2>
         <div className="space-y-3">
           <label className="block">
