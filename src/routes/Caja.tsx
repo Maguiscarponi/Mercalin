@@ -3,6 +3,7 @@ import { useCart } from "@/stores/cart";
 import { api } from "@/lib/api";
 import { centsToARS, arsStringToCents, formatDateTime, todayISO } from "@/lib/format";
 import { printHtml } from "@/lib/printHtml";
+import { playError, playScan } from "@/lib/sound";
 import clsx from "clsx";
 import PaymentModal from "@/components/PaymentModal";
 import { CashSessionPanel, OpenCashForm } from "./Caja_Sesion";
@@ -204,12 +205,14 @@ export default function Caja() {
       } else if (results.length > 1) {
         setSearchResults(results);
       } else {
+        playError();
         setError(`No encontrado: "${code}"`);
         setTimeout(() => setError(null), 2500);
         setScanValue("");
       }
     } catch (err) {
       console.error(err);
+      playError();
       setError("Error al buscar el producto");
       setScanValue("");
     }
@@ -328,6 +331,7 @@ export default function Caja() {
     addWithPromo(product, price);
     setStockMap((m) => ({ ...m, [product.id]: product.stock }));
     setCostMap((m) => ({ ...m, [product.id]: product.cost_cents }));
+    playScan();
   }
 
   function selectSearchResult(product: Product) {

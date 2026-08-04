@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { useCart } from "@/stores/cart";
 import { api } from "@/lib/api";
 import { centsToARS, arsStringToCents } from "@/lib/format";
+import { playError, playSuccess } from "@/lib/sound";
+import { showToast } from "@/stores/dialogs";
 import type { PaymentMethod, PaymentSplit, SaleWithItems } from "@/types";
 import clsx from "clsx";
 import TicketPrint from "./TicketPrint";
@@ -144,10 +146,12 @@ export default function PaymentModal({ totalCents, sessionId, isRi, onClose, onC
       });
       const sw = await api.getSaleWithItems(sale.id);
       setCompletedSale(sw);
+      playSuccess();
     } catch (err) {
       console.error("Error al guardar la venta:", err);
       const message = typeof err === "string" ? err : err instanceof Error ? err.message : "Error al guardar la venta.";
-      alert(message);
+      playError();
+      showToast({ message, tone: "danger" });
     } finally {
       setSubmitting(false);
     }

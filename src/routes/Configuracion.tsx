@@ -4,6 +4,7 @@ import type { BackupInfo, ConfigEntry, DeptButton, DeviceConfig, NetworkInfo, Pe
 import { arsStringToCents, centsToARS } from "@/lib/format";
 import { usePosModeStore } from "@/stores/posMode";
 import { confirmAction, showToast } from "@/stores/dialogs";
+import { isSoundEnabled, playSuccess, setSoundEnabled } from "@/lib/sound";
 import Field from "@/components/ui/Field";
 import clsx from "clsx";
 
@@ -34,6 +35,13 @@ export default function Configuracion() {
   const [connectError, setConnectError] = useState(false);
   const [pendingOps, setPendingOps] = useState<PendingSyncOp[]>([]);
   const syncStatus = usePosModeStore((s) => s.syncStatus);
+  const [soundOn, setSoundOn] = useState(isSoundEnabled());
+
+  function toggleSound(v: boolean) {
+    setSoundEnabled(v);
+    setSoundOn(v);
+    if (v) playSuccess();
+  }
 
   async function load() {
     const entries = await api.getAllConfig();
@@ -365,6 +373,23 @@ export default function Configuracion() {
         {/* ── SISTEMA ─────────────────────────────────────────── */}
         {tab === "sistema" && (
           <div className="max-w-xl space-y-5">
+            <section className="card p-5">
+              <h2 className="font-semibold text-sm mb-1">Sonido</h2>
+              <p className="text-xs text-stone-500 mb-4">
+                Aviso sonoro al escanear, al confirmar una venta y ante errores (código no
+                encontrado, venta rechazada). Es una preferencia de esta caja en particular,
+                no de la cuenta — cada equipo puede configurarlo distinto.
+              </p>
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium">Activar sonido</span>
+                <label className="relative inline-flex cursor-pointer">
+                  <input type="checkbox" className="sr-only peer" checked={soundOn}
+                    onChange={(e) => toggleSound(e.target.checked)} />
+                  <div className="w-9 h-5 bg-stone-200 peer-checked:bg-emerald-500 rounded-full transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:w-4 after:h-4 after:transition-all peer-checked:after:translate-x-4" />
+                </label>
+              </div>
+            </section>
+
             <section className="card p-5">
               <h2 className="font-semibold text-sm mb-1">Modo tablet / móvil</h2>
               <p className="text-xs text-stone-500 mb-4">Cualquier tablet en la misma red WiFi puede ver ventas del día, alertas y órdenes sin instalar nada.</p>

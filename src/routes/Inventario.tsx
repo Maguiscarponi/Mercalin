@@ -6,6 +6,7 @@ import { Barcode } from "lucide-react";
 import HelpButton from "@/components/HelpModal";
 import { confirmAction, showToast } from "@/stores/dialogs";
 import { useDebouncedValue } from "@/lib/useDebouncedValue";
+import { playError, playScan } from "@/lib/sound";
 
 type Step = "inicio" | "contando" | "revision" | "aplicado";
 
@@ -112,9 +113,11 @@ export default function Inventario() {
     if (!code) return;
     const match = products.find((p) => p.barcode === code);
     if (!match) {
+      playError();
       showToast({ message: `Código "${code}" no encontrado en el conteo`, tone: "danger" });
       return;
     }
+    playScan();
     setFilterCat("");
     setSearch("");
     setPendingFocusId(match.product_id);
