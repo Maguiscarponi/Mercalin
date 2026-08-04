@@ -72,6 +72,9 @@ export default function Vencimientos() {
       await api.retireLot(lot.lot_id);
       await load();
       showToast({ message: `Lote de "${lot.product_name}" retirado` });
+    } catch (e) {
+      console.error(e);
+      showToast({ message: "No se pudo retirar el lote", tone: "danger" });
     } finally {
       setRetiringId(null);
     }

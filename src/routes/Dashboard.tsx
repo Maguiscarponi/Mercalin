@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import clsx from "clsx";
 import { api } from "@/lib/api";
-import { centsToARS } from "@/lib/format";
+import { centsToARS, dateToLocalISO } from "@/lib/format";
 import OnboardingChecklist from "@/components/OnboardingChecklist";
 import type { DashboardData, Insight } from "@/types";
 
@@ -25,8 +25,8 @@ function dayLabel(isoDate: string): string {
   const today = new Date();
   const yesterday = new Date();
   yesterday.setDate(today.getDate() - 1);
-  if (isoDate === today.toISOString().slice(0, 10)) return "Hoy";
-  if (isoDate === yesterday.toISOString().slice(0, 10)) return "Ayer";
+  if (isoDate === dateToLocalISO(today)) return "Hoy";
+  if (isoDate === dateToLocalISO(yesterday)) return "Ayer";
   return DAY_NAMES[d.getDay()];
 }
 
@@ -397,7 +397,7 @@ export default function Dashboard() {
                   for (let i = 6; i >= 0; i--) {
                     const d = new Date(today);
                     d.setDate(today.getDate() - i);
-                    const iso = d.toISOString().slice(0, 10);
+                    const iso = dateToLocalISO(d);
                     const found = data.week_trend.find((t) => t.date === iso);
                     days.push(found ?? { date: iso, total_cents: 0, sales_count: 0 });
                   }

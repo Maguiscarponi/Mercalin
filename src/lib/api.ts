@@ -86,6 +86,9 @@ export const api = {
   listSalesRange: (fromDate: string, toDate: string, limit = 300) =>
     rpc<Sale[]>("list_sales_range", { fromDate, toDate, limit }),
 
+  listSalesByClient: (clientId: number, limit = 100) =>
+    rpc<Sale[]>("list_sales_by_client", { clientId, limit }),
+
   cancelSale: (id: number) =>
     rpc<void>("cancel_sale", { id }),
 

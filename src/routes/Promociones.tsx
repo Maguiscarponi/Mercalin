@@ -57,6 +57,7 @@ export default function Promociones() {
       setPromos((prev) => prev.map((p) => (p.id === id ? updated : p)));
     } catch (e) {
       console.error(e);
+      showToast({ message: "No se pudo cambiar el estado de la promoción", tone: "danger" });
     }
   }
 

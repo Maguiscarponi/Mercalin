@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useCart } from "@/stores/cart";
 import { api } from "@/lib/api";
-import { centsToARS, arsStringToCents, formatDateTime, todayISO } from "@/lib/format";
+import { centsToARS, arsStringToCents, formatDateTime, todayISO, dateToLocalISO } from "@/lib/format";
 import { printHtml } from "@/lib/printHtml";
 import { playError, playScan } from "@/lib/sound";
 import { useEscapeToClose } from "@/lib/useEscapeToClose";
@@ -80,7 +80,7 @@ export default function Caja() {
   // se auto-completa con los productos que más se agarran en los últimos 30 días
   // (por cantidad, no por facturación — importa la frecuencia real de venta).
   useEffect(() => {
-    const dateFrom = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+    const dateFrom = dateToLocalISO(new Date(Date.now() - 30 * 86400000));
     api.topProductsByQty(dateFrom, todayISO(), 8)
       .then(async (top) => {
         const ids = top.map((t) => t.product_id).filter((id): id is number => id != null);

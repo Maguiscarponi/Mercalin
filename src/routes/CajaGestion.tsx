@@ -44,15 +44,6 @@ export default function CajaGestion() {
     setSessionByMethod(report.by_method);
   }
 
-  // Calcular totales de una sesión cerrada
-  function sessionStats(s: CashSession, movements: CashMovement[]) {
-    const ingresos = movements.filter((m) => m.movement_type === "ingreso").reduce((a, m) => a + m.amount_cents, 0);
-    const egresos = movements.filter((m) => m.movement_type === "egreso").reduce((a, m) => a + m.amount_cents, 0);
-    const expected = s.opening_cents + ingresos - egresos;
-    const diff = s.closing_cents != null ? s.closing_cents - expected : null;
-    return { ingresos, egresos, expected, diff };
-  }
-
   const todayStr = todayISO();
 
   return (

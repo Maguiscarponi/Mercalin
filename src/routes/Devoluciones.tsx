@@ -80,14 +80,10 @@ export default function Devoluciones() {
     setLoadingClientSales(true);
     setClientSales([]);
     try {
-      // Últimos 90 días
-      const to = new Date();
-      const from = new Date();
-      from.setDate(from.getDate() - 90);
-      const toStr = to.toISOString().split("T")[0];
-      const fromStr = from.toISOString().split("T")[0];
-      const all = await api.listSalesRange(fromStr, toStr, 300);
-      setClientSales(all.filter((s) => s.client_id === client.id));
+      // Directo por cliente (no por rango de fecha con límite global): en un local con
+      // muchas ventas, filtrar del lado del cliente después de un límite global podía
+      // dejar afuera compras viejas de un cliente puntual antes de llegar al filtro.
+      setClientSales(await api.listSalesByClient(client.id));
     } catch (e) { console.error(e); }
     finally { setLoadingClientSales(false); }
   }
@@ -312,7 +308,7 @@ export default function Devoluciones() {
                 )}
 
                 {selectedClient && !loadingClientSales && clientSales.length === 0 && (
-                  <p className="text-sm text-stone-400">Sin ventas en los últimos 90 días.</p>
+                  <p className="text-sm text-stone-400">Este cliente no tiene ventas registradas.</p>
                 )}
 
                 {clientSales.length > 0 && !saleData && (

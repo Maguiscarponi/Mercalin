@@ -68,6 +68,7 @@ pub fn dispatch(app: &AppHandle, command: &str, body: Value) -> RpcResult {
         "get_sale_with_items" => crate::commands::sales::get_sale_with_items[id: i64],
         "list_sales" => crate::commands::sales::list_sales[date: String, limit: i64],
         "list_sales_range" => crate::commands::sales::list_sales_range[from_date: String, to_date: String, limit: i64],
+        "list_sales_by_client" => crate::commands::sales::list_sales_by_client[client_id: i64, limit: i64],
         "cancel_sale" => crate::commands::sales::cancel_sale[id: i64],
 
         // Caja / sesiones

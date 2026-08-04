@@ -47,10 +47,17 @@ export function formatDateTime(iso: string): string {
   });
 }
 
-export function todayISO(): string {
-  const d = new Date();
+// A propósito NO usa .toISOString() (esa convierte a UTC primero) — en Argentina
+// (UTC-3), entre las 21:00 y la medianoche hora local ya sería "mañana" en UTC, así
+// que cualquier comparación de fecha-de-hoy hecha con toISOString() falla justo en el
+// horario en el que más se usa un kiosco. Esto siempre da la fecha del calendario local.
+export function dateToLocalISO(d: Date): string {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
+}
+
+export function todayISO(): string {
+  return dateToLocalISO(new Date());
 }

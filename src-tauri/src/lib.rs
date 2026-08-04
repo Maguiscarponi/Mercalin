@@ -478,6 +478,7 @@ pub fn run() {
             commands::sales::get_sale_with_items,
             commands::sales::list_sales,
             commands::sales::list_sales_range,
+            commands::sales::list_sales_by_client,
             commands::sales::cancel_sale,
             // Devoluciones
             commands::returns::create_return,

@@ -387,6 +387,36 @@ pub fn list_sales_range(
     Ok(out)
 }
 
+// Ventas de un cliente puntual, sin límite de fecha ni depender de un tope global.
+// Devoluciones (búsqueda "por cliente") usaba antes list_sales_range con un límite
+// de 300 sobre TODAS las ventas del período y filtraba por cliente después -- en un
+// local con más de 300 ventas en 90 días, las compras más viejas de un cliente
+// puntual podían quedar afuera del corte antes de siquiera llegar al filtro.
+#[tauri::command]
+pub fn list_sales_by_client(client_id: i64, limit: i64, state: State<AppState>) -> CmdResult<Vec<Sale>> {
+    let conn = state.db.lock();
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT s.*, c.name as client_name
+             FROM sales s LEFT JOIN clients c ON s.client_id = c.id
+             WHERE s.client_id = ?1
+             ORDER BY s.created_at DESC
+             LIMIT ?2",
+        )
+        .map_err(err)?;
+
+    let rows = stmt
+        .query_map(params![client_id, limit], row_to_sale)
+        .map_err(err)?;
+
+    let mut out = Vec::new();
+    for r in rows {
+        out.push(r.map_err(err)?);
+    }
+    Ok(out)
+}
+
 #[tauri::command]
 pub fn cancel_sale(id: i64, state: State<AppState>) -> CmdResult<()> {
     let mut conn = state.db.lock();
