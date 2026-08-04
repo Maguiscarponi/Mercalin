@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { api } from "@/lib/api";
 import type { BackupInfo, ConfigEntry, DeptButton, DeviceConfig, NetworkInfo, PendingSyncOp } from "@/types";
 import { arsStringToCents, centsToARS } from "@/lib/format";
@@ -6,7 +7,9 @@ import { usePosModeStore } from "@/stores/posMode";
 import { confirmAction, showToast } from "@/stores/dialogs";
 import { isSoundEnabled, playSuccess, setSoundEnabled } from "@/lib/sound";
 import { useCatalogImport } from "@/stores/catalogImport";
+import { useUpdaterStore } from "@/stores/updater";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { getVersion } from "@tauri-apps/api/app";
 import Field from "@/components/ui/Field";
 import clsx from "clsx";
 
@@ -20,7 +23,9 @@ const TABS: { id: Tab; label: string }[] = [
 ];
 
 export default function Configuracion() {
-  const [tab, setTab] = useState<Tab>("general");
+  const location = useLocation();
+  const initialTab = (location.state as { tab?: Tab } | null)?.tab;
+  const [tab, setTab] = useState<Tab>(initialTab ?? "general");
   const [config, setConfig] = useState<Record<string, string>>({});
   const [deptButtons, setDeptButtons] = useState<DeptButton[]>([]);
   const [loading, setLoading] = useState(true);
@@ -38,6 +43,12 @@ export default function Configuracion() {
   const [pendingOps, setPendingOps] = useState<PendingSyncOp[]>([]);
   const syncStatus = usePosModeStore((s) => s.syncStatus);
   const [soundOn, setSoundOn] = useState(isSoundEnabled());
+  const [appVersion, setAppVersion] = useState("");
+  const updater = useUpdaterStore();
+
+  useEffect(() => {
+    getVersion().then(setAppVersion).catch(() => {});
+  }, []);
 
   function toggleSound(v: boolean) {
     setSoundEnabled(v);
@@ -571,10 +582,43 @@ export default function Configuracion() {
             <section className="card p-5">
               <h2 className="font-semibold text-sm mb-3">Acerca del sistema</h2>
               <dl className="text-sm space-y-1.5 text-stone-600">
-                <div className="flex justify-between"><dt>Versión</dt><dd className="font-mono">0.4.0</dd></div>
+                <div className="flex justify-between"><dt>Versión</dt><dd className="font-mono">{appVersion || "…"}</dd></div>
                 <div className="flex justify-between"><dt>Sistema</dt><dd>Punto Simple POS</dd></div>
                 <div className="flex justify-between"><dt>Motor de DB</dt><dd>SQLite (local)</dd></div>
               </dl>
+
+              <div className="mt-4 pt-4 border-t border-stone-100">
+                {!updater.update && !updater.installing && (
+                  <button onClick={() => updater.checkNow()} disabled={updater.checking} className="btn btn-secondary text-sm">
+                    {updater.checking ? "Buscando…" : "Buscar actualizaciones"}
+                  </button>
+                )}
+                {updater.update && !updater.installing && (
+                  <div>
+                    <p className="text-sm text-emerald-700 mb-2">
+                      Hay una nueva versión disponible: <span className="font-mono">{updater.update.version}</span>
+                    </p>
+                    {updater.update.body && (
+                      <p className="text-xs text-stone-500 mb-3 whitespace-pre-line">{updater.update.body}</p>
+                    )}
+                    <button onClick={() => updater.install()} className="btn btn-primary text-sm">
+                      Actualizar a la nueva versión
+                    </button>
+                  </div>
+                )}
+                {updater.installing && (
+                  <p className="text-sm text-stone-600">
+                    Descargando e instalando…{updater.progress != null ? ` ${updater.progress}%` : ""}
+                    <br />La app se va a reiniciar sola cuando termine.
+                  </p>
+                )}
+                {updater.error && (
+                  <p className="text-xs text-red-600 mt-2">No se pudo actualizar: {updater.error}</p>
+                )}
+                {!updater.update && !updater.checking && !updater.installing && updater.lastCheckedAt && !updater.error && (
+                  <p className="text-xs text-stone-400 mt-2">Estás usando la última versión.</p>
+                )}
+              </div>
             </section>
 
             {import.meta.env.DEV && (

@@ -29,6 +29,8 @@ tiny_http = "0.12"
 ureq = { version = "2.10", features = ["tls"] }
 quick-xml = { version = "0.36", features = ["serialize"] }
 base64 = "0.22"
+tauri-plugin-updater = "2.10.1"
+tauri-plugin-process = "2.3.1"
 
 [profile.release]
 panic = "abort"

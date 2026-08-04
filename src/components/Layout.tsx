@@ -9,6 +9,8 @@ import { api } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
 import { ensureCatalogImportListeners } from "@/stores/catalogImport";
 import { ensureSyncStatusListener, usePosModeStore } from "@/stores/posMode";
+import { useUpdaterStore } from "@/stores/updater";
+import { Download } from "lucide-react";
 import { useCommandPaletteStore } from "@/stores/commandPalette";
 import { NAV_GROUPS, KEY_ROUTES, ALT_KEY_ROUTES, ROLE_LABEL, hasAccess } from "@/lib/navigation";
 import DialogHost from "@/components/DialogHost";
@@ -43,6 +45,7 @@ export default function Layout() {
   const userRole = (user?.role as UserRole) ?? "cajero";
   const posModeMode = usePosModeStore((s) => s.mode);
   const syncStatus = usePosModeStore((s) => s.syncStatus);
+  const availableUpdate = useUpdaterStore((s) => s.update);
   const isFocusMode = FOCUS_MODE_ROUTES.has(location.pathname);
   const focusLabel = NAV_GROUPS.flatMap((g) => g.links).find((l) => l.to === location.pathname)?.label ?? "";
 
@@ -52,6 +55,7 @@ export default function Layout() {
 
   useEffect(() => { ensureCatalogImportListeners(); }, []);
   useEffect(() => { usePosModeStore.getState().hydrate(); ensureSyncStatusListener(); }, []);
+  useEffect(() => { useUpdaterStore.getState().checkNow(); }, []);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -221,6 +225,23 @@ export default function Layout() {
               </span>
             )}
           </div>
+        )}
+
+        {/* Actualización disponible */}
+        {availableUpdate && (
+          <button
+            onClick={() => navigate("/configuracion", { state: { tab: "sistema" } })}
+            title={sidebarOpen ? undefined : `Actualización disponible: v${availableUpdate.version}`}
+            className={clsx(
+              "border-t border-stone-100 flex items-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 transition-colors text-emerald-700",
+              sidebarOpen ? "px-3.5 py-2" : "py-2 justify-center"
+            )}
+          >
+            <Download size={13} className="shrink-0" />
+            {sidebarOpen && (
+              <span className="text-[11px] font-semibold">Actualizar a v{availableUpdate.version}</span>
+            )}
+          </button>
         )}
 
         {/* Footer / usuario */}
