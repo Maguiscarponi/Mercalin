@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import * as XLSX from "xlsx";
 import { api } from "@/lib/api";
 import { centsToARS, formatDateTime, todayISO } from "@/lib/format";
 import type { DailyReport, IvaReportItem, MarginCategory, MarginProduct, Product, ProductAffinity, ReorderItem, Sale, SaleWithItems, SalesByUser, TopProduct } from "@/types";
@@ -8,6 +7,8 @@ import { markReportesVisited } from "@/components/OnboardingChecklist";
 import { confirmAction, showToast } from "@/stores/dialogs";
 import { useEscapeToClose } from "@/lib/useEscapeToClose";
 import ModalCloseButton from "@/components/ui/ModalCloseButton";
+import { exportStyledExcel, CURRENCY_FMT, INT_FMT, PCT_FMT, type ExcelSheet } from "@/lib/excelExport";
+import { Loader2 } from "lucide-react";
 import clsx from "clsx";
 
 const METHOD_LABELS: Record<string, string> = {
@@ -66,6 +67,8 @@ export default function Reportes() {
   const [loadingIva, setLoadingIva] = useState(false);
   const [affinityItems, setAffinityItems] = useState<ProductAffinity[]>([]);
   const [loadingAffinity, setLoadingAffinity] = useState(false);
+  const [exportingExcel, setExportingExcel] = useState(false);
+  const [exportingIva, setExportingIva] = useState(false);
 
   const [fromDate, toDate] = getRange(period, customFrom, customTo);
 
@@ -165,66 +168,105 @@ export default function Reportes() {
     }).catch(console.error).finally(() => setLoadingStock(false));
   }, [tab]); // eslint-disable-line
 
-  function exportExcel() {
+  async function exportExcel() {
     if (!report) return;
-    const wb = XLSX.utils.book_new();
+    setExportingExcel(true);
+    try {
+      const sheets: ExcelSheet[] = [
+        {
+          name: "Ventas",
+          columns: [
+            { header: "#", key: "id", width: 8, numFmt: INT_FMT, align: "right" as const },
+            { header: "Fecha", key: "date", width: 18 },
+            { header: "Total", key: "total", width: 14, numFmt: CURRENCY_FMT, align: "right" as const },
+            { header: "Descuento", key: "discount", width: 14, numFmt: CURRENCY_FMT, align: "right" as const },
+            { header: "Medio de pago", key: "method", width: 16 },
+            { header: "Cliente", key: "client", width: 22 },
+            { header: "Estado", key: "status", width: 12 },
+          ],
+          rows: sales.map((s) => ({
+            id: s.id,
+            date: formatDateTime(s.created_at),
+            total: s.total_cents / 100,
+            discount: s.discount_cents / 100,
+            method: METHOD_LABELS[s.payment_method] ?? s.payment_method,
+            client: s.client_name ?? "",
+            status: s.notes?.includes("[ANULADA]") ? "Anulada" : "OK",
+          })),
+        },
+        {
+          name: "Por método",
+          columns: [
+            { header: "Medio de pago", key: "method", width: 18 },
+            { header: "Total", key: "total", width: 14, numFmt: CURRENCY_FMT, align: "right" as const },
+            { header: "% del total", key: "pct", width: 14, numFmt: PCT_FMT, align: "right" as const },
+          ],
+          rows: Object.entries(report.by_method)
+            .filter(([, v]) => v > 0)
+            .sort((a, b) => b[1] - a[1])
+            .map(([m, cents]) => ({
+              method: METHOD_LABELS[m] ?? m,
+              total: cents / 100,
+              pct: report.total_cents > 0 ? (cents / report.total_cents) * 100 : 0,
+            })),
+        },
+      ];
 
-    // Hoja 1: Detalle de ventas
-    const salesRows = sales
-      .map((s) => ({
-        "#": s.id,
-        Fecha: formatDateTime(s.created_at),
-        "Total ($)": (s.total_cents / 100).toFixed(2),
-        "Descuento ($)": (s.discount_cents / 100).toFixed(2),
-        "Medio de pago": METHOD_LABELS[s.payment_method] ?? s.payment_method,
-        Cliente: s.client_name ?? "",
-        Estado: s.notes?.includes("[ANULADA]") ? "Anulada" : "OK",
-      }));
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(salesRows), "Ventas");
+      if (topProducts.length > 0) {
+        sheets.push({
+          name: "Top productos",
+          columns: [
+            { header: "Posición", key: "pos", width: 10, numFmt: INT_FMT, align: "right" as const },
+            { header: "Producto", key: "name", width: 32 },
+            { header: "Unidades", key: "qty", width: 12, numFmt: INT_FMT, align: "right" as const },
+            { header: "Total", key: "total", width: 14, numFmt: CURRENCY_FMT, align: "right" as const },
+          ],
+          rows: topProducts.map((p, i) => ({
+            pos: i + 1,
+            name: p.name,
+            qty: p.total_qty,
+            total: p.total_cents / 100,
+          })),
+        });
+      }
 
-    // Hoja 2: Resumen por método de pago
-    const methodRows = Object.entries(report.by_method)
-      .filter(([, v]) => v > 0)
-      .sort((a, b) => b[1] - a[1])
-      .map(([m, cents]) => ({
-        "Medio de pago": METHOD_LABELS[m] ?? m,
-        "Total ($)": (cents / 100).toFixed(2),
-        "% del total": report.total_cents > 0
-          ? ((cents / report.total_cents) * 100).toFixed(1) + "%"
-          : "0%",
-      }));
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(methodRows), "Por método");
+      if (marginProducts.length > 0) {
+        sheets.push({
+          name: "Márgenes",
+          columns: [
+            { header: "Producto", key: "name", width: 32 },
+            { header: "Categoría", key: "category", width: 18 },
+            { header: "Costo", key: "cost", width: 12, numFmt: CURRENCY_FMT, align: "right" as const },
+            { header: "Precio", key: "price", width: 12, numFmt: CURRENCY_FMT, align: "right" as const },
+            { header: "Margen %", key: "margin", width: 12, numFmt: PCT_FMT, align: "right" as const },
+            { header: "Unid. vendidas", key: "units", width: 14, numFmt: INT_FMT, align: "right" as const },
+            { header: "Ingresos", key: "revenue", width: 14, numFmt: CURRENCY_FMT, align: "right" as const },
+            { header: "Ganancia", key: "profit", width: 14, numFmt: CURRENCY_FMT, align: "right" as const },
+          ],
+          rows: marginProducts.filter((p) => p.units_sold > 0).map((p) => ({
+            name: p.name,
+            category: p.category ?? "",
+            cost: p.cost_cents / 100,
+            price: p.price_cents / 100,
+            margin: p.margin_pct,
+            units: p.units_sold,
+            revenue: p.revenue_cents / 100,
+            profit: p.profit_cents / 100,
+          })),
+        });
+      }
 
-    // Hoja 3: Top productos
-    if (topProducts.length > 0) {
-      const topRows = topProducts.map((p, i) => ({
-        Posición: i + 1,
-        Producto: p.name,
-        "Unidades": p.total_qty,
-        "Total ($)": (p.total_cents / 100).toFixed(2),
-      }));
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(topRows), "Top productos");
+      const filename = fromDate === toDate
+        ? `reporte_${fromDate}.xlsx`
+        : `reporte_${fromDate}_al_${toDate}.xlsx`;
+      await exportStyledExcel(sheets, filename);
+      showToast({ message: "Reporte exportado a Excel", tone: "success" });
+    } catch (e) {
+      console.error(e);
+      showToast({ message: "No se pudo exportar el reporte a Excel", tone: "danger" });
+    } finally {
+      setExportingExcel(false);
     }
-
-    // Hoja 4: Márgenes (si ya se cargaron)
-    if (marginProducts.length > 0) {
-      const marginRows = marginProducts.filter((p) => p.units_sold > 0).map((p) => ({
-        Producto: p.name,
-        Categoría: p.category ?? "",
-        "Costo ($)": (p.cost_cents / 100).toFixed(2),
-        "Precio ($)": (p.price_cents / 100).toFixed(2),
-        "Margen %": p.margin_pct.toFixed(1) + "%",
-        "Unid. vendidas": p.units_sold,
-        "Ingresos ($)": (p.revenue_cents / 100).toFixed(2),
-        "Ganancia ($)": (p.profit_cents / 100).toFixed(2),
-      }));
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(marginRows), "Márgenes");
-    }
-
-    const filename = fromDate === toDate
-      ? `reporte_${fromDate}.xlsx`
-      : `reporte_${fromDate}_al_${toDate}.xlsx`;
-    XLSX.writeFile(wb, filename);
   }
 
   function exportPdf() {
@@ -307,10 +349,10 @@ export default function Reportes() {
         <div className="flex items-center gap-2 ml-auto">
           <button
             onClick={exportExcel}
-            disabled={!report}
-            className="btn btn-secondary text-sm disabled:opacity-40"
+            disabled={!report || exportingExcel}
+            className="btn btn-secondary text-sm disabled:opacity-40 inline-flex items-center gap-1.5"
           >
-            📊 Exportar Excel
+            {exportingExcel ? <Loader2 size={14} className="animate-spin" /> : "📊"} {exportingExcel ? "Exportando…" : "Exportar Excel"}
           </button>
           <button
             onClick={exportPdf}
@@ -909,22 +951,42 @@ export default function Reportes() {
                   <div className="flex items-center justify-between px-4 py-2.5 bg-stone-50 border-b border-stone-100">
                     <span className="font-semibold text-sm">Detalle de ventas con IVA</span>
                     <button
-                      onClick={() => {
-                        const wb = XLSX.utils.book_new();
-                        const rows = ivaItems.map((i) => ({
-                          Fecha: i.date, "#Venta": i.sale_id,
-                          "Medio de pago": METHOD_LABELS[i.payment_method] ?? i.payment_method,
-                          Cliente: i.client_name ?? "",
-                          "Total ($)": (i.total_cents / 100).toFixed(2),
-                          "Neto ($)": (i.neto_cents / 100).toFixed(2),
-                          "IVA ($)": (i.iva_cents / 100).toFixed(2),
-                        }));
-                        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), "Libro IVA");
-                        XLSX.writeFile(wb, `libro_iva_${fromDate}_${toDate}.xlsx`);
+                      onClick={async () => {
+                        setExportingIva(true);
+                        try {
+                          await exportStyledExcel([{
+                            name: "Libro IVA",
+                            columns: [
+                              { header: "Fecha", key: "date", width: 14 },
+                              { header: "#Venta", key: "saleId", width: 10, numFmt: INT_FMT, align: "right" },
+                              { header: "Medio de pago", key: "method", width: 16 },
+                              { header: "Cliente", key: "client", width: 22 },
+                              { header: "Total", key: "total", width: 14, numFmt: CURRENCY_FMT, align: "right" },
+                              { header: "Neto", key: "neto", width: 14, numFmt: CURRENCY_FMT, align: "right" },
+                              { header: "IVA", key: "iva", width: 14, numFmt: CURRENCY_FMT, align: "right" },
+                            ],
+                            rows: ivaItems.map((i) => ({
+                              date: i.date,
+                              saleId: i.sale_id,
+                              method: METHOD_LABELS[i.payment_method] ?? i.payment_method,
+                              client: i.client_name ?? "",
+                              total: i.total_cents / 100,
+                              neto: i.neto_cents / 100,
+                              iva: i.iva_cents / 100,
+                            })),
+                          }], `libro_iva_${fromDate}_${toDate}.xlsx`);
+                          showToast({ message: "Libro IVA exportado a Excel", tone: "success" });
+                        } catch (e) {
+                          console.error(e);
+                          showToast({ message: "No se pudo exportar el libro IVA", tone: "danger" });
+                        } finally {
+                          setExportingIva(false);
+                        }
                       }}
-                      className="btn btn-secondary text-xs"
+                      disabled={exportingIva}
+                      className="btn btn-secondary text-xs disabled:opacity-60 inline-flex items-center gap-1.5"
                     >
-                      📊 Exportar Excel
+                      {exportingIva ? <Loader2 size={12} className="animate-spin" /> : "📊"} {exportingIva ? "Exportando…" : "Exportar Excel"}
                     </button>
                   </div>
                   <table className="w-full text-sm">
@@ -1018,19 +1080,27 @@ function PrintReport({
   const th: React.CSSProperties = {
     ...cell,
     fontWeight: 700,
-    background: "#f9fafb",
+    background: "#EEF2FF",
     fontSize: "9pt",
     textTransform: "uppercase",
     letterSpacing: "0.05em",
-    color: "#6b7280",
+    color: "#4338CA",
+  };
+  const sectionTitle: React.CSSProperties = {
+    fontWeight: 700,
+    fontSize: "13pt",
+    marginBottom: "10px",
+    borderBottom: "2px solid #4F46E5",
+    paddingBottom: "6px",
+    color: "#1e1b4b",
   };
 
   return (
     <div style={{ fontFamily: "'Inter', Arial, sans-serif", color: "#111", maxWidth: "900px", margin: "0 auto" }}>
       {/* Encabezado */}
-      <div style={{ borderBottom: "3px solid #111", paddingBottom: "12px", marginBottom: "24px", display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
+      <div style={{ borderBottom: "4px solid #4F46E5", paddingBottom: "12px", marginBottom: "24px", display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
         <div>
-          <div style={{ fontSize: "22pt", fontWeight: 800, lineHeight: 1 }}>Informe de Ventas</div>
+          <div style={{ fontSize: "22pt", fontWeight: 800, lineHeight: 1, color: "#312e81" }}>Informe de Ventas</div>
           <div style={{ color: "#6b7280", fontSize: "12pt", marginTop: "4px" }}>Período: {periodLabel}</div>
         </div>
         <div style={{ textAlign: "right", color: "#9ca3af", fontSize: "10pt" }}>
@@ -1047,9 +1117,9 @@ function PrintReport({
           { label: "Ticket promedio", value: report.sales_count > 0 ? centsToARS(Math.round(report.total_cents / report.sales_count)) : centsToARS(0) },
           { label: "Descuentos", value: centsToARS(report.discount_cents) },
         ].map((k) => (
-          <div key={k.label} style={{ border: "1px solid #e5e7eb", borderRadius: "8px", padding: "14px" }}>
+          <div key={k.label} style={{ border: "1px solid #e5e7eb", borderTop: "3px solid #4F46E5", borderRadius: "8px", padding: "14px", background: "#fafafe" }}>
             <div style={{ fontSize: "9pt", color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.05em" }}>{k.label}</div>
-            <div style={{ fontSize: "18pt", fontWeight: 800, marginTop: "4px" }}>{k.value}</div>
+            <div style={{ fontSize: "18pt", fontWeight: 800, marginTop: "4px", color: "#312e81" }}>{k.value}</div>
           </div>
         ))}
       </div>
@@ -1057,7 +1127,7 @@ function PrintReport({
       {/* Medios de pago + Categorías */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px", marginBottom: "28px" }}>
         <div>
-          <div style={{ fontWeight: 700, fontSize: "13pt", marginBottom: "10px", borderBottom: "1px solid #e5e7eb", paddingBottom: "6px" }}>Por medio de pago</div>
+          <div style={sectionTitle}>Por medio de pago</div>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead><tr><th style={{ ...th, textAlign: "left" }}>Medio</th><th style={{ ...th, textAlign: "right" }}>Total</th><th style={{ ...th, textAlign: "right" }}>%</th></tr></thead>
             <tbody>
@@ -1074,7 +1144,7 @@ function PrintReport({
           </table>
         </div>
         <div>
-          <div style={{ fontWeight: 700, fontSize: "13pt", marginBottom: "10px", borderBottom: "1px solid #e5e7eb", paddingBottom: "6px" }}>Por categoría</div>
+          <div style={sectionTitle}>Por categoría</div>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead><tr><th style={{ ...th, textAlign: "left" }}>Categoría</th><th style={{ ...th, textAlign: "right" }}>Total</th></tr></thead>
             <tbody>
@@ -1092,7 +1162,7 @@ function PrintReport({
       {/* Top productos */}
       {topProducts.length > 0 && (
         <div style={{ marginBottom: "28px" }}>
-          <div style={{ fontWeight: 700, fontSize: "13pt", marginBottom: "10px", borderBottom: "1px solid #e5e7eb", paddingBottom: "6px" }}>Productos más vendidos</div>
+          <div style={sectionTitle}>Productos más vendidos</div>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead><tr>
               <th style={{ ...th, textAlign: "left", width: "32px" }}>#</th>
@@ -1117,7 +1187,7 @@ function PrintReport({
       {/* Por empleado */}
       {byUser.length > 0 && (
         <div style={{ marginBottom: "28px" }}>
-          <div style={{ fontWeight: 700, fontSize: "13pt", marginBottom: "10px", borderBottom: "1px solid #e5e7eb", paddingBottom: "6px" }}>Ventas por empleado</div>
+          <div style={sectionTitle}>Ventas por empleado</div>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead><tr>
               <th style={{ ...th, textAlign: "left" }}>Empleado</th>
@@ -1144,7 +1214,7 @@ function PrintReport({
       {/* Márgenes por categoría */}
       {marginCategories.length > 0 && (
         <div>
-          <div style={{ fontWeight: 700, fontSize: "13pt", marginBottom: "10px", borderBottom: "1px solid #e5e7eb", paddingBottom: "6px" }}>Rentabilidad por categoría</div>
+          <div style={sectionTitle}>Rentabilidad por categoría</div>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead><tr>
               <th style={{ ...th, textAlign: "left" }}>Categoría</th>

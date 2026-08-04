@@ -5,6 +5,8 @@ import { confirmAction, showToast } from "@/stores/dialogs";
 import Field from "@/components/ui/Field";
 import { useEscapeToClose } from "@/lib/useEscapeToClose";
 import ModalCloseButton from "@/components/ui/ModalCloseButton";
+import { exportStyledExcel, CURRENCY_FMT } from "@/lib/excelExport";
+import { Loader2 } from "lucide-react";
 import type { Client, ClientAccountEntry, ClientRfm, ClientSegment, NewClient } from "@/types";
 import clsx from "clsx";
 
@@ -34,6 +36,7 @@ export default function Clientes() {
   const [viewing, setViewing] = useState<Client | null>(null);
   const [debtFilter, setDebtFilter] = useState(false);
   const [segmentFilter, setSegmentFilter] = useState<ClientSegment | "">("");
+  const [exporting, setExporting] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -91,28 +94,42 @@ export default function Clientes() {
     showToast({ message: `${client.name} eliminado` });
   }
 
-  function exportCsv(rows: Client[]) {
-    const header = "nombre;telefono;dni;email;direccion;deuda;limite_credito;notas";
-    const lines = rows.map((c) =>
-      [
-        `"${c.name.replace(/"/g, '""')}"`,
-        c.phone || "",
-        c.dni || "",
-        c.email || "",
-        c.address || "",
-        (c.balance_cents / 100).toFixed(2),
-        (c.credit_limit_cents / 100).toFixed(2),
-        `"${(c.notes || "").replace(/"/g, '""')}"`,
-      ].join(";")
-    );
-    const csv = "﻿" + [header, ...lines].join("\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "clientes.csv";
-    a.click();
-    URL.revokeObjectURL(url);
+  async function exportCsv(rows: Client[]) {
+    setExporting(true);
+    try {
+      await exportStyledExcel(
+        [{
+          name: "Clientes",
+          columns: [
+            { header: "Nombre", key: "name", width: 26 },
+            { header: "Teléfono", key: "phone", width: 16 },
+            { header: "DNI", key: "dni", width: 14 },
+            { header: "Email", key: "email", width: 24 },
+            { header: "Dirección", key: "address", width: 26 },
+            { header: "Deuda", key: "balance", width: 14, numFmt: CURRENCY_FMT, align: "right" },
+            { header: "Límite crédito", key: "creditLimit", width: 16, numFmt: CURRENCY_FMT, align: "right" },
+            { header: "Notas", key: "notes", width: 28 },
+          ],
+          rows: rows.map((c) => ({
+            name: c.name,
+            phone: c.phone || "",
+            dni: c.dni || "",
+            email: c.email || "",
+            address: c.address || "",
+            balance: c.balance_cents / 100,
+            creditLimit: c.credit_limit_cents / 100,
+            notes: c.notes || "",
+          })),
+        }],
+        "clientes.xlsx"
+      );
+      showToast({ message: `${rows.length} cliente${rows.length !== 1 ? "s" : ""} exportados a Excel`, tone: "success" });
+    } catch (e) {
+      console.error(e);
+      showToast({ message: "No se pudo exportar a Excel", tone: "danger" });
+    } finally {
+      setExporting(false);
+    }
   }
 
   const debtors = clients.filter((c) => c.balance_cents > 0);
@@ -163,8 +180,13 @@ export default function Clientes() {
           )}
         </div>
         <div className="flex gap-2">
-          <button onClick={() => exportCsv(visibleClients)} className="btn btn-secondary text-sm" title="Exporta la lista tal como se ve, respetando los filtros activos">
-            📤 Exportar CSV
+          <button
+            onClick={() => exportCsv(visibleClients)}
+            disabled={exporting}
+            className="btn btn-secondary text-sm disabled:opacity-60 inline-flex items-center gap-1.5"
+            title="Exporta la lista tal como se ve, respetando los filtros activos"
+          >
+            {exporting ? <Loader2 size={14} className="animate-spin" /> : "📤"} {exporting ? "Exportando…" : "Exportar Excel"}
           </button>
           <button onClick={() => setEditing({})} className="btn btn-primary">
             Nuevo cliente

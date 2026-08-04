@@ -173,23 +173,47 @@ function QuoteDetailModal({
 
   function printQuote() {
     const html = `<html><head><title>Presupuesto #${quote.id}</title>
-      <style>body{font-family:sans-serif;padding:20px;max-width:600px;margin:auto}
-      table{width:100%;border-collapse:collapse}td,th{padding:6px;border-bottom:1px solid #eee}
-      th{text-align:left;font-size:11px;text-transform:uppercase;color:#666}
-      .right{text-align:right}.total{font-weight:bold;font-size:1.2em}</style>
+      <style>
+        *{box-sizing:border-box}
+        body{font-family:'Segoe UI',Arial,sans-serif;padding:32px;max-width:640px;margin:auto;color:#1c1917}
+        .header{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:4px solid #4F46E5;padding-bottom:14px;margin-bottom:22px}
+        .header h1{margin:0;font-size:22px;color:#312e81}
+        .header .meta{text-align:right;color:#78716c;font-size:11px}
+        .info{display:flex;gap:24px;margin-bottom:18px;font-size:13px}
+        .info div{background:#EEF2FF;border-radius:8px;padding:8px 14px}
+        .info b{color:#312e81}
+        table{width:100%;border-collapse:collapse;margin-top:8px}
+        td,th{padding:8px 10px;border-bottom:1px solid #e7e5e4}
+        th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:#4338CA;background:#EEF2FF}
+        tbody tr:nth-child(even){background:#fafaf9}
+        .right{text-align:right}
+        .discount{color:#dc2626}
+        .totalbox{margin-top:18px;display:flex;justify-content:flex-end}
+        .totalbox div{background:#4F46E5;color:#fff;border-radius:8px;padding:12px 20px;font-size:18px;font-weight:700}
+        .footer{margin-top:32px;padding-top:12px;border-top:1px solid #e7e5e4;color:#a8a29e;font-size:10px;text-align:center}
+      </style>
       </head><body>
-      <h2>Presupuesto #${quote.id}</h2>
-      ${quote.client_name ? `<p>Cliente: <strong>${quote.client_name}</strong></p>` : ""}
-      ${quote.valid_until ? `<p>Válido hasta: ${quote.valid_until}</p>` : ""}
-      ${quote.notes ? `<p>Notas: ${quote.notes}</p>` : ""}
+      <div class="header">
+        <h1>Presupuesto #${quote.id}</h1>
+        <div class="meta">
+          <div>Punto Simple POS</div>
+          <div>${new Date().toLocaleDateString("es-AR")}</div>
+        </div>
+      </div>
+      <div class="info">
+        ${quote.client_name ? `<div>Cliente: <b>${quote.client_name}</b></div>` : ""}
+        ${quote.valid_until ? `<div>Válido hasta: <b>${quote.valid_until}</b></div>` : ""}
+      </div>
+      ${quote.notes ? `<p style="color:#57534e;font-size:13px">${quote.notes}</p>` : ""}
       <table>
         <thead><tr><th>Producto</th><th class="right">Precio</th><th class="right">Cant.</th><th class="right">Subtotal</th></tr></thead>
         <tbody>
-          ${items.map((i) => `<tr><td>${i.name}${i.discount_pct > 0 ? ` (-${i.discount_pct}%)` : ""}</td><td class="right">$${(i.unit_price_cents / 100).toFixed(2)}</td><td class="right">${i.qty}</td><td class="right">$${(i.subtotal_cents / 100).toFixed(2)}</td></tr>`).join("")}
+          ${items.map((i) => `<tr><td>${i.name}${i.discount_pct > 0 ? ` <span class="discount">(-${i.discount_pct}%)</span>` : ""}</td><td class="right">$${(i.unit_price_cents / 100).toFixed(2)}</td><td class="right">${i.qty}</td><td class="right">$${(i.subtotal_cents / 100).toFixed(2)}</td></tr>`).join("")}
         </tbody>
       </table>
-      ${quote.discount_cents > 0 ? `<p class="right">Descuento: -$${(quote.discount_cents / 100).toFixed(2)}</p>` : ""}
-      <p class="right total">TOTAL: $${(quote.total_cents / 100).toFixed(2)}</p>
+      ${quote.discount_cents > 0 ? `<p class="right discount">Descuento: -$${(quote.discount_cents / 100).toFixed(2)}</p>` : ""}
+      <div class="totalbox"><div>TOTAL: $${(quote.total_cents / 100).toFixed(2)}</div></div>
+      <div class="footer">Presupuesto generado por Punto Simple POS</div>
       </body></html>`;
     printHtml(html);
   }

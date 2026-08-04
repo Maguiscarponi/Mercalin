@@ -7,10 +7,12 @@ import { useCatalogImport } from "@/stores/catalogImport";
 import { confirmAction, showToast } from "@/stores/dialogs";
 import type { BulkPriceInput, BulkPricePreviewItem, CatalogImportResult, CsvProductRow, DeadStockItem, ImportResult, LowStockProduct, MinStockSuggestion, PriceImpactItem, PriceSyncAlert, Product, ProductVelocity, StockMovement, Supplier } from "@/types";
 import clsx from "clsx";
+import { Loader2 } from "lucide-react";
 import HelpButton from "@/components/HelpModal";
 import Field from "@/components/ui/Field";
 import { useEscapeToClose } from "@/lib/useEscapeToClose";
 import ModalCloseButton from "@/components/ui/ModalCloseButton";
+import { exportStyledExcel, CURRENCY_FMT, INT_FMT } from "@/lib/excelExport";
 
 function VelocityBadge({ v }: { v: ProductVelocity | undefined }) {
   if (!v) return null;
@@ -80,7 +82,7 @@ export default function Productos() {
   const [showImport, setShowImport] = useState(false);
   const [showOffImport, setShowOffImport] = useState(false);
   const [showBulkPrice, setShowBulkPrice] = useState(false);
-  const [exportToast, setExportToast] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -153,25 +155,46 @@ export default function Productos() {
     load();
   }
 
-  function exportXlsx(rows: Product[]) {
-    const data = rows.map((p) => ({
-      Código: p.barcode || "",
-      Nombre: p.name,
-      Costo: (p.cost_cents / 100).toFixed(2),
-      "Precio minorista": (p.price_cents / 100).toFixed(2),
-      "Precio mayorista": (p.price2_cents / 100).toFixed(2),
-      "Precio especial": (p.price3_cents / 100).toFixed(2),
-      Stock: p.stock,
-      "Stock mínimo": p.min_stock,
-      Categoría: p.category || "",
-      Vencimiento: p.expires_at || "",
-    }));
-    const ws = XLSX.utils.json_to_sheet(data);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Productos");
-    XLSX.writeFile(wb, "productos.xlsx");
-    setExportToast(`✓ ${rows.length} productos exportados a Excel`);
-    setTimeout(() => setExportToast(null), 3500);
+  async function exportXlsx(rows: Product[]) {
+    setExporting(true);
+    try {
+      await exportStyledExcel(
+        [{
+          name: "Productos",
+          columns: [
+            { header: "Código", key: "barcode", width: 16 },
+            { header: "Nombre", key: "name", width: 32 },
+            { header: "Costo", key: "cost", width: 12, numFmt: CURRENCY_FMT, align: "right" },
+            { header: "Precio minorista", key: "price1", width: 16, numFmt: CURRENCY_FMT, align: "right" },
+            { header: "Precio mayorista", key: "price2", width: 16, numFmt: CURRENCY_FMT, align: "right" },
+            { header: "Precio especial", key: "price3", width: 16, numFmt: CURRENCY_FMT, align: "right" },
+            { header: "Stock", key: "stock", width: 10, numFmt: INT_FMT, align: "right" },
+            { header: "Stock mínimo", key: "minStock", width: 12, numFmt: INT_FMT, align: "right" },
+            { header: "Categoría", key: "category", width: 18 },
+            { header: "Vencimiento", key: "expires", width: 14 },
+          ],
+          rows: rows.map((p) => ({
+            barcode: p.barcode || "",
+            name: p.name,
+            cost: p.cost_cents / 100,
+            price1: p.price_cents / 100,
+            price2: p.price2_cents / 100,
+            price3: p.price3_cents / 100,
+            stock: p.stock,
+            minStock: p.min_stock,
+            category: p.category || "",
+            expires: p.expires_at || "",
+          })),
+        }],
+        "productos.xlsx"
+      );
+      showToast({ message: `${rows.length} producto${rows.length !== 1 ? "s" : ""} exportados a Excel`, tone: "success" });
+    } catch (e) {
+      console.error(e);
+      showToast({ message: "No se pudo exportar a Excel", tone: "danger" });
+    } finally {
+      setExporting(false);
+    }
   }
 
   return (
@@ -204,8 +227,8 @@ export default function Productos() {
           <button onClick={() => setShowImport(true)} className="btn btn-secondary text-sm">
             📥 Importar CSV/Excel
           </button>
-          <button onClick={() => exportXlsx(products)} className="btn btn-secondary text-sm">
-            📤 Exportar Excel
+          <button onClick={() => exportXlsx(products)} disabled={exporting} className="btn btn-secondary text-sm disabled:opacity-60 inline-flex items-center gap-1.5">
+            {exporting ? <Loader2 size={14} className="animate-spin" /> : "📤"} {exporting ? "Exportando…" : "Exportar Excel"}
           </button>
           <button onClick={() => setShowBulkPrice(true)} className="btn btn-secondary text-sm">
             💲 Actualizar precios
@@ -637,12 +660,6 @@ export default function Productos() {
           onClose={() => setShowBulkPrice(false)}
           onSaved={() => { setShowBulkPrice(false); load(); }}
         />
-      )}
-
-      {exportToast && (
-        <div className="fixed bottom-4 right-4 z-50 bg-emerald-700 text-white px-5 py-3 rounded-lg shadow-lg text-sm font-medium animate-fade-in">
-          {exportToast}
-        </div>
       )}
 
       <HelpButton module="productos" />
