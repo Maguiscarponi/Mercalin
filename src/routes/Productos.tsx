@@ -3,9 +3,8 @@ import * as XLSX from "xlsx";
 import { api } from "@/lib/api";
 import { centsToARS, arsStringToCents, formatDateTime } from "@/lib/format";
 import { useSearchParams } from "react-router-dom";
-import { useCatalogImport } from "@/stores/catalogImport";
 import { confirmAction, showToast } from "@/stores/dialogs";
-import type { BulkPriceInput, BulkPricePreviewItem, CatalogImportResult, CsvProductRow, DeadStockItem, ImportResult, LowStockProduct, MinStockSuggestion, PriceImpactItem, PriceSyncAlert, Product, ProductVelocity, StockMovement, Supplier } from "@/types";
+import type { BulkPriceInput, BulkPricePreviewItem, CsvProductRow, DeadStockItem, ImportResult, LowStockProduct, MinStockSuggestion, PriceImpactItem, PriceSyncAlert, Product, ProductVelocity, StockMovement, Supplier } from "@/types";
 import clsx from "clsx";
 import { Loader2 } from "lucide-react";
 import HelpButton from "@/components/HelpModal";
@@ -61,8 +60,6 @@ function MarginBadge({ price, cost }: { price: number; cost: number }) {
 }
 
 export default function Productos() {
-  const offImportRunning = useCatalogImport((s) => s.running);
-  const offImportProgress = useCatalogImport((s) => s.progress);
   const [searchParams, setSearchParams] = useSearchParams();
   const [products, setProducts] = useState<Product[]>([]);
   const [velocities, setVelocities] = useState<Map<number, ProductVelocity>>(new Map());
@@ -80,7 +77,6 @@ export default function Productos() {
   const [categoryFilter, setCategoryFilter] = useState("");
   const [page, setPage] = useState(1);
   const [showImport, setShowImport] = useState(false);
-  const [showOffImport, setShowOffImport] = useState(false);
   const [showBulkPrice, setShowBulkPrice] = useState(false);
   const [exporting, setExporting] = useState(false);
 
@@ -213,17 +209,6 @@ export default function Productos() {
           )}
         </div>
         <div className="flex gap-2">
-          <button
-            onClick={() => setShowOffImport(true)}
-            className={clsx("btn text-sm", offImportRunning ? "btn-primary" : "btn-secondary")}
-            title={offImportRunning
-              ? "La importación sigue corriendo en segundo plano — tocá para ver el progreso"
-              : "Trae más productos precargados desde la base pública, para tener más opciones al buscarlos en \"Agregar producto\""}
-          >
-            {offImportRunning
-              ? `⏳ Importando… ${offImportProgress ? `${offImportProgress.page}/${offImportProgress.total_pages}` : ""}`
-              : "🌐 Traer más precargados"}
-          </button>
           <button onClick={() => setShowImport(true)} className="btn btn-secondary text-sm">
             📥 Importar CSV/Excel
           </button>
@@ -643,13 +628,6 @@ export default function Productos() {
         <StockMovementsModal
           product={viewingMovements}
           onClose={() => setViewingMovements(null)}
-        />
-      )}
-
-      {showOffImport && (
-        <OffImportModal
-          onClose={() => setShowOffImport(false)}
-          onImported={load}
         />
       )}
 
@@ -1397,15 +1375,6 @@ function QuickPriceInput({ product, onSaved }: { product: Product; onSaved: (p: 
   );
 }
 
-function formatEta(seconds: number): string {
-  if (seconds < 45) return "menos de un minuto";
-  const mins = Math.round(seconds / 60);
-  return mins <= 1 ? "~1 minuto" : `~${mins} minutos`;
-}
-
-// El estado del import vive en un store global (useCatalogImport), no acá: así el import
-// sigue corriendo y el progreso se sigue viendo aunque el usuario cierre este modal y
-// navegue a otra pantalla — cerrar esta ventana NO cancela nada.
 // Pantalla principal para sumar productos al catálogo: busca entre lo ya precargado
 // (incluye fantasmas) y, si lo encuentra, alcanza con ponerle un precio para activarlo.
 // Si no está, ofrece cargarlo a mano con el nombre ya escrito.
@@ -1497,131 +1466,6 @@ function AgregarProductoRow({ product, onSaved }: { product: Product; onSaved: (
       ) : (
         <span className="text-xs font-medium text-stone-500 shrink-0">Ya está en tu catálogo</span>
       )}
-    </div>
-  );
-}
-
-function OffImportModal({ onClose, onImported }: { onClose: () => void; onImported: () => void }) {
-  const { running, progress, result, errorMsg, startedAt } = useCatalogImport();
-  const prevResultRef = useRef<CatalogImportResult | null>(null);
-  useEscapeToClose(onClose);
-
-  useEffect(() => {
-    if (result && result !== prevResultRef.current) {
-      prevResultRef.current = result;
-      if (result.imported > 0) onImported();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [result]);
-
-  async function start() {
-    useCatalogImport.getState().start();
-    try {
-      await api.importOffCatalog();
-      // A partir de acá el progreso y el resultado llegan por eventos (ver stores/catalogImport.ts).
-    } catch (e) {
-      console.error(e);
-      const detail = typeof e === "string" ? e : (e as { message?: string } | undefined)?.message;
-      useCatalogImport.getState().fail(detail || "No se pudo iniciar la importación. Probá de nuevo en unos segundos.");
-    }
-  }
-
-  async function cancel() {
-    try { await api.cancelOffCatalogImport(); } catch (e) { console.error(e); }
-  }
-
-  function closeAndClear() {
-    useCatalogImport.getState().dismissResult();
-    onClose();
-  }
-
-  const eta = (() => {
-    if (!progress || !startedAt || progress.page < 3) return null;
-    const elapsedSec = (Date.now() - startedAt) / 1000;
-    const remainingPages = Math.max(0, progress.total_pages - progress.page);
-    const secPerPage = elapsedSec / progress.page;
-    return formatEta(remainingPages * secPerPage);
-  })();
-
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-white rounded-lg shadow-xl w-[440px] p-6" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-start justify-between mb-1">
-          <h2 className="text-lg font-semibold">Importar catálogo público</h2>
-          <button onClick={onClose} className="text-stone-400 hover:text-stone-600 text-xl leading-none px-1 -mt-1">×</button>
-        </div>
-
-        {!running && !result && (
-          <>
-            <p className="text-sm text-stone-500 mb-4 leading-relaxed">
-              El grueso del catálogo (miles de productos argentinos, nombre y código de barras) ya está
-              precargado. Este botón solo trae los productos <strong>nuevos</strong> que se hayan agregado a
-              la base pública desde la última vez — no toca ni pisa nada de lo que ya tenés. No cuentan en
-              tu catálogo ni en "Todos": se buscan y se activan (con precio) desde la pestaña
-              <strong> "🔎 Agregar producto"</strong>, o directamente vendiéndolos en Caja. Necesita conexión a
-              internet y puede tardar varios minutos — podés cerrar esta ventana y seguir usando el sistema
-              mientras tanto.
-            </p>
-            {errorMsg && (
-              <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-md px-3 py-2 mb-4">
-                {errorMsg}
-              </div>
-            )}
-            <div className="flex gap-2">
-              <button onClick={onClose} className="btn btn-secondary flex-1">Cancelar</button>
-              <button onClick={start} className="btn btn-primary flex-1">Iniciar importación</button>
-            </div>
-          </>
-        )}
-
-        {running && (
-          <>
-            <div className="bg-stone-50 rounded-md p-4 mb-4 text-sm space-y-2">
-              <div className="flex justify-between">
-                <span className="text-stone-500">Página</span>
-                <span className="tabular font-medium">
-                  {progress ? `${progress.page} / ${progress.total_pages}` : "iniciando…"}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-stone-500">Productos nuevos encontrados</span>
-                <span className="tabular font-semibold text-emerald-700">{progress?.imported ?? 0}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-stone-500">Tiempo estimado restante</span>
-                <span className="tabular font-medium">{eta ?? "calculando…"}</span>
-              </div>
-              <div className="w-full h-1.5 bg-stone-200 rounded-full overflow-hidden mt-1">
-                <div
-                  className="h-full bg-indigo-600 transition-all"
-                  style={{ width: `${progress ? Math.min(100, (progress.page / Math.max(1, progress.total_pages)) * 100) : 3}%` }}
-                />
-              </div>
-            </div>
-            <div className="flex gap-2">
-              <button onClick={cancel} className="btn btn-secondary flex-1">Cancelar importación</button>
-              <button onClick={onClose} className="btn btn-primary flex-1">Seguir usando el sistema</button>
-            </div>
-          </>
-        )}
-
-        {result && (
-          <>
-            {result.error && (
-              <div className="bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-md px-3 py-2 mb-3">
-                {result.error}
-              </div>
-            )}
-            <div className="bg-emerald-50 border border-emerald-200 rounded-md p-4 mb-4 text-sm text-emerald-800">
-              {result.cancelled ? "Importación cancelada. " : ""}
-              Se agregaron <strong>{result.imported}</strong> productos nuevos.
-              {result.skipped_existing > 0 ? ` ${result.skipped_existing} ya estaban en tu catálogo (no se tocaron).` : ""}
-              {result.failed_pages > 0 && !result.error ? ` ${result.failed_pages} páginas no se pudieron consultar — podés repetir la importación más tarde, no duplica nada.` : ""}
-            </div>
-            <button onClick={closeAndClear} className="btn btn-primary w-full">Cerrar</button>
-          </>
-        )}
-      </div>
     </div>
   );
 }

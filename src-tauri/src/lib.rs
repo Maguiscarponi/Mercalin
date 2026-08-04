@@ -623,9 +623,7 @@ pub fn run() {
             commands::arca::issue_electronic_invoice,
             commands::arca::list_electronic_invoices,
             commands::arca::retry_pending_invoices,
-            // Catálogo — Import Open Food Facts
-            commands::catalog_import::import_off_catalog,
-            commands::catalog_import::cancel_off_catalog_import,
+            // Catálogo — plantilla desde Open Food Facts (solo desarrollo)
             #[cfg(debug_assertions)]
             commands::catalog_import::generate_catalog_template,
         ])

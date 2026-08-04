@@ -471,15 +471,8 @@ export const api = {
     rpc<number>("retry_pending_invoices"),
 
   // ─── Import de catálogo público (Open Food Facts) ──────────────────────
-  // El comando solo dispara el import en un hilo aparte y vuelve al instante;
-  // el progreso y el resultado final llegan por los eventos "catalog_import_progress"
-  // y "catalog_import_done" (ver OffImportModal en Productos.tsx).
-  importOffCatalog: () =>
-    invoke<void>("import_off_catalog"),
-
-  cancelOffCatalogImport: () =>
-    invoke<void>("cancel_off_catalog_import"),
-
+  // El progreso y el resultado final llegan por los eventos "catalog_import_progress"
+  // y "catalog_import_done" (ver stores/catalogImport.ts).
   // Solo existe en builds de desarrollo (ver #[cfg(debug_assertions)] en catalog_import.rs) —
   // arma la base "plantilla" que después se copia a mano a src-tauri/resources/template.db.
   generateCatalogTemplate: () =>

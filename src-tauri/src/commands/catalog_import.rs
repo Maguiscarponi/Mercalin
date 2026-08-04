@@ -107,7 +107,7 @@ fn fetch_page_with_retries(prefix: &str, page: i64, attempts: u32) -> Result<Off
 }
 
 /// El trabajo real del import, pensado para correr en su propio hilo del sistema operativo
-/// (ver `import_off_catalog` más abajo) — nunca en el hilo que atiende los comandos de Tauri,
+/// (ver `generate_catalog_template` más abajo) — nunca en el hilo que atiende los comandos de Tauri,
 /// para que el resto de la app (incluido cualquier click del usuario) siga respondiendo
 /// mientras esto tarda su minuto o dos. Recorre los dos prefijos de código de barras
 /// argentinos (778, 779) uno detrás del otro.
@@ -281,52 +281,6 @@ fn run_import(
         cancelled: was_cancelled,
         error: early_stop_note,
     })
-}
-
-/// Importa productos nuevos (por código de barras argentino real) desde el catálogo
-/// público de Open Food Facts. Nunca modifica productos que ya existen: si el barcode
-/// ya está en la base, se salta. Entran como "fantasma" (sin precio) — Caja no deja vender
-/// un producto sin precio, así que no hay riesgo de venderlos gratis.
-///
-/// El comando en sí vuelve casi al instante: todo el trabajo corre en un hilo del sistema
-/// operativo aparte, igual que ya hace el servidor del modo tablet. El progreso y el
-/// resultado final viajan por eventos (`catalog_import_progress` / `catalog_import_done`),
-/// nunca bloqueando la respuesta del comando — así el resto de la app queda usable mientras
-/// esto corre en segundo plano.
-#[tauri::command]
-pub fn import_off_catalog(app: AppHandle, state: State<AppState>) -> CmdResult<()> {
-    if state.catalog_import_running.swap(true, Ordering::SeqCst) {
-        return Err("Ya hay una importación en curso.".into());
-    }
-    state.catalog_import_cancelled.store(false, Ordering::SeqCst);
-
-    let db = Arc::clone(&state.db);
-    let running_flag = Arc::clone(&state.catalog_import_running);
-    let cancelled_flag = Arc::clone(&state.catalog_import_cancelled);
-    let app_handle = app.clone();
-
-    std::thread::spawn(move || {
-        let result = run_import(&app_handle, &db, &cancelled_flag);
-        running_flag.store(false, Ordering::SeqCst);
-        let payload = result.unwrap_or_else(|e| CatalogImportResult {
-            imported: 0,
-            skipped_existing: 0,
-            skipped_invalid: 0,
-            failed_pages: 0,
-            scanned: 0,
-            cancelled: false,
-            error: Some(e),
-        });
-        let _ = app_handle.emit("catalog_import_done", payload);
-    });
-
-    Ok(())
-}
-
-#[tauri::command]
-pub fn cancel_off_catalog_import(state: State<AppState>) -> CmdResult<()> {
-    state.catalog_import_cancelled.store(true, Ordering::SeqCst);
-    Ok(())
 }
 
 /// Herramienta de uso interno (solo build de desarrollo, ver el gate en lib.rs): arma una

@@ -4,9 +4,8 @@
 // real (las mismas funciones de `commands::*`), no la duplica.
 //
 // Comandos deliberadamente fuera de este dispatcher:
-// - `import_off_catalog` / `cancel_off_catalog_import`: usan `AppHandle` y
-//   emiten eventos de progreso en vez de devolver un resultado directo; son
-//   una operación de mantenimiento pesada, no tiene sentido dispararla remota.
+// - `generate_catalog_template`: usa `AppHandle` y emite eventos de progreso en vez
+//   de devolver un resultado directo; además solo existe en builds de desarrollo.
 // - `get_network_info`: siempre responde con la IP/puerto de *este* equipo,
 //   nunca tiene sentido pedírsela a otro.
 //

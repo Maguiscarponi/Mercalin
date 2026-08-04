@@ -1022,7 +1022,10 @@ pub struct ElectronicInvoice {
 }
 
 // ─── Import de catálogo público (Open Food Facts) ─────────────────────────────
+// Solo las usa commands::catalog_import, que es un módulo de solo-desarrollo
+// (ver el #[cfg(debug_assertions)] en commands/mod.rs).
 
+#[cfg(debug_assertions)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CatalogImportProgress {
     pub page: i64,
@@ -1031,6 +1034,7 @@ pub struct CatalogImportProgress {
     pub scanned: i64,
 }
 
+#[cfg(debug_assertions)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CatalogImportResult {
     pub imported: i64,
