@@ -25,6 +25,29 @@ fn parse_backup_display_date(name: &str) -> String {
     name.to_string()
 }
 
+// Carpeta real donde se guardan los backups. Por defecto es la carpeta "backups"
+// al lado de kiosco.db (como siempre) -- pero si la dueña eligió una carpeta propia
+// (típicamente su carpeta local de OneDrive/Google Drive/Dropbox), los backups van
+// ahí, y es el cliente de sincronización de esa nube -- no esta app -- el que se
+// encarga de subirlos. Evita depender de una API de terceros (con su propia cuota,
+// credenciales y eventual costo) para algo que el sistema operativo ya resuelve solo.
+fn backup_dir(state: &AppState) -> std::path::PathBuf {
+    let custom: Option<String> = {
+        let conn = state.db.lock();
+        conn.query_row("SELECT value FROM config WHERE key='backup_custom_dir'", [], |r| r.get(0))
+            .ok()
+            .filter(|s: &String| !s.trim().is_empty())
+    };
+    if let Some(dir) = custom {
+        return std::path::PathBuf::from(dir);
+    }
+    state
+        .db_path
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new("."))
+        .join("backups")
+}
+
 fn get_keep_count(state: &AppState) -> usize {
     let conn = state.db.lock();
     conn.query_row(
@@ -55,8 +78,7 @@ fn prune_old_backups(backup_dir: &std::path::Path, keep: usize) {
 pub fn backup_database(state: State<AppState>) -> CmdResult<String> {
     let keep = get_keep_count(&state);
     let db_path = state.db_path.clone();
-    let parent = db_path.parent().unwrap_or_else(|| std::path::Path::new("."));
-    let backup_dir = parent.join("backups");
+    let backup_dir = backup_dir(&state);
     std::fs::create_dir_all(&backup_dir).map_err(err)?;
 
     let now = chrono::Local::now();
@@ -78,11 +100,7 @@ pub fn backup_database(state: State<AppState>) -> CmdResult<String> {
 
 #[tauri::command]
 pub fn list_backups(state: State<AppState>) -> CmdResult<Vec<BackupInfo>> {
-    let db_path = state.db_path.clone();
-    let backup_dir = db_path
-        .parent()
-        .unwrap_or_else(|| std::path::Path::new("."))
-        .join("backups");
+    let backup_dir = backup_dir(&state);
 
     if !backup_dir.exists() {
         return Ok(vec![]);
@@ -109,12 +127,7 @@ pub fn delete_backup(name: String, state: State<AppState>) -> CmdResult<()> {
     if !name.starts_with("kiosco_backup_") || !name.ends_with(".db") || name.contains('/') || name.contains('\\') {
         return Err("Nombre de backup inválido".into());
     }
-    let db_path = state.db_path.clone();
-    let backup_dir = db_path
-        .parent()
-        .unwrap_or_else(|| std::path::Path::new("."))
-        .join("backups");
-    let path = backup_dir.join(&name);
+    let path = backup_dir(&state).join(&name);
     if path.exists() {
         std::fs::remove_file(&path).map_err(err)?;
     }
@@ -163,8 +176,7 @@ pub fn auto_backup_check(state: State<AppState>) -> CmdResult<bool> {
     }
 
     let db_path = state.db_path.clone();
-    let parent = db_path.parent().unwrap_or_else(|| std::path::Path::new("."));
-    let backup_dir = parent.join("backups");
+    let backup_dir = backup_dir(&state);
     std::fs::create_dir_all(&backup_dir).map_err(err)?;
 
     let now = chrono::Local::now();

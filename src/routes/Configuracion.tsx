@@ -6,6 +6,7 @@ import { usePosModeStore } from "@/stores/posMode";
 import { confirmAction, showToast } from "@/stores/dialogs";
 import { isSoundEnabled, playSuccess, setSoundEnabled } from "@/lib/sound";
 import { useCatalogImport } from "@/stores/catalogImport";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import Field from "@/components/ui/Field";
 import clsx from "clsx";
 
@@ -157,6 +158,14 @@ export default function Configuracion() {
       api.listBackups().then(setBackups).catch(console.error);
     } catch (e) { setBackupMsg(`Error: ${e}`); }
     finally { setBacking(false); }
+  }
+
+  async function pickBackupDir() {
+    const selected = await openDialog({ directory: true, multiple: false, title: "Elegí la carpeta para los backups" });
+    if (typeof selected === "string") {
+      setField("backup_custom_dir", selected);
+      showToast({ message: "Carpeta elegida — tocá \"Guardar\" para confirmar", tone: "success" });
+    }
   }
 
   async function doDeleteBackup(name: string) {
@@ -369,6 +378,26 @@ export default function Configuracion() {
                   </Field>
                 </div>
               )}
+              <div className="pt-3 mt-3 border-t border-stone-100">
+                <p className="text-sm font-medium mb-1">Carpeta de destino</p>
+                <p className="text-xs text-stone-500 mb-2">
+                  Elegí tu carpeta local de OneDrive, Google Drive o Dropbox y los backups quedan subidos a la
+                  nube solos — sin ningún servicio nuevo que pagar, lo hace el sincronizador que ya tenés instalado.
+                </p>
+                <div className="flex gap-2">
+                  <input
+                    className="input flex-1 text-xs font-mono"
+                    readOnly
+                    value={config.backup_custom_dir || "(la carpeta de siempre, junto al programa)"}
+                  />
+                  <button onClick={pickBackupDir} className="btn btn-secondary text-sm shrink-0">Elegir carpeta…</button>
+                  {config.backup_custom_dir && (
+                    <button onClick={() => setField("backup_custom_dir", "")} className="btn btn-secondary text-sm shrink-0" title="Volver a la carpeta por defecto">
+                      Quitar
+                    </button>
+                  )}
+                </div>
+              </div>
             </section>
 
             <section className="card p-5">
