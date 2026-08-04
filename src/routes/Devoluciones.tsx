@@ -217,7 +217,7 @@ export default function Devoluciones() {
               onClick={() => setTab(t)}
               className={clsx(
                 "px-4 py-1.5",
-                tab === t ? "bg-stone-700 text-white" : "bg-white hover:bg-stone-50 text-stone-600"
+                tab === t ? "bg-indigo-600 text-white" : "bg-white hover:bg-stone-50 text-stone-600"
               )}
             >
               {t === "nueva" ? "Nueva devolución" : "Historial"}
@@ -253,7 +253,7 @@ export default function Devoluciones() {
                     onClick={() => { setSearchMode(m); reset(); }}
                     className={clsx(
                       "px-3 py-1.5",
-                      searchMode === m ? "bg-stone-700 text-white" : "bg-white hover:bg-stone-50 text-stone-600"
+                      searchMode === m ? "bg-indigo-600 text-white" : "bg-white hover:bg-stone-50 text-stone-600"
                     )}
                   >
                     {m === "numero" ? "Por número" : "Por cliente"}

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { centsToARS, arsStringToCents, formatDateTime, todayISO } from "@/lib/format";
 import { confirmAction, showToast } from "@/stores/dialogs";
+import { printHtml } from "@/lib/printHtml";
 import type { Client, NewQuote, NewQuoteItem, Product, Quote, QuoteWithItems, QuoteStatus } from "@/types";
 import clsx from "clsx";
 
@@ -65,7 +66,7 @@ export default function Presupuestos() {
           <div className="flex rounded-md border border-stone-200 overflow-hidden text-xs">
             <button
               onClick={() => setStatusFilter("")}
-              className={clsx("px-3 py-1.5", statusFilter === "" ? "bg-stone-700 text-white" : "bg-white hover:bg-stone-50 text-stone-600")}
+              className={clsx("px-3 py-1.5", statusFilter === "" ? "bg-indigo-600 text-white" : "bg-white hover:bg-stone-50 text-stone-600")}
             >
               Todos ({quotes.length})
             </button>
@@ -76,7 +77,7 @@ export default function Presupuestos() {
                 <button
                   key={s}
                   onClick={() => setStatusFilter(s)}
-                  className={clsx("px-3 py-1.5", statusFilter === s ? "bg-stone-700 text-white" : "bg-white hover:bg-stone-50 text-stone-600")}
+                  className={clsx("px-3 py-1.5", statusFilter === s ? "bg-indigo-600 text-white" : "bg-white hover:bg-stone-50 text-stone-600")}
                 >
                   {STATUS_LABELS[s]} ({count})
                 </button>
@@ -168,9 +169,7 @@ function QuoteDetailModal({
   const { quote, items } = qw;
 
   function printQuote() {
-    const win = window.open("", "_blank");
-    if (!win) return;
-    win.document.write(`<html><head><title>Presupuesto #${quote.id}</title>
+    const html = `<html><head><title>Presupuesto #${quote.id}</title>
       <style>body{font-family:sans-serif;padding:20px;max-width:600px;margin:auto}
       table{width:100%;border-collapse:collapse}td,th{padding:6px;border-bottom:1px solid #eee}
       th{text-align:left;font-size:11px;text-transform:uppercase;color:#666}
@@ -188,9 +187,8 @@ function QuoteDetailModal({
       </table>
       ${quote.discount_cents > 0 ? `<p class="right">Descuento: -$${(quote.discount_cents / 100).toFixed(2)}</p>` : ""}
       <p class="right total">TOTAL: $${(quote.total_cents / 100).toFixed(2)}</p>
-      <script>window.print();window.close();</script>
-      </body></html>`);
-    win.document.close();
+      </body></html>`;
+    printHtml(html);
   }
 
   return (

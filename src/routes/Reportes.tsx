@@ -271,7 +271,7 @@ export default function Reportes() {
                 onClick={() => setPeriod(p.id)}
                 className={clsx(
                   "px-3 py-1.5 whitespace-nowrap",
-                  period === p.id ? "bg-emerald-600 text-white" : "bg-white hover:bg-stone-50 text-stone-600"
+                  period === p.id ? "bg-indigo-600 text-white" : "bg-white hover:bg-stone-50 text-stone-600"
                 )}
               >
                 {p.label}
@@ -286,7 +286,7 @@ export default function Reportes() {
                 onClick={() => setTab(t)}
                 className={clsx(
                   "px-3 py-1.5",
-                  tab === t ? "bg-stone-700 text-white" : "bg-white hover:bg-stone-50 text-stone-600"
+                  tab === t ? "bg-indigo-600 text-white" : "bg-white hover:bg-stone-50 text-stone-600"
                 )}
               >
                 {t === "resumen" ? "Resumen"
