@@ -470,13 +470,13 @@ export default function Dashboard() {
                   <button
                     key={item.product_id}
                     onClick={() => navigate("/vencimientos")}
-                    className="w-full text-left rounded-lg bg-amber-50 border border-amber-100 px-3 py-2 hover:bg-amber-100 transition-colors"
+                    className="w-full text-left rounded-lg bg-red-50 border border-red-100 px-3 py-2 hover:bg-red-100 transition-colors"
                   >
-                    <div className="text-[10px] font-bold text-amber-600 uppercase tracking-wide">
+                    <div className="text-[10px] font-bold text-red-600 uppercase tracking-wide">
                       Vencimiento
                     </div>
-                    <div className="text-xs font-semibold text-amber-900 mt-0.5 truncate">{item.name}</div>
-                    <div className="text-[10px] text-amber-500 mt-0.5">
+                    <div className="text-xs font-semibold text-red-900 mt-0.5 truncate">{item.name}</div>
+                    <div className="text-[10px] text-red-500 mt-0.5">
                       {item.stock} un · {item.days_left} día{item.days_left !== 1 ? "s" : ""}
                     </div>
                   </button>
@@ -485,13 +485,13 @@ export default function Dashboard() {
                   <button
                     key={acc.client_id}
                     onClick={() => navigate("/clientes")}
-                    className="w-full text-left rounded-lg bg-orange-50 border border-orange-100 px-3 py-2 hover:bg-orange-100 transition-colors"
+                    className="w-full text-left rounded-lg bg-red-50 border border-red-100 px-3 py-2 hover:bg-red-100 transition-colors"
                   >
-                    <div className="text-[10px] font-bold text-orange-600 uppercase tracking-wide">
+                    <div className="text-[10px] font-bold text-red-600 uppercase tracking-wide">
                       CC vencida
                     </div>
-                    <div className="text-xs font-semibold text-orange-900 mt-0.5 truncate">{acc.name}</div>
-                    <div className="text-[10px] text-orange-500 mt-0.5">
+                    <div className="text-xs font-semibold text-red-900 mt-0.5 truncate">{acc.name}</div>
+                    <div className="text-[10px] text-red-500 mt-0.5">
                       {centsToARS(acc.balance_cents)} · {acc.days_absent} días ausente
                     </div>
                   </button>

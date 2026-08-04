@@ -341,7 +341,7 @@ function CloseForm({
           <div className={clsx(
             "text-sm text-center py-2 rounded-md mb-4 font-medium",
             diff === 0 && "bg-emerald-50 text-emerald-700",
-            diff > 0 && "bg-blue-50 text-blue-700",
+            diff > 0 && "bg-emerald-50 text-emerald-700",
             diff < 0 && "bg-red-50 text-red-700",
           )}>
             {diff === 0 && "Caja sin diferencias"}

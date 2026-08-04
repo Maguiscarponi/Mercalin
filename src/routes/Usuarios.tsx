@@ -137,7 +137,7 @@ export default function Usuarios() {
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1.5">
                         <button onClick={() => setShowPassModal(u)} className="btn-table-neutral">Contraseña</button>
-                        <button onClick={() => setEditing(u)} className="btn-table-success">Editar</button>
+                        <button onClick={() => setEditing(u)} className="btn-table-neutral">Editar</button>
                         <button onClick={() => handleDelete(u.id)} className="btn-table-danger">Desactivar</button>
                       </div>
                     </td>

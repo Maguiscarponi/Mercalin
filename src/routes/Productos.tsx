@@ -396,7 +396,7 @@ export default function Productos() {
                           <div className="flex items-center justify-end gap-1.5">
                             <button onClick={() => setAdjusting(p)} className="btn-table-neutral">Stock</button>
                             <button onClick={() => setViewingMovements(p)} className="btn-table-neutral">Historial</button>
-                            <button onClick={() => setEditing(p)} className="btn-table-success">Editar</button>
+                            <button onClick={() => setEditing(p)} className="btn-table-neutral">Editar</button>
                             <button onClick={() => handleDelete(p.id)} className="btn-table-danger">Borrar</button>
                           </div>
                         </td>

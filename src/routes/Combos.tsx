@@ -161,7 +161,7 @@ function ComboCard({ cw, onToggle, onEdit, onDelete }: {
             combo.active ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-stone-200 bg-stone-100 text-stone-600")}>
           {combo.active ? "Activo" : "Inactivo"}
         </button>
-        <button onClick={onEdit} className="btn-table-success">Editar</button>
+        <button onClick={onEdit} className="btn-table-neutral">Editar</button>
         <button onClick={onDelete} className="btn-table-danger">Eliminar</button>
       </div>
     </div>

@@ -236,7 +236,7 @@ function SessionDetailModal({
           <div className={clsx(
             "mx-5 mt-4 py-2 px-3 rounded-md text-sm text-center font-medium",
             diff === 0 && "bg-emerald-50 text-emerald-700",
-            diff > 0 && "bg-blue-50 text-blue-700",
+            diff > 0 && "bg-emerald-50 text-emerald-700",
             diff < 0 && "bg-red-50 text-red-700",
           )}>
             Cierre: {centsToARS(session.closing_cents)} ·{" "}

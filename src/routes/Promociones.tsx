@@ -255,7 +255,7 @@ function PromoCard({
         >
           {promo.active ? "Activa" : "Inactiva"}
         </button>
-        <button onClick={onEdit} className="btn-table-success">Editar</button>
+        <button onClick={onEdit} className="btn-table-neutral">Editar</button>
         <button onClick={onDelete} className="btn-table-danger">Eliminar</button>
       </div>
     </div>
