@@ -212,9 +212,23 @@ function ComboForm({ cw, onSave, onCancel }: {
   const [barcode, setBarcode] = useState(cw?.combo.barcode ?? "");
   const [priceStr, setPriceStr] = useState(cw ? (cw.combo.price_cents / 100).toString() : "");
   const [notes, setNotes] = useState(cw?.combo.notes ?? "");
-  const [items, setItems] = useState<Array<{ product_id: number; product_name: string; qty: number }>>(
-    cw?.items.map((i) => ({ product_id: i.product_id, product_name: i.product_name, qty: i.qty })) ?? []
+  const [items, setItems] = useState<Array<{ product_id: number; product_name: string; qty: number; price_cents: number; cost_cents: number }>>(
+    cw?.items.map((i) => ({ product_id: i.product_id, product_name: i.product_name, qty: i.qty, price_cents: 0, cost_cents: i.unit_cost_cents })) ?? []
   );
+
+  // Al editar un combo existente, el precio y costo actuales de cada componente
+  // no vienen en ComboItem (solo el costo que tenía cuando se guardó por última
+  // vez) — se piden de nuevo para que el preview de margen/ahorro use datos frescos.
+  useEffect(() => {
+    if (!cw || cw.items.length === 0) return;
+    Promise.all(cw.items.map((i) => api.getProduct(i.product_id).catch(() => null)))
+      .then((products) => {
+        setItems((prev) => prev.map((it, idx) => {
+          const p = products[idx];
+          return p ? { ...it, price_cents: p.price_cents, cost_cents: p.cost_cents } : it;
+        }));
+      });
+  }, []); // eslint-disable-line
 
   function addProduct(p: Product) {
     const existing = items.findIndex((i) => i.product_id === p.id);
@@ -223,9 +237,16 @@ function ComboForm({ cw, onSave, onCancel }: {
       next[existing] = { ...next[existing], qty: next[existing].qty + 1 };
       setItems(next);
     } else {
-      setItems([...items, { product_id: p.id, product_name: p.name, qty: 1 }]);
+      setItems([...items, { product_id: p.id, product_name: p.name, qty: 1, price_cents: p.price_cents, cost_cents: p.cost_cents }]);
     }
   }
+
+  const individualTotal = items.reduce((sum, i) => sum + i.price_cents * i.qty, 0);
+  const totalCost = items.reduce((sum, i) => sum + i.cost_cents * i.qty, 0);
+  const comboPriceCents = arsStringToCents(priceStr);
+  const savingsCents = individualTotal - comboPriceCents;
+  const savingsPct = individualTotal > 0 ? (savingsCents / individualTotal) * 100 : 0;
+  const marginPct = comboPriceCents > 0 ? ((comboPriceCents - totalCost) / comboPriceCents) * 100 : null;
 
   function removeItem(idx: number) { setItems(items.filter((_, i) => i !== idx)); }
   function setQty(idx: number, qty: number) {
@@ -295,6 +316,34 @@ function ComboForm({ cw, onSave, onCancel }: {
               </div>
             )}
           </div>
+
+          {items.length > 0 && comboPriceCents > 0 && (
+            <div className="rounded-lg border border-stone-200 bg-stone-50 p-3 space-y-1.5 text-xs">
+              <div className="flex justify-between text-stone-500">
+                <span>Suma de precios por separado</span>
+                <span className="tabular">{centsToARS(individualTotal)}</span>
+              </div>
+              <div className="flex justify-between font-medium">
+                <span className={savingsCents > 0 ? "text-emerald-700" : "text-red-600"}>
+                  {savingsCents > 0 ? "Ahorro para el cliente" : savingsCents === 0 ? "Sin ahorro real" : "Más caro que por separado"}
+                </span>
+                <span className={clsx("tabular", savingsCents > 0 ? "text-emerald-700" : "text-red-600")}>
+                  {centsToARS(Math.abs(savingsCents))} {individualTotal > 0 && `(${savingsPct >= 0 ? "" : "-"}${Math.abs(savingsPct).toFixed(0)}%)`}
+                </span>
+              </div>
+              {marginPct !== null && (
+                <div className="flex justify-between font-medium pt-1.5 border-t border-stone-200">
+                  <span className="text-stone-600">Margen del combo</span>
+                  <span className={clsx("tabular", marginPct >= 20 ? "text-emerald-700" : marginPct >= 10 ? "text-amber-600" : "text-red-600")}>
+                    {marginPct.toFixed(1)}%
+                  </span>
+                </div>
+              )}
+              {savingsCents <= 0 && (
+                <p className="text-red-500 pt-1">⚠ El combo no le conviene al cliente frente a comprar los productos por separado.</p>
+              )}
+            </div>
+          )}
 
           <label className="block">
             <span className="text-xs font-medium text-stone-600 block mb-1">Notas internas</span>
