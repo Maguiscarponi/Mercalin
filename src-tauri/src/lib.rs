@@ -377,6 +377,24 @@ pub fn run() {
                 }
             }
 
+            // Instalación nueva de verdad (nunca se abrió, no viene de un bootstrap de
+            // multicaja): si el instalador trae una base "plantilla" con el catálogo ya
+            // cargado (ver commands::catalog_import::generate_catalog_template), arranca
+            // de ahí en vez de una base vacía -- así un cliente nuevo ya tiene productos
+            // para buscar/escanear desde el primer día, sin depender de tener internet y
+            // esperar un import él mismo. Si no existe la plantilla (por ahora no se
+            // empaquetó ninguna, o es un build de desarrollo), sigue como siempre.
+            if !db_path.exists() {
+                if let Ok(template) = app.path().resolve("resources/template.db", tauri::path::BaseDirectory::Resource) {
+                    if template.exists() {
+                        match std::fs::copy(&template, &db_path) {
+                            Ok(_) => println!("[punto-simple] Base inicial cargada desde la plantilla del catálogo."),
+                            Err(e) => eprintln!("[punto-simple] No se pudo copiar la base plantilla: {}", e),
+                        }
+                    }
+                }
+            }
+
             println!("[punto-simple] DB en: {}", db_path.display());
 
             let conn = db::open_and_migrate(&db_path)
@@ -607,6 +625,8 @@ pub fn run() {
             // Catálogo — Import Open Food Facts
             commands::catalog_import::import_off_catalog,
             commands::catalog_import::cancel_off_catalog_import,
+            #[cfg(debug_assertions)]
+            commands::catalog_import::generate_catalog_template,
         ])
         .run(tauri::generate_context!())
         .expect("error al correr la app Tauri");

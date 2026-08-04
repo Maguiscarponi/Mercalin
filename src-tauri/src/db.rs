@@ -214,7 +214,9 @@ CREATE TABLE IF NOT EXISTS audit_log (
 CREATE INDEX IF NOT EXISTS idx_audit_log_date ON audit_log(created_at);
 "#;
 
-pub fn open_and_migrate(path: &Path) -> Result<Connection> {
+// Esquema + migraciones únicamente, sin sembrar ningún dato -- lo comparten
+// open_and_migrate (uso normal) y open_and_migrate_clean (plantilla de catálogo).
+fn open_and_migrate_inner(path: &Path) -> Result<Connection> {
     let conn = Connection::open(path)?;
     conn.execute_batch(SCHEMA)?;
     conn.execute_batch("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;")?;
@@ -401,8 +403,31 @@ pub fn open_and_migrate(path: &Path) -> Result<Connection> {
         CREATE INDEX IF NOT EXISTS idx_einvoices_date   ON electronic_invoices(created_at);
     ");
 
+    Ok(conn)
+}
+
+pub fn open_and_migrate(path: &Path) -> Result<Connection> {
+    let conn = open_and_migrate_inner(path)?;
     seed_default_config(&conn)?;
+    // Productos/usuarios de ejemplo (Coca Cola, Marlboro, jlopez/sramirez con contraseña
+    // "1234"...) — SOLO para desarrollo local. Sin esta guarda, cualquier instalación nueva
+    // de un cliente real (donde products/users está vacío) también los recibía, mezclados
+    // con su catálogo real. `cargo tauri build` (lo que se empaqueta para vender) compila
+    // sin debug_assertions, así que en esa build esta línea directamente no existe.
+    #[cfg(debug_assertions)]
     seed_dev_data(&conn)?;
+    seed_admin_user(&conn)?;
+    Ok(conn)
+}
+
+/// Igual que open_and_migrate, pero sin datos de prueba SIEMPRE (sin importar
+/// debug/release) — la usa generate_catalog_template para armar la base "plantilla"
+/// que se empaqueta con el instalador, así corriéndola desde `npm run tauri dev`
+/// (build de desarrollo) no cuela productos/usuarios de mentira adentro.
+#[cfg(debug_assertions)]
+pub fn open_and_migrate_clean(path: &Path) -> Result<Connection> {
+    let conn = open_and_migrate_inner(path)?;
+    seed_default_config(&conn)?;
     seed_admin_user(&conn)?;
     Ok(conn)
 }
@@ -450,8 +475,9 @@ fn seed_default_config(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
-// helper: inserta venta + items en un solo paso
+// helper: inserta venta + items en un solo paso (solo usado por seed_dev_data)
 // items: (product_id, nombre, price_cents_unitario, qty)
+#[cfg(debug_assertions)]
 fn ins_sale(
     conn: &Connection,
     total: i64, discount: i64, paid: i64, change: i64,
@@ -478,6 +504,7 @@ fn ins_sale(
     Ok(())
 }
 
+#[cfg(debug_assertions)]
 fn seed_dev_data(conn: &Connection) -> Result<()> {
     let count: i64 = conn.query_row("SELECT COUNT(*) FROM products", [], |r| r.get(0))?;
     if count > 0 {

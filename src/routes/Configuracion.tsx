@@ -5,6 +5,7 @@ import { arsStringToCents, centsToARS } from "@/lib/format";
 import { usePosModeStore } from "@/stores/posMode";
 import { confirmAction, showToast } from "@/stores/dialogs";
 import { isSoundEnabled, playSuccess, setSoundEnabled } from "@/lib/sound";
+import { useCatalogImport } from "@/stores/catalogImport";
 import Field from "@/components/ui/Field";
 import clsx from "clsx";
 
@@ -41,6 +42,21 @@ export default function Configuracion() {
     setSoundEnabled(v);
     setSoundOn(v);
     if (v) playSuccess();
+  }
+
+  // Solo se usa en la sección de desarrollo más abajo (import.meta.env.DEV) — genera la
+  // base "plantilla" para empaquetar con el instalador (ver generate_catalog_template).
+  const catalogImport = useCatalogImport();
+  const [templatePath, setTemplatePath] = useState<string | null>(null);
+  async function doGenerateTemplate() {
+    setTemplatePath(null);
+    catalogImport.start();
+    try {
+      const path = await api.generateCatalogTemplate();
+      setTemplatePath(path);
+    } catch (e) {
+      catalogImport.fail(e instanceof Error ? e.message : String(e));
+    }
   }
 
   async function load() {
@@ -531,6 +547,38 @@ export default function Configuracion() {
                 <div className="flex justify-between"><dt>Motor de DB</dt><dd>SQLite (local)</dd></div>
               </dl>
             </section>
+
+            {import.meta.env.DEV && (
+              <section className="card p-5 border-2 border-dashed border-amber-300">
+                <h2 className="font-semibold text-sm mb-1">🛠 Plantilla de catálogo (solo desarrollo)</h2>
+                <p className="text-xs text-stone-500 mb-4">
+                  Genera una base nueva desde cero (sin usuarios ni ventas de prueba) con el catálogo
+                  completo importado de Open Food Facts. No toca la base que estás usando ahora — queda
+                  guardada aparte, lista para copiar a mano a{" "}
+                  <code className="font-mono bg-stone-100 px-1 rounded">src-tauri/resources/template.db</code>{" "}
+                  y empaquetarla con el instalador, así los clientes nuevos ya arrancan con el catálogo cargado.
+                </p>
+                {catalogImport.running ? (
+                  <p className="text-sm text-stone-600">
+                    Generando…{" "}
+                    {catalogImport.progress
+                      ? `página ${catalogImport.progress.page} de ${catalogImport.progress.total_pages} — ${catalogImport.progress.imported} productos nuevos`
+                      : "iniciando…"}
+                  </p>
+                ) : (
+                  <button onClick={doGenerateTemplate} className="btn btn-secondary text-sm">Generar plantilla</button>
+                )}
+                {catalogImport.result && !catalogImport.running && (
+                  <p className="text-xs text-emerald-700 mt-2">
+                    Listo: {catalogImport.result.imported} productos importados.
+                    {templatePath && <> Guardado en <code className="font-mono">{templatePath}</code></>}
+                  </p>
+                )}
+                {catalogImport.errorMsg && (
+                  <p className="text-xs text-red-600 mt-2">{catalogImport.errorMsg}</p>
+                )}
+              </section>
+            )}
           </div>
         )}
       </div>

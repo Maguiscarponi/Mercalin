@@ -476,4 +476,9 @@ export const api = {
 
   cancelOffCatalogImport: () =>
     invoke<void>("cancel_off_catalog_import"),
+
+  // Solo existe en builds de desarrollo (ver #[cfg(debug_assertions)] en catalog_import.rs) —
+  // arma la base "plantilla" que después se copia a mano a src-tauri/resources/template.db.
+  generateCatalogTemplate: () =>
+    invoke<string>("generate_catalog_template"),
 };

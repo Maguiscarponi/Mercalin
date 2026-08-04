@@ -19,14 +19,17 @@ const AR_BARCODE_PREFIXES: [&str; 2] = ["778", "779"];
 struct OffProduct {
     code: Option<String>,
     product_name: Option<String>,
-    brands: Option<String>,
+    // La API nueva (ver fetch_page) devuelve `brands` como lista, la vieja lo devolvía
+    // como string separado por comas -- este tipo ya es el de la API nueva.
+    brands: Option<Vec<String>>,
     quantity: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 struct OffResponse {
-    count: i64,
-    products: Vec<OffProduct>,
+    #[serde(default)]
+    page_count: i64,
+    hits: Vec<OffProduct>,
 }
 
 fn is_argentine_barcode(code: &str) -> bool {
@@ -45,8 +48,8 @@ fn clean_name(p: &OffProduct) -> Option<String> {
     let mut name = base.to_string();
     let base_lower = base.to_lowercase();
 
-    if let Some(brands) = p.brands.as_deref() {
-        let brand = brands.split(',').next().unwrap_or("").trim();
+    if let Some(brand) = p.brands.as_ref().and_then(|b| b.first()) {
+        let brand = brand.trim();
         if !brand.is_empty() && !base_lower.contains(&brand.to_lowercase()) {
             name = format!("{} {}", name, brand);
         }
@@ -60,30 +63,37 @@ fn clean_name(p: &OffProduct) -> Option<String> {
     Some(name)
 }
 
-fn fetch_page(page: i64) -> Result<OffResponse, String> {
+/// Open Food Facts reemplazó su API de búsqueda vieja (ar.openfoodfacts.org/api/v2/search,
+/// verificado caída/inestable -- devuelve 503 o una página HTML de "temporalmente no
+/// disponible" en vez de JSON) por una nueva ("search-a-licious", search.openfoodfacts.org).
+/// Esa nueva API no tiene un filtro de país confiable expuesto como parámetro (y el tag de
+/// país de un producto no siempre coincide con dónde se vende igual, se probó a mano), así
+/// que se busca directo por prefijo de código de barras argentino con sintaxis Lucene
+/// (`code:778*`) -- que es exactamente lo que is_argentine_barcode() valida de nuevo después,
+/// asi que no se pierde precisión.
+fn fetch_page(prefix: &str, page: i64) -> Result<OffResponse, String> {
     let url = format!(
-        "https://ar.openfoodfacts.org/api/v2/search?countries_tags=en:argentina&fields=code,product_name,brands,quantity&page_size={}&page={}",
-        PAGE_SIZE, page
+        "https://search.openfoodfacts.org/search?q=code:{prefix}*&page_size={PAGE_SIZE}&page={page}&fields=code,product_name,brands,quantity"
     );
     let resp = ureq::get(&url)
         .set("User-Agent", USER_AGENT)
         .timeout(Duration::from_secs(20))
         .call()
-        .map_err(|e| format!("Error consultando Open Food Facts (página {}): {}", page, e))?;
+        .map_err(|e| format!("Error consultando Open Food Facts (código \"{prefix}*\", página {page}): {e}"))?;
     let body = resp
         .into_string()
-        .map_err(|e| format!("Error leyendo la respuesta de Open Food Facts: {}", e))?;
+        .map_err(|e| format!("Error leyendo la respuesta de Open Food Facts: {e}"))?;
     serde_json::from_str::<OffResponse>(&body)
-        .map_err(|e| format!("Respuesta inesperada de Open Food Facts (página {}): {}", page, e))
+        .map_err(|e| format!("Respuesta inesperada de Open Food Facts (código \"{prefix}*\", página {page}): {e}"))
 }
 
-/// La página 1 es la más sensible a un hiccup pasajero de red (DNS, TLS, un 429 momentáneo
-/// por haber probado la API varias veces seguidas): sin ella no sabemos ni cuántas páginas hay,
-/// así que vale la pena reintentar antes de abortar todo el import.
-fn fetch_page_with_retries(page: i64, attempts: u32) -> Result<OffResponse, String> {
+/// La página 1 de cada prefijo es la más sensible a un hiccup pasajero de red (DNS, TLS, un
+/// 429 momentáneo por haber probado la API varias veces seguidas): sin ella no sabemos ni
+/// cuántas páginas hay para ese prefijo, así que vale la pena reintentar antes de saltarla.
+fn fetch_page_with_retries(prefix: &str, page: i64, attempts: u32) -> Result<OffResponse, String> {
     let mut last_err = String::new();
     for attempt in 0..attempts.max(1) {
-        match fetch_page(page) {
+        match fetch_page(prefix, page) {
             Ok(p) => return Ok(p),
             Err(e) => {
                 last_err = e;
@@ -99,7 +109,8 @@ fn fetch_page_with_retries(page: i64, attempts: u32) -> Result<OffResponse, Stri
 /// El trabajo real del import, pensado para correr en su propio hilo del sistema operativo
 /// (ver `import_off_catalog` más abajo) — nunca en el hilo que atiende los comandos de Tauri,
 /// para que el resto de la app (incluido cualquier click del usuario) siga respondiendo
-/// mientras esto tarda su minuto o dos.
+/// mientras esto tarda su minuto o dos. Recorre los dos prefijos de código de barras
+/// argentinos (778, 779) uno detrás del otro.
 fn run_import(
     app: &AppHandle,
     db: &Arc<Mutex<Connection>>,
@@ -116,114 +127,134 @@ fn run_import(
         rows.filter_map(|r| r.ok()).collect()
     };
 
-    let mut page: i64 = 1;
-    let mut total_pages: i64 = 1;
     let mut imported: i64 = 0;
     let mut skipped_existing: i64 = 0;
     let mut skipped_invalid: i64 = 0;
     let mut failed_pages: i64 = 0;
     let mut scanned: i64 = 0;
-    let mut total_count: i64 = i64::MAX;
-    let mut consecutive_failures: i64 = 0;
     let mut early_stop_note: Option<String> = None;
+    let mut any_page_succeeded = false;
     // Si Open Food Facts empieza a rechazar pedidos seguidos (503, timeouts), seguir
     // insistiendo página tras página solo estira la espera sin sentido — mejor cortar
     // rápido con una explicación clara. Lo ya importado queda guardado igual.
     const MAX_CONSECUTIVE_FAILURES: i64 = 6;
 
-    loop {
+    // Progreso combinado entre los dos prefijos — el total se recalcula apenas se conoce
+    // el de cada uno (llega junto con la página 1 de ese prefijo).
+    let mut overall_page: i64 = 0;
+    let mut overall_total_pages: i64 = 0;
+
+    'prefixes: for prefix in AR_BARCODE_PREFIXES {
         if cancelled.load(Ordering::SeqCst) {
             break;
         }
 
-        let parsed = match fetch_page_with_retries(page, if page == 1 { 3 } else { 1 }) {
-            Ok(p) => { consecutive_failures = 0; p }
-            Err(e) => {
-                if page == 1 {
-                    return Err(e);
-                }
-                failed_pages += 1;
-                consecutive_failures += 1;
-                let _ = app.emit(
-                    "catalog_import_progress",
-                    CatalogImportProgress { page, total_pages, imported, scanned },
-                );
-                if consecutive_failures >= MAX_CONSECUTIVE_FAILURES {
-                    early_stop_note = Some(format!(
-                        "Open Food Facts empezó a rechazar los pedidos (probablemente por la cantidad de pruebas de hoy desde esta conexión). Se cortó el import en la página {page} de {total_pages} — lo que ya se importó quedó guardado. Probá de nuevo más tarde, no se duplica nada."
-                    ));
-                    break;
-                }
-                std::thread::sleep(Duration::from_millis(PAGE_DELAY_MS));
-                page += 1;
-                if page > total_pages {
-                    break;
-                }
-                continue;
+        let mut page: i64 = 1;
+        let mut total_pages_this_prefix: i64 = 1;
+        let mut consecutive_failures: i64 = 0;
+
+        loop {
+            if cancelled.load(Ordering::SeqCst) {
+                break 'prefixes;
             }
-        };
 
-        if page == 1 {
-            total_count = parsed.count;
-            total_pages = ((parsed.count as f64) / (PAGE_SIZE as f64)).ceil().max(1.0) as i64;
-        }
-
-        let mut new_rows: Vec<(String, String)> = Vec::new();
-        for p in &parsed.products {
-            scanned += 1;
-            let code = match p.code.as_deref() {
-                Some(c) if is_argentine_barcode(c) => c.to_string(),
-                _ => {
-                    skipped_invalid += 1;
+            let parsed = match fetch_page_with_retries(prefix, page, if page == 1 { 3 } else { 1 }) {
+                Ok(p) => {
+                    consecutive_failures = 0;
+                    any_page_succeeded = true;
+                    p
+                }
+                Err(e) => {
+                    // Si ni la primera página de todo el import funcionó, la API está caída
+                    // de verdad — no tiene sentido seguir insistiendo con más prefijos.
+                    if !any_page_succeeded {
+                        return Err(e);
+                    }
+                    failed_pages += 1;
+                    consecutive_failures += 1;
+                    overall_page += 1;
+                    let _ = app.emit(
+                        "catalog_import_progress",
+                        CatalogImportProgress { page: overall_page, total_pages: overall_total_pages.max(overall_page), imported, scanned },
+                    );
+                    if consecutive_failures >= MAX_CONSECUTIVE_FAILURES {
+                        early_stop_note = Some(format!(
+                            "Open Food Facts empezó a rechazar los pedidos (probablemente por la cantidad de pruebas de hoy desde esta conexión). Se cortó el import en la página {page} del código \"{prefix}*\" — lo que ya se importó quedó guardado. Probá de nuevo más tarde, no se duplica nada."
+                        ));
+                        break 'prefixes;
+                    }
+                    std::thread::sleep(Duration::from_millis(PAGE_DELAY_MS));
+                    page += 1;
+                    if page > total_pages_this_prefix {
+                        break;
+                    }
                     continue;
                 }
             };
-            if known_barcodes.contains(&code) {
-                skipped_existing += 1;
-                continue;
+
+            if page == 1 {
+                total_pages_this_prefix = parsed.page_count.max(1);
+                overall_total_pages += total_pages_this_prefix;
             }
-            let name = match clean_name(p) {
-                Some(n) => n,
-                None => {
-                    skipped_invalid += 1;
+            overall_page += 1;
+
+            let mut new_rows: Vec<(String, String)> = Vec::new();
+            for p in &parsed.hits {
+                scanned += 1;
+                let code = match p.code.as_deref() {
+                    Some(c) if is_argentine_barcode(c) => c.to_string(),
+                    _ => {
+                        skipped_invalid += 1;
+                        continue;
+                    }
+                };
+                if known_barcodes.contains(&code) {
+                    skipped_existing += 1;
                     continue;
                 }
-            };
-            known_barcodes.insert(code.clone());
-            new_rows.push((code, name));
-        }
+                let name = match clean_name(p) {
+                    Some(n) => n,
+                    None => {
+                        skipped_invalid += 1;
+                        continue;
+                    }
+                };
+                known_barcodes.insert(code.clone());
+                new_rows.push((code, name));
+            }
 
-        if !new_rows.is_empty() {
-            let mut conn = db.lock();
-            let tx = conn.transaction().map_err(err)?;
-            for (barcode, name) in &new_rows {
-                // Entra como fantasma (active=0, is_ghost=1): no cuenta en alertas ni en el
-                // listado por defecto hasta que alguien lo busque/escanee y le ponga precio.
-                let res = tx.execute(
-                    "INSERT OR IGNORE INTO products
-                     (barcode, name, price_cents, cost_cents, stock, min_stock, category, active, is_ghost)
-                     VALUES (?1, ?2, 0, 0, 0, 0, 'Importado', 0, 1)",
-                    params![barcode, name],
-                );
-                if let Ok(n) = res {
-                    if n > 0 {
-                        imported += 1;
+            if !new_rows.is_empty() {
+                let mut conn = db.lock();
+                let tx = conn.transaction().map_err(err)?;
+                for (barcode, name) in &new_rows {
+                    // Entra como fantasma (active=0, is_ghost=1): no cuenta en alertas ni en el
+                    // listado por defecto hasta que alguien lo busque/escanee y le ponga precio.
+                    let res = tx.execute(
+                        "INSERT OR IGNORE INTO products
+                         (barcode, name, price_cents, cost_cents, stock, min_stock, category, active, is_ghost)
+                         VALUES (?1, ?2, 0, 0, 0, 0, 'Importado', 0, 1)",
+                        params![barcode, name],
+                    );
+                    if let Ok(n) = res {
+                        if n > 0 {
+                            imported += 1;
+                        }
                     }
                 }
+                tx.commit().map_err(err)?;
             }
-            tx.commit().map_err(err)?;
-        }
 
-        let _ = app.emit(
-            "catalog_import_progress",
-            CatalogImportProgress { page, total_pages, imported, scanned },
-        );
+            let _ = app.emit(
+                "catalog_import_progress",
+                CatalogImportProgress { page: overall_page, total_pages: overall_total_pages, imported, scanned },
+            );
 
-        if page * PAGE_SIZE >= total_count || parsed.products.is_empty() {
-            break;
+            if parsed.hits.is_empty() || page >= total_pages_this_prefix {
+                break;
+            }
+            page += 1;
+            std::thread::sleep(Duration::from_millis(PAGE_DELAY_MS));
         }
-        page += 1;
-        std::thread::sleep(Duration::from_millis(PAGE_DELAY_MS));
     }
 
     let was_cancelled = cancelled.load(Ordering::SeqCst);
@@ -254,14 +285,14 @@ fn run_import(
 
 /// Importa productos nuevos (por código de barras argentino real) desde el catálogo
 /// público de Open Food Facts. Nunca modifica productos que ya existen: si el barcode
-/// ya está en la base, se salta. Quedan activos, con precio y costo en $0 — Caja no
-/// deja vender un producto sin precio, así que no hay riesgo de venderlos gratis.
+/// ya está en la base, se salta. Entran como "fantasma" (sin precio) — Caja no deja vender
+/// un producto sin precio, así que no hay riesgo de venderlos gratis.
 ///
-/// El comando en sí vuelve casi al instante: todo el trabajo (las ~150 páginas, con pausas
-/// entre cada una) corre en un hilo del sistema operativo aparte, igual que ya hace el
-/// servidor del modo tablet. El progreso y el resultado final viajan por eventos
-/// (`catalog_import_progress` / `catalog_import_done`), nunca bloqueando la respuesta
-/// del comando — así el resto de la app queda usable mientras esto corre en segundo plano.
+/// El comando en sí vuelve casi al instante: todo el trabajo corre en un hilo del sistema
+/// operativo aparte, igual que ya hace el servidor del modo tablet. El progreso y el
+/// resultado final viajan por eventos (`catalog_import_progress` / `catalog_import_done`),
+/// nunca bloqueando la respuesta del comando — así el resto de la app queda usable mientras
+/// esto corre en segundo plano.
 #[tauri::command]
 pub fn import_off_catalog(app: AppHandle, state: State<AppState>) -> CmdResult<()> {
     if state.catalog_import_running.swap(true, Ordering::SeqCst) {
@@ -296,4 +327,58 @@ pub fn import_off_catalog(app: AppHandle, state: State<AppState>) -> CmdResult<(
 pub fn cancel_off_catalog_import(state: State<AppState>) -> CmdResult<()> {
     state.catalog_import_cancelled.store(true, Ordering::SeqCst);
     Ok(())
+}
+
+/// Herramienta de uso interno (solo build de desarrollo, ver el gate en lib.rs): arma una
+/// base de datos "plantilla" desde cero -- esquema limpio + catálogo completo importado de
+/// Open Food Facts, sin usuarios ni datos de prueba -- pensada para copiarse a mano a
+/// `src-tauri/resources/template.db` y empaquetarse con el instalador (ver setup() en
+/// lib.rs), así cualquier cliente nuevo arranca con el catálogo ya cargado en vez de
+/// depender de que él mismo tenga internet y espere el import el primer día.
+///
+/// Nunca toca la base de datos que la app tiene abierta -- crea una completamente aparte
+/// en catalog_template.db, al lado de kiosco.db.
+#[cfg(debug_assertions)]
+#[tauri::command]
+pub fn generate_catalog_template(app: AppHandle, state: State<AppState>) -> CmdResult<String> {
+    if state.catalog_import_running.swap(true, Ordering::SeqCst) {
+        return Err("Ya hay una importación en curso.".into());
+    }
+    state.catalog_import_cancelled.store(false, Ordering::SeqCst);
+
+    let app_dir = state
+        .db_path
+        .parent()
+        .map(|p| p.to_path_buf())
+        .ok_or_else(|| "No se pudo determinar la carpeta de datos".to_string())?;
+    let template_path = app_dir.join("catalog_template.db");
+    let _ = std::fs::remove_file(&template_path);
+    let _ = std::fs::remove_file(app_dir.join("catalog_template.db-wal"));
+    let _ = std::fs::remove_file(app_dir.join("catalog_template.db-shm"));
+
+    let running_flag = Arc::clone(&state.catalog_import_running);
+    let cancelled_flag = Arc::clone(&state.catalog_import_cancelled);
+    let app_handle = app.clone();
+    let template_path_for_thread = template_path.clone();
+
+    std::thread::spawn(move || {
+        let result = (|| -> Result<CatalogImportResult, String> {
+            let conn = crate::db::open_and_migrate_clean(&template_path_for_thread).map_err(|e| e.to_string())?;
+            let db: Arc<Mutex<Connection>> = Arc::new(Mutex::new(conn));
+            run_import(&app_handle, &db, &cancelled_flag)
+        })();
+        running_flag.store(false, Ordering::SeqCst);
+        let payload = result.unwrap_or_else(|e| CatalogImportResult {
+            imported: 0,
+            skipped_existing: 0,
+            skipped_invalid: 0,
+            failed_pages: 0,
+            scanned: 0,
+            cancelled: false,
+            error: Some(e),
+        });
+        let _ = app_handle.emit("catalog_import_done", payload);
+    });
+
+    Ok(template_path.display().to_string())
 }
