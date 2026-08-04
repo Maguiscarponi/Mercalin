@@ -3,6 +3,7 @@ import JsBarcode from "jsbarcode";
 import { api } from "@/lib/api";
 import { centsToARS } from "@/lib/format";
 import { printHtml } from "@/lib/printHtml";
+import { useDebouncedValue } from "@/lib/useDebouncedValue";
 import type { Product } from "@/types";
 
 // ─── Tipos de plantilla ──────────────────────────────────────────────────────
@@ -173,9 +174,10 @@ export default function Etiquetas() {
   const [storeName, setStoreName] = useState("");
   const [bulkQty, setBulkQty] = useState("");
 
+  const debouncedQuery = useDebouncedValue(query, 200);
   useEffect(() => {
-    api.listProducts(query).then(setProducts).catch(console.error);
-  }, [query]);
+    api.listProducts(debouncedQuery).then(setProducts).catch(console.error);
+  }, [debouncedQuery]);
 
   useEffect(() => {
     api.getConfig("business_name").then((n) => { if (n) setStoreName(n); }).catch(() => {});

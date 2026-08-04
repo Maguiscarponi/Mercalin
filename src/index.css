@@ -43,7 +43,8 @@
 @layer components {
   /* ── Botones principales ─────────────────────────────────────────────── */
   .btn {
-    @apply px-4 py-2 rounded-lg font-semibold text-sm transition-all duration-150 inline-flex items-center justify-center gap-1.5 cursor-pointer;
+    @apply px-4 py-2 rounded-lg font-semibold text-sm transition-all duration-150 inline-flex items-center justify-center gap-1.5 cursor-pointer
+           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2;
   }
   .btn-primary {
     @apply bg-indigo-600 text-white hover:bg-indigo-700 active:bg-indigo-800 shadow-sm;
@@ -61,25 +62,29 @@
     @apply px-2.5 py-1 rounded-md text-sm font-medium transition-colors
            bg-stone-100 text-stone-700 border border-stone-200
            hover:bg-stone-200 hover:text-stone-900
-           active:bg-stone-300 cursor-pointer inline-flex items-center;
+           active:bg-stone-300 cursor-pointer inline-flex items-center
+           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-1;
   }
   .btn-table-primary {
     @apply px-2.5 py-1 rounded-md text-sm font-medium transition-colors
            bg-indigo-50 text-indigo-700 border border-indigo-200
            hover:bg-indigo-100 hover:text-indigo-900
-           active:bg-indigo-200 cursor-pointer inline-flex items-center;
+           active:bg-indigo-200 cursor-pointer inline-flex items-center
+           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-1;
   }
   .btn-table-success {
     @apply px-2.5 py-1 rounded-md text-sm font-medium transition-colors
            bg-emerald-50 text-emerald-700 border border-emerald-200
            hover:bg-emerald-100 hover:text-emerald-900
-           active:bg-emerald-200 cursor-pointer inline-flex items-center;
+           active:bg-emerald-200 cursor-pointer inline-flex items-center
+           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-1;
   }
   .btn-table-danger {
     @apply px-2.5 py-1 rounded-md text-sm font-medium transition-colors
            bg-red-50 text-red-700 border border-red-200
            hover:bg-red-100 hover:text-red-900
-           active:bg-red-200 cursor-pointer inline-flex items-center;
+           active:bg-red-200 cursor-pointer inline-flex items-center
+           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-1;
   }
 
   /* ── Inputs ──────────────────────────────────────────────────────────── */

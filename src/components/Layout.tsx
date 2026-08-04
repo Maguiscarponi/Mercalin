@@ -2,84 +2,15 @@ import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import clsx from "clsx";
 import {
-  ShoppingCart, Wallet, Users, RotateCcw,
-  Package, Truck, Tag, Calendar, ClipboardList, Layers, Gift,
-  FileText, Percent, Receipt, Lock,
-  LayoutDashboard, BarChart2, Search, Settings,
   LogOut, Maximize2, Minimize2, ChevronLeft, ChevronRight, ArrowLeft,
   Store,
-  type LucideIcon,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
 import { ensureCatalogImportListeners } from "@/stores/catalogImport";
 import { ensureSyncStatusListener, usePosModeStore } from "@/stores/posMode";
+import { NAV_GROUPS, KEY_ROUTES, ALT_KEY_ROUTES, ROLE_LABEL, hasAccess } from "@/lib/navigation";
 import type { UserRole } from "@/types";
-
-type NavLinkDef = {
-  to: string;
-  label: string;
-  icon: LucideIcon;
-  key: string;
-  altKey?: string;
-  minRole?: UserRole;
-  // Oculto para una caja en modo "cliente" — pensado para pantallas donde
-  // administrar cuentas desde una caja cualquiera generaría confusión.
-  serverOnly?: boolean;
-};
-
-const ROLE_LEVEL: Record<UserRole, number> = { cajero: 1, supervisor: 2, admin: 3 };
-
-function hasAccess(userRole: UserRole, minRole: UserRole = "cajero") {
-  return ROLE_LEVEL[userRole] >= ROLE_LEVEL[minRole];
-}
-
-const NAV_GROUPS: Array<{ label: string; links: NavLinkDef[] }> = [
-  {
-    label: "Operación",
-    links: [
-      { to: "/caja",         label: "Caja",            icon: ShoppingCart,    key: "F9",  altKey: "1" },
-      { to: "/caja-gestion", label: "Gestión de caja", icon: Wallet,          key: "F10", altKey: "2", minRole: "supervisor" },
-      { to: "/clientes",     label: "Clientes",         icon: Users,           key: "F11", altKey: "3", minRole: "supervisor" },
-      { to: "/devoluciones", label: "Devoluciones",     icon: RotateCcw,       key: "",                 minRole: "supervisor" },
-    ],
-  },
-  {
-    label: "Catálogo",
-    links: [
-      { to: "/productos",    label: "Productos",        icon: Package,         key: "F5", altKey: "4", minRole: "supervisor" },
-      { to: "/proveedores",  label: "Proveedores",      icon: Truck,           key: "F6", altKey: "5", minRole: "supervisor" },
-      { to: "/rubros",       label: "Rubros",           icon: Tag,             key: "",                minRole: "supervisor" },
-      { to: "/vencimientos", label: "Vencimientos",     icon: Calendar,        key: "",                minRole: "supervisor" },
-      { to: "/inventario",   label: "Inventario",       icon: ClipboardList,   key: "",                minRole: "supervisor" },
-      { to: "/etiquetas",    label: "Etiquetas",        icon: Layers,          key: "",                minRole: "supervisor" },
-      { to: "/combos",       label: "Combos",           icon: Gift,            key: "",                minRole: "supervisor" },
-    ],
-  },
-  {
-    label: "Gestión",
-    links: [
-      { to: "/presupuestos", label: "Presupuestos",     icon: FileText,        key: "",               minRole: "supervisor" },
-      { to: "/promociones",  label: "Promociones",      icon: Percent,         key: "",               minRole: "supervisor" },
-      { to: "/facturacion",  label: "Facturación",      icon: Receipt,         key: "",               minRole: "supervisor" },
-      { to: "/usuarios",     label: "Usuarios",         icon: Lock,            key: "",               minRole: "admin", serverOnly: true },
-    ],
-  },
-  {
-    label: "Análisis",
-    links: [
-      { to: "/dashboard",    label: "Dashboard",        icon: LayoutDashboard, key: "F4", altKey: "8", minRole: "supervisor" },
-      { to: "/reportes",     label: "Reportes",         icon: BarChart2,       key: "F7", altKey: "6", minRole: "supervisor" },
-    ],
-  },
-  {
-    label: "Sistema",
-    links: [
-      { to: "/auditoria",     label: "Auditoría",       icon: Search,          key: "",               minRole: "supervisor" },
-      { to: "/configuracion", label: "Configuración",   icon: Settings,        key: "F8", altKey: "7", minRole: "admin" },
-    ],
-  },
-];
 
 // Un color de acento por sección — así cada grupo se reconoce de un vistazo
 // en vez de que las 19 pantallas sean el mismo blanco monocromo sobre gris.
@@ -92,20 +23,6 @@ const GROUP_ACCENT: Record<string, GroupAccent> = {
   "Análisis":  { dot: "bg-violet-500",  chip: "bg-violet-50",  icon: "text-violet-600",  active: "bg-violet-600",  activeIcon: "text-white" },
   "Sistema":   { dot: "bg-stone-400",   chip: "bg-stone-100",  icon: "text-stone-500",   active: "bg-stone-700",   activeIcon: "text-white" },
 };
-
-const KEY_ROUTES: Record<string, string> = {
-  F4: "/dashboard",
-  F9: "/caja", F10: "/caja-gestion", F11: "/clientes",
-  F5: "/productos", F6: "/proveedores", F7: "/reportes", F8: "/configuracion",
-};
-
-const ALT_KEY_ROUTES: Record<string, string> = {
-  "1": "/caja", "2": "/caja-gestion", "3": "/clientes",
-  "4": "/productos", "5": "/proveedores", "6": "/reportes", "7": "/configuracion",
-  "8": "/dashboard",
-};
-
-const ROLE_LABEL: Record<UserRole, string> = { admin: "Admin", supervisor: "Supervisor", cajero: "Cajero" };
 
 // Pantallas que se benefician de usar todo el espacio disponible y minimizar distracciones
 // (por ahora solo Caja: es donde más importa durante una venta con el cliente esperando).

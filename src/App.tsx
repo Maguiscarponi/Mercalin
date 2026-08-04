@@ -22,13 +22,29 @@ import Combos from "./routes/Combos";
 import Facturacion from "./routes/Facturacion";
 import { useAuthStore } from "./stores/auth";
 import { usePosModeStore } from "./stores/posMode";
+import { ROUTE_MIN_ROLE, defaultRouteFor, hasAccess } from "./lib/navigation";
+import type { UserRole } from "./types";
 
 // Cubre el acceso directo por URL a pantallas que el nav ya oculta en modo
-// cliente (ver `serverOnly` en Layout.tsx) — ocultar el link del menú no
+// cliente (ver `serverOnly` en navigation.ts) — ocultar el link del menú no
 // alcanza si alguien escribe la ruta a mano.
 function RequireServerMode({ children }: { children: React.ReactNode }) {
   const mode = usePosModeStore((s) => s.mode);
   if (mode === "client") return <Navigate to="/dashboard" replace />;
+  return <>{children}</>;
+}
+
+// Hace cumplir de verdad el mínimo rol que ya declara ROUTE_MIN_ROLE (la
+// misma fuente que usa el sidebar para ocultar el link) — antes ocultar el
+// link era la única protección, así que entrar por URL directa o por el
+// historial del navegador saltaba el control por completo.
+function RequireRole({ path, children }: { path: string; children: React.ReactNode }) {
+  const user = useAuthStore((s) => s.user);
+  const role = (user?.role as UserRole) ?? "cajero";
+  const minRole = ROUTE_MIN_ROLE[path];
+  if (minRole && !hasAccess(role, minRole)) {
+    return <Navigate to={defaultRouteFor(role)} replace />;
+  }
   return <>{children}</>;
 }
 
@@ -37,29 +53,31 @@ export default function App() {
 
   if (!user) return <Login />;
 
+  const role = (user.role as UserRole) ?? "cajero";
+
   return (
     <Routes>
       <Route element={<Layout />}>
-        <Route path="/" element={<Navigate to="/dashboard" replace />} />
-        <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/" element={<Navigate to={defaultRouteFor(role)} replace />} />
+        <Route path="/dashboard" element={<RequireRole path="/dashboard"><Dashboard /></RequireRole>} />
         <Route path="/caja" element={<Caja />} />
-        <Route path="/productos" element={<Productos />} />
-        <Route path="/clientes" element={<Clientes />} />
-        <Route path="/caja-gestion" element={<CajaGestion />} />
-        <Route path="/proveedores" element={<Proveedores />} />
-        <Route path="/vencimientos" element={<Vencimientos />} />
-        <Route path="/etiquetas" element={<Etiquetas />} />
-        <Route path="/promociones" element={<Promociones />} />
-        <Route path="/usuarios" element={<RequireServerMode><Usuarios /></RequireServerMode>} />
-        <Route path="/reportes" element={<Reportes />} />
-        <Route path="/devoluciones" element={<Devoluciones />} />
-        <Route path="/rubros" element={<Rubros />} />
-        <Route path="/presupuestos" element={<Presupuestos />} />
-        <Route path="/configuracion" element={<Configuracion />} />
-        <Route path="/auditoria" element={<Auditoria />} />
-        <Route path="/inventario" element={<Inventario />} />
-        <Route path="/combos" element={<Combos />} />
-        <Route path="/facturacion" element={<Facturacion />} />
+        <Route path="/productos" element={<RequireRole path="/productos"><Productos /></RequireRole>} />
+        <Route path="/clientes" element={<RequireRole path="/clientes"><Clientes /></RequireRole>} />
+        <Route path="/caja-gestion" element={<RequireRole path="/caja-gestion"><CajaGestion /></RequireRole>} />
+        <Route path="/proveedores" element={<RequireRole path="/proveedores"><Proveedores /></RequireRole>} />
+        <Route path="/vencimientos" element={<RequireRole path="/vencimientos"><Vencimientos /></RequireRole>} />
+        <Route path="/etiquetas" element={<RequireRole path="/etiquetas"><Etiquetas /></RequireRole>} />
+        <Route path="/promociones" element={<RequireRole path="/promociones"><Promociones /></RequireRole>} />
+        <Route path="/usuarios" element={<RequireRole path="/usuarios"><RequireServerMode><Usuarios /></RequireServerMode></RequireRole>} />
+        <Route path="/reportes" element={<RequireRole path="/reportes"><Reportes /></RequireRole>} />
+        <Route path="/devoluciones" element={<RequireRole path="/devoluciones"><Devoluciones /></RequireRole>} />
+        <Route path="/rubros" element={<RequireRole path="/rubros"><Rubros /></RequireRole>} />
+        <Route path="/presupuestos" element={<RequireRole path="/presupuestos"><Presupuestos /></RequireRole>} />
+        <Route path="/configuracion" element={<RequireRole path="/configuracion"><Configuracion /></RequireRole>} />
+        <Route path="/auditoria" element={<RequireRole path="/auditoria"><Auditoria /></RequireRole>} />
+        <Route path="/inventario" element={<RequireRole path="/inventario"><Inventario /></RequireRole>} />
+        <Route path="/combos" element={<RequireRole path="/combos"><Combos /></RequireRole>} />
+        <Route path="/facturacion" element={<RequireRole path="/facturacion"><Facturacion /></RequireRole>} />
       </Route>
     </Routes>
   );

@@ -242,9 +242,20 @@ function ArcaSetup({ arcaConfig, onRefresh }: { arcaConfig: ArcaConfig | null; o
 
   return (
     <div className="max-w-3xl">
-      <p className="text-sm text-stone-500 mb-6">
+      <p className="text-sm text-stone-500 mb-4">
         Emitís facturas A, B y C directamente — sin intermediarios ni costo por factura. Configuración única por negocio.
       </p>
+
+      <div className="mb-6 p-4 rounded-lg bg-amber-50 border border-amber-200 flex gap-3">
+        <span className="text-lg leading-none">🚧</span>
+        <div>
+          <p className="text-sm font-semibold text-amber-900">La generación del certificado todavía no está disponible</p>
+          <p className="text-xs text-amber-700 mt-1">
+            Podés cargar los datos del Paso 1 desde ahora para tenerlos listos. El Paso 2 (certificado) y el Paso 3
+            (verificación) están en desarrollo — te vamos a avisar apenas se puedan completar.
+          </p>
+        </div>
+      </div>
 
       <div className="grid grid-cols-3 gap-4">
         {/* Paso 1 */}
@@ -299,8 +310,8 @@ function ArcaSetup({ arcaConfig, onRefresh }: { arcaConfig: ArcaConfig | null; o
           </div>
           <div className="space-y-3">
             <p className="text-xs text-stone-500">Generá el par de claves RSA. La clave privada nunca sale de esta PC.</p>
-            <button onClick={generateKey} disabled={generatingKey} className="btn btn-secondary w-full text-sm">
-              {generatingKey ? "Generando…" : arcaConfig?.has_certificate ? "Regenerar claves" : "Generar par de claves"}
+            <button disabled title="Todavía en desarrollo" className="btn btn-secondary w-full text-sm opacity-50 cursor-not-allowed">
+              Próximamente
             </button>
             {csr && (
               <div className="space-y-2">

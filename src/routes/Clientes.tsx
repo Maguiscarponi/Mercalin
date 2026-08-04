@@ -158,7 +158,7 @@ export default function Clientes() {
           )}
         </div>
         <div className="flex gap-2">
-          <button onClick={() => exportCsv(clients)} className="btn btn-secondary text-sm">
+          <button onClick={() => exportCsv(visibleClients)} className="btn btn-secondary text-sm" title="Exporta la lista tal como se ve, respetando los filtros activos">
             📤 Exportar CSV
           </button>
           <button onClick={() => setEditing({})} className="btn btn-primary">
@@ -291,6 +291,7 @@ function ClientAccountModal({ client, onClose }: { client: Client; onClose: () =
   const [payStr, setPayStr] = useState("");
   const [payConcept, setPayConcept] = useState("Pago de deuda");
   const [saving, setSaving] = useState(false);
+  const [payError, setPayError] = useState<string | null>(null);
   const [currentClient, setCurrentClient] = useState(client);
   const [accountTab, setAccountTab] = useState<"cuenta" | "compras">("cuenta");
 
@@ -307,7 +308,9 @@ function ClientAccountModal({ client, onClose }: { client: Client; onClose: () =
 
   async function registerPayment() {
     const amount = arsStringToCents(payStr);
-    if (amount <= 0 || !payConcept.trim()) return;
+    if (amount <= 0) { setPayError("Ingresá un monto mayor a $0"); return; }
+    if (!payConcept.trim()) { setPayError("Ingresá un concepto para el pago"); return; }
+    setPayError(null);
     setSaving(true);
     try {
       await api.registerClientPayment({
@@ -350,27 +353,30 @@ function ClientAccountModal({ client, onClose }: { client: Client; onClose: () =
         </div>
 
         {currentClient.balance_cents > 0 && (
-          <div className="px-5 py-3 border-b border-stone-200 bg-stone-50 flex gap-2">
-            <input
-              className="input flex-1"
-              placeholder="Monto a pagar ($)"
-              value={payStr}
-              onChange={(e) => setPayStr(e.target.value)}
-              inputMode="numeric"
-            />
-            <input
-              className="input flex-1"
-              value={payConcept}
-              onChange={(e) => setPayConcept(e.target.value)}
-              placeholder="Concepto"
-            />
-            <button
-              onClick={registerPayment}
-              disabled={saving}
-              className="btn btn-primary whitespace-nowrap"
-            >
-              {saving ? "…" : "Registrar pago"}
-            </button>
+          <div className="px-5 py-3 border-b border-stone-200 bg-stone-50">
+            <div className="flex gap-2">
+              <input
+                className="input flex-1"
+                placeholder="Monto a pagar ($)"
+                value={payStr}
+                onChange={(e) => { setPayStr(e.target.value); setPayError(null); }}
+                inputMode="numeric"
+              />
+              <input
+                className="input flex-1"
+                value={payConcept}
+                onChange={(e) => { setPayConcept(e.target.value); setPayError(null); }}
+                placeholder="Concepto"
+              />
+              <button
+                onClick={registerPayment}
+                disabled={saving}
+                className="btn btn-primary whitespace-nowrap"
+              >
+                {saving ? "…" : "Registrar pago"}
+              </button>
+            </div>
+            {payError && <p className="text-xs text-red-600 mt-1.5">{payError}</p>}
           </div>
         )}
 
@@ -469,6 +475,7 @@ function ClientForm({
   const [limitStr, setLimitStr] = useState(
     initial.credit_limit_cents ? (initial.credit_limit_cents / 100).toString() : ""
   );
+  const [nameError, setNameError] = useState(false);
 
   function f(key: keyof Client) {
     return (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
@@ -476,6 +483,10 @@ function ClientForm({
   }
 
   function submit() {
+    if (!(form.name || "").trim()) {
+      setNameError(true);
+      return;
+    }
     onSave({ ...form, credit_limit_cents: arsStringToCents(limitStr) });
   }
 
@@ -486,7 +497,14 @@ function ClientForm({
 
         <div className="space-y-3">
           <Field label="Nombre *">
-            <input autoFocus className="input" value={form.name || ""} onChange={f("name")} placeholder="Juan Pérez" />
+            <input
+              autoFocus
+              className={clsx("input", nameError && "border-red-400 focus:ring-red-500")}
+              value={form.name || ""}
+              onChange={(e) => { setNameError(false); f("name")(e); }}
+              placeholder="Juan Pérez"
+            />
+            {nameError && <p className="text-xs text-red-600 mt-1">Ingresá un nombre para continuar</p>}
           </Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Teléfono">
