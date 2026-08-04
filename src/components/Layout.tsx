@@ -7,6 +7,7 @@ import {
   FileText, Percent, Receipt, Lock,
   LayoutDashboard, BarChart2, Search, Settings,
   LogOut, Maximize2, Minimize2, ChevronLeft, ChevronRight, ArrowLeft,
+  Store,
   type LucideIcon,
 } from "lucide-react";
 import { api } from "@/lib/api";
@@ -80,6 +81,18 @@ const NAV_GROUPS: Array<{ label: string; links: NavLinkDef[] }> = [
   },
 ];
 
+// Un color de acento por sección — así cada grupo se reconoce de un vistazo
+// en vez de que las 19 pantallas sean el mismo blanco monocromo sobre gris.
+// Las clases van completas (no interpoladas) para que Tailwind las detecte.
+type GroupAccent = { dot: string; chip: string; icon: string; active: string; activeIcon: string };
+const GROUP_ACCENT: Record<string, GroupAccent> = {
+  "Operación": { dot: "bg-indigo-500",  chip: "bg-indigo-50",  icon: "text-indigo-600",  active: "bg-indigo-600",  activeIcon: "text-white" },
+  "Catálogo":  { dot: "bg-emerald-500", chip: "bg-emerald-50", icon: "text-emerald-600", active: "bg-emerald-600", activeIcon: "text-white" },
+  "Gestión":   { dot: "bg-amber-500",   chip: "bg-amber-50",   icon: "text-amber-600",   active: "bg-amber-500",   activeIcon: "text-white" },
+  "Análisis":  { dot: "bg-violet-500",  chip: "bg-violet-50",  icon: "text-violet-600",  active: "bg-violet-600",  activeIcon: "text-white" },
+  "Sistema":   { dot: "bg-stone-400",   chip: "bg-stone-100",  icon: "text-stone-500",   active: "bg-stone-700",   activeIcon: "text-white" },
+};
+
 const KEY_ROUTES: Record<string, string> = {
   F4: "/dashboard",
   F9: "/caja", F10: "/caja-gestion", F11: "/clientes",
@@ -152,40 +165,58 @@ export default function Layout() {
       {/* ── Sidebar (oculto en modo foco) ──────────────────────── */}
       {!isFocusMode && (
       <aside className={clsx(
-        "bg-zinc-800 flex flex-col shrink-0 transition-all duration-200",
-        sidebarOpen ? "w-52" : "w-14"
+        "bg-white border-r border-stone-200 flex flex-col shrink-0 transition-all duration-200",
+        sidebarOpen ? "w-56" : "w-16"
       )}>
 
         {/* Logo / nombre */}
         <div className={clsx(
-          "border-b border-zinc-700 flex items-center",
-          sidebarOpen ? "px-4 py-4 gap-2" : "px-0 py-4 justify-center"
+          "border-b border-stone-100 flex items-center",
+          sidebarOpen ? "px-3 py-4 gap-2.5" : "px-0 py-4 justify-center"
         )}>
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shrink-0 shadow-sm shadow-indigo-200">
+            <Store size={18} strokeWidth={2.25} className="text-white" />
+          </div>
           {sidebarOpen && (
             <div className="flex-1 min-w-0">
-              <div className="font-semibold text-sm text-white truncate leading-tight">{businessName}</div>
-              <div className="text-[10px] text-zinc-400 mt-0.5 tracking-wide">Punto Simple POS</div>
+              <div className="font-bold text-sm text-stone-900 truncate leading-tight">{businessName}</div>
+              <div className="text-[10px] text-stone-400 mt-0.5 tracking-wide">Punto Simple POS</div>
             </div>
           )}
-          <button
-            onClick={() => setSidebarOpen((o) => !o)}
-            className="text-white/60 hover:text-white transition-colors shrink-0 w-8 h-8 flex items-center justify-center rounded-md hover:bg-white/10"
-            title={sidebarOpen ? "Colapsar" : "Expandir"}
-          >
-            {sidebarOpen ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
-          </button>
+          {sidebarOpen && (
+            <button
+              onClick={() => setSidebarOpen((o) => !o)}
+              className="text-stone-400 hover:text-stone-700 transition-colors shrink-0 w-7 h-7 flex items-center justify-center rounded-md hover:bg-stone-100"
+              title="Colapsar"
+            >
+              <ChevronLeft size={14} />
+            </button>
+          )}
         </div>
+        {!sidebarOpen && (
+          <button
+            onClick={() => setSidebarOpen(true)}
+            className="text-stone-400 hover:text-stone-700 transition-colors mx-auto mt-1.5 w-7 h-7 flex items-center justify-center rounded-md hover:bg-stone-100"
+            title="Expandir"
+          >
+            <ChevronRight size={14} />
+          </button>
+        )}
 
         {/* Links */}
-        <nav className="flex-1 py-3 overflow-y-auto overflow-x-hidden">
+        <nav className="flex-1 py-2 overflow-y-auto overflow-x-hidden">
           {NAV_GROUPS.map((group) => {
             const links = group.links.filter((l) => hasAccess(userRole, l.minRole) && (!l.serverOnly || posModeMode !== "client"));
             if (!links.length) return null;
+            const accent = GROUP_ACCENT[group.label] ?? GROUP_ACCENT["Sistema"];
             return (
               <div key={group.label} className="mb-1">
                 {sidebarOpen && (
-                  <p className="px-4 pt-4 pb-1 text-[9px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
-                    {group.label}
+                  <p className="px-3 pt-4 pb-1.5 flex items-center gap-1.5">
+                    <span className={clsx("w-1.5 h-1.5 rounded-full", accent.dot)} />
+                    <span className="text-[10px] font-semibold uppercase tracking-[0.1em] text-stone-400">
+                      {group.label}
+                    </span>
                   </p>
                 )}
                 {links.map((l) => {
@@ -196,22 +227,31 @@ export default function Layout() {
                       to={l.to}
                       title={!sidebarOpen ? l.label : undefined}
                       className={({ isActive }) => clsx(
-                        "flex items-center transition-all duration-100 mx-2 rounded-md",
-                        sidebarOpen ? "px-2.5 py-[7px] gap-2.5" : "justify-center py-2",
+                        "flex items-center transition-all duration-100 mx-2 my-0.5 rounded-lg",
+                        sidebarOpen ? "px-2 py-1.5 gap-2.5" : "justify-center py-2",
                         isActive
-                          ? "bg-white/15 text-white font-bold"
-                          : "text-white/75 hover:text-white hover:bg-white/10"
+                          ? clsx(accent.active, "shadow-sm")
+                          : "text-stone-600 hover:bg-stone-50"
                       )}
                     >
                       {({ isActive }) => (
                         <>
-                          <Icon
-                            size={17}
-                            strokeWidth={2}
-                            className={clsx("shrink-0 transition-transform duration-150", isActive && "scale-110")}
-                          />
+                          <span className={clsx(
+                            "shrink-0 w-7 h-7 rounded-md flex items-center justify-center transition-transform duration-150",
+                            isActive ? "bg-white/20" : accent.chip,
+                            isActive && "scale-105"
+                          )}>
+                            <Icon
+                              size={15}
+                              strokeWidth={2.25}
+                              className={isActive ? accent.activeIcon : accent.icon}
+                            />
+                          </span>
                           {sidebarOpen && (
-                            <span className="text-[11px] font-semibold uppercase tracking-wider leading-none">
+                            <span className={clsx(
+                              "text-[12.5px] leading-none",
+                              isActive ? "text-white font-bold" : "font-semibold text-stone-700"
+                            )}>
                               {l.label}
                             </span>
                           )}
@@ -228,15 +268,15 @@ export default function Layout() {
         {/* Estado de sincronización (solo modo cliente) */}
         {posModeMode === "client" && (
           <div className={clsx(
-            "border-t border-zinc-700 flex items-center gap-1.5",
-            sidebarOpen ? "px-3 py-2" : "py-2 justify-center"
+            "border-t border-stone-100 flex items-center gap-1.5",
+            sidebarOpen ? "px-3.5 py-2" : "py-2 justify-center"
           )}>
             <span className={clsx(
               "w-2 h-2 rounded-full shrink-0",
-              syncStatus === "online" ? "bg-emerald-400" : syncStatus === "syncing" ? "bg-amber-400" : "bg-red-500"
+              syncStatus === "online" ? "bg-emerald-500" : syncStatus === "syncing" ? "bg-amber-500" : "bg-red-500"
             )} />
             {sidebarOpen && (
-              <span className="text-[10px] text-zinc-400">
+              <span className="text-[10px] text-stone-400">
                 {syncStatus === "online" ? "Conectada al servidor" : syncStatus === "syncing" ? "Sincronizando…" : "Sin conexión — vendiendo local"}
               </span>
             )}
@@ -245,21 +285,24 @@ export default function Layout() {
 
         {/* Footer / usuario */}
         <div className={clsx(
-          "border-t border-zinc-700",
+          "border-t border-stone-100",
           sidebarOpen ? "px-3 py-3" : "px-1 py-3 flex flex-col items-center gap-1.5"
         )}>
           {sidebarOpen ? (
             <div className="flex items-center gap-1.5">
+              <div className="w-7 h-7 rounded-full bg-gradient-to-br from-indigo-400 to-violet-500 flex items-center justify-center shrink-0 text-white text-[11px] font-bold">
+                {(user?.full_name ?? "?").trim().charAt(0).toUpperCase()}
+              </div>
               <div className="flex-1 min-w-0">
-                <p className="text-xs font-semibold text-white truncate">{user?.full_name}</p>
-                <p className="text-[10px] text-zinc-400">{ROLE_LABEL[userRole]}</p>
+                <p className="text-xs font-semibold text-stone-800 truncate">{user?.full_name}</p>
+                <p className="text-[10px] text-stone-400">{ROLE_LABEL[userRole]}</p>
               </div>
               <button onClick={logout} title="Cerrar sesión"
-                className="text-white/60 hover:text-white hover:bg-white/10 transition-colors rounded-md w-7 h-7 flex items-center justify-center">
+                className="text-stone-400 hover:text-red-600 hover:bg-red-50 transition-colors rounded-md w-7 h-7 flex items-center justify-center">
                 <LogOut size={13} />
               </button>
               <button onClick={toggleFullscreen}
-                className="text-white/60 hover:text-white hover:bg-white/10 rounded-md transition-colors w-7 h-7 flex items-center justify-center"
+                className="text-stone-400 hover:text-stone-700 hover:bg-stone-100 rounded-md transition-colors w-7 h-7 flex items-center justify-center"
                 title={isFullscreen ? "Salir pantalla completa" : "Pantalla completa"}>
                 {isFullscreen ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
               </button>
@@ -267,11 +310,11 @@ export default function Layout() {
           ) : (
             <>
               <button onClick={logout} title="Cerrar sesión"
-                className="text-white/60 hover:text-white hover:bg-white/10 transition-colors rounded-md w-8 h-8 flex items-center justify-center">
+                className="text-stone-400 hover:text-red-600 hover:bg-red-50 transition-colors rounded-md w-8 h-8 flex items-center justify-center">
                 <LogOut size={13} />
               </button>
               <button onClick={toggleFullscreen}
-                className="text-white/60 hover:text-white hover:bg-white/10 rounded-md transition-colors w-8 h-8 flex items-center justify-center">
+                className="text-stone-400 hover:text-stone-700 hover:bg-stone-100 rounded-md transition-colors w-8 h-8 flex items-center justify-center">
                 {isFullscreen ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
               </button>
             </>
@@ -283,7 +326,7 @@ export default function Layout() {
       {/* ── Contenido ─────────────────────────────────────────── */}
       <main className="flex-1 overflow-hidden flex flex-col">
         {isFocusMode && (
-          <div className="h-11 bg-zinc-800 flex items-center px-2 gap-1 shrink-0">
+          <div className="h-11 bg-gradient-to-r from-indigo-700 to-violet-700 flex items-center px-2 gap-1 shrink-0">
             <button
               onClick={() => navigate("/dashboard")}
               title="Volver"
