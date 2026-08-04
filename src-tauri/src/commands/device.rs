@@ -126,7 +126,12 @@ pub fn disconnect_client(state: State<AppState>) -> CmdResult<()> {
 //
 // El secreto DEBE coincidir exactamente con LICENSE_SECRET en
 // scripts/generate-license.mjs. Cambiarlo invalida todas las claves ya entregadas.
-const LICENSE_SECRET: &str = "1a111bf2ce775a006aaeadbb1cfeeda87b1f92592ea2a86425bec8530f3dce47";
+//
+// Se lee de la variable de entorno LICENSE_SECRET al COMPILAR (no en el binario
+// como texto plano en el repo, que ahora es público). Hay que tenerla definida
+// en el entorno antes de correr `cargo tauri dev`/`build` — ver variable de
+// usuario en Windows, y el secret LICENSE_SECRET en GitHub Actions para CI.
+const LICENSE_SECRET: &str = env!("LICENSE_SECRET", "Definí la variable de entorno LICENSE_SECRET antes de compilar");
 
 fn compute_license_key(email: &str) -> String {
     let normalized = email.trim().to_lowercase();

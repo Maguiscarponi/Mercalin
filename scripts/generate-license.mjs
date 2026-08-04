@@ -8,7 +8,11 @@
 // tocá el otro, o las claves generadas acá van a dejar de servir.
 import { createHash } from "node:crypto";
 
-const LICENSE_SECRET = "1a111bf2ce775a006aaeadbb1cfeeda87b1f92592ea2a86425bec8530f3dce47";
+const LICENSE_SECRET = process.env.LICENSE_SECRET;
+if (!LICENSE_SECRET) {
+  console.error("Falta la variable de entorno LICENSE_SECRET (la misma que usa device.rs para compilar).");
+  process.exit(1);
+}
 
 function computeLicenseKey(email) {
   const normalized = email.trim().toLowerCase();
