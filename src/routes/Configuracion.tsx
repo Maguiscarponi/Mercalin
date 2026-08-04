@@ -60,7 +60,12 @@ export default function Configuracion() {
   }
 
   async function setServerMode(enabled: boolean) {
-    const next: DeviceConfig = { mode: enabled ? "server" : "standalone", serverAddr: null };
+    const next: DeviceConfig = {
+      mode: enabled ? "server" : "standalone",
+      serverAddr: null,
+      licenseEmail: deviceConfig?.licenseEmail ?? null,
+      licenseKey: deviceConfig?.licenseKey ?? null,
+    };
     await api.setDeviceConfig(next);
     setDeviceConfig(next);
   }
@@ -74,7 +79,12 @@ export default function Configuracion() {
     try {
       const msg = await api.bootstrapFromServer(addr);
       setConnectMsg(msg);
-      setDeviceConfig({ mode: "client", serverAddr: addr });
+      setDeviceConfig({
+        mode: "client",
+        serverAddr: addr,
+        licenseEmail: deviceConfig?.licenseEmail ?? null,
+        licenseKey: deviceConfig?.licenseKey ?? null,
+      });
     } catch (e) {
       setConnectError(true);
       setConnectMsg(e instanceof Error ? e.message : "No se pudo conectar.");
@@ -85,7 +95,12 @@ export default function Configuracion() {
 
   async function doDisconnectClient() {
     await api.disconnectClient();
-    setDeviceConfig({ mode: "standalone", serverAddr: null });
+    setDeviceConfig({
+      mode: "standalone",
+      serverAddr: null,
+      licenseEmail: deviceConfig?.licenseEmail ?? null,
+      licenseKey: deviceConfig?.licenseKey ?? null,
+    });
     setConnectMsg(null);
   }
 

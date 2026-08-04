@@ -1,6 +1,9 @@
+import { useEffect, useState } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import Layout from "./components/Layout";
 import Login from "./routes/Login";
+import Activation from "./routes/Activation";
+import { api } from "./lib/api";
 import Dashboard from "./routes/Dashboard";
 import Caja from "./routes/Caja";
 import Productos from "./routes/Productos";
@@ -50,6 +53,16 @@ function RequireRole({ path, children }: { path: string; children: React.ReactNo
 
 export default function App() {
   const user = useAuthStore((s) => s.user);
+  const [licensed, setLicensed] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    api.getLicenseStatus().then((s) => setLicensed(s.activated)).catch(() => setLicensed(false));
+  }, []);
+
+  // null = todavía no se chequeó (evita el flash de la pantalla de activación
+  // en cada arranque, mientras se resuelve la promesa).
+  if (licensed === null) return <div className="h-screen bg-stone-100" />;
+  if (!licensed) return <Activation onActivated={() => setLicensed(true)} />;
 
   if (!user) return <Login />;
 

@@ -507,6 +507,13 @@ export type PosMode = "standalone" | "server" | "client";
 export interface DeviceConfig {
   mode: PosMode;
   serverAddr: string | null;
+  licenseEmail: string | null;
+  licenseKey: string | null;
+}
+
+export interface LicenseStatus {
+  activated: boolean;
+  email: string | null;
 }
 
 export interface PendingSyncOp {

@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { rpc } from "@/lib/rpc";
 import type {
-  DeviceConfig, PendingSyncOp,
+  DeviceConfig, PendingSyncOp, LicenseStatus,
   ArcaConfig, ArcaConfigInput, ElectronicInvoice, InvoiceInput,
   AuditEntry,
   BackupInfo,
@@ -426,6 +426,12 @@ export const api = {
 
   disconnectClient: () =>
     invoke<void>("disconnect_client"),
+
+  getLicenseStatus: () =>
+    invoke<LicenseStatus>("get_license_status"),
+
+  activateLicense: (email: string, key: string) =>
+    invoke<LicenseStatus>("activate_license", { email, key }),
 
   getSyncStatus: () =>
     invoke<"online" | "offline" | "syncing">("get_sync_status"),

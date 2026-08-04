@@ -588,6 +588,9 @@ pub fn run() {
             commands::device::set_device_config,
             commands::device::bootstrap_from_server,
             commands::device::disconnect_client,
+            // Licencia
+            commands::device::get_license_status,
+            commands::device::activate_license,
             sync_worker::get_sync_status,
             sync_worker::list_pending_sync_ops,
             sync_worker::enqueue_sync_op,
