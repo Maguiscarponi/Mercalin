@@ -3,14 +3,16 @@ import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import clsx from "clsx";
 import {
   LogOut, Maximize2, Minimize2, ChevronLeft, ChevronRight, ArrowLeft,
-  Store,
+  Store, Search,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
 import { ensureCatalogImportListeners } from "@/stores/catalogImport";
 import { ensureSyncStatusListener, usePosModeStore } from "@/stores/posMode";
+import { useCommandPaletteStore } from "@/stores/commandPalette";
 import { NAV_GROUPS, KEY_ROUTES, ALT_KEY_ROUTES, ROLE_LABEL, hasAccess } from "@/lib/navigation";
 import DialogHost from "@/components/DialogHost";
+import CommandPalette from "@/components/CommandPalette";
 import type { UserRole } from "@/types";
 
 // Un color de acento por sección — así cada grupo se reconoce de un vistazo
@@ -120,6 +122,26 @@ export default function Layout() {
             <ChevronRight size={14} />
           </button>
         )}
+
+        {/* Paleta de comandos */}
+        <div className={clsx("px-2 pt-2", !sidebarOpen && "px-1.5")}>
+          <button
+            onClick={() => useCommandPaletteStore.getState().setOpen(true)}
+            title="Buscar (Ctrl+K)"
+            className={clsx(
+              "w-full flex items-center gap-2 text-stone-400 hover:text-stone-600 bg-stone-50 hover:bg-stone-100 rounded-lg transition-colors",
+              sidebarOpen ? "px-2.5 py-1.5" : "justify-center py-2"
+            )}
+          >
+            <Search size={13} />
+            {sidebarOpen && (
+              <>
+                <span className="text-xs">Buscar…</span>
+                <span className="ml-auto text-[10px] font-mono border border-stone-200 rounded px-1 py-0.5">Ctrl+K</span>
+              </>
+            )}
+          </button>
+        </div>
 
         {/* Links */}
         <nav className="flex-1 py-2 overflow-y-auto overflow-x-hidden">
@@ -275,6 +297,7 @@ export default function Layout() {
         </div>
       </main>
       <DialogHost />
+      <CommandPalette />
     </div>
   );
 }
