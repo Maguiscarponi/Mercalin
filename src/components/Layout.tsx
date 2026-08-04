@@ -10,6 +10,7 @@ import { useAuthStore } from "@/stores/auth";
 import { ensureCatalogImportListeners } from "@/stores/catalogImport";
 import { ensureSyncStatusListener, usePosModeStore } from "@/stores/posMode";
 import { NAV_GROUPS, KEY_ROUTES, ALT_KEY_ROUTES, ROLE_LABEL, hasAccess } from "@/lib/navigation";
+import DialogHost from "@/components/DialogHost";
 import type { UserRole } from "@/types";
 
 // Un color de acento por sección — así cada grupo se reconoce de un vistazo
@@ -273,6 +274,7 @@ export default function Layout() {
           <Outlet />
         </div>
       </main>
+      <DialogHost />
     </div>
   );
 }

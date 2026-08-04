@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { centsToARS, arsStringToCents, formatDateTime } from "@/lib/format";
+import { confirmAction, showToast } from "@/stores/dialogs";
 import type { NewSupplier, Product, PurchaseOrder, PurchaseOrderItem, Supplier, PurchaseProjection, SupplierLeadTime, CostInflationItem, SupplierRiskScore } from "@/types";
 
 export default function Proveedores() {
@@ -52,7 +53,7 @@ export default function Proveedores() {
       load();
     } catch (e) {
       console.error(e);
-      alert("Error al guardar");
+      showToast({ message: "No se pudo guardar el proveedor", tone: "danger" });
     }
   }
 
@@ -63,26 +64,29 @@ export default function Proveedores() {
   }
 
   async function receiveOrder(id: number) {
-    if (!confirm("¿Confirmar recepción de mercadería? Esto actualizará el stock automáticamente.")) return;
+    const ok = await confirmAction("El stock se va a actualizar automáticamente con lo recibido.", { title: "¿Confirmar recepción de mercadería?", confirmLabel: "Confirmar" });
+    if (!ok) return;
     try {
       await api.receivePurchaseOrder(id);
       load();
       setViewingOrder(null);
+      showToast({ message: "Recepción confirmada, stock actualizado", tone: "success" });
     } catch (e) {
       console.error(e);
-      alert("Error al recibir la orden");
+      showToast({ message: "No se pudo recibir la orden", tone: "danger" });
     }
   }
 
   async function cancelOrder(id: number) {
-    if (!confirm("¿Cancelar esta orden? Esta acción no se puede deshacer.")) return;
+    if (!(await confirmAction("Esta acción no se puede deshacer.", { title: "¿Cancelar esta orden?", danger: true, confirmLabel: "Cancelar orden" }))) return;
     try {
       await api.cancelPurchaseOrder(id);
       load();
       setViewingOrder(null);
+      showToast({ message: "Orden cancelada" });
     } catch (e) {
       console.error(e);
-      alert("Error al cancelar la orden");
+      showToast({ message: "No se pudo cancelar la orden", tone: "danger" });
     }
   }
 
@@ -107,15 +111,17 @@ export default function Proveedores() {
   }
 
   async function handleGenerateAutoOrders() {
-    if (!confirm("¿Generar órdenes de compra automáticas agrupadas por proveedor?")) return;
+    const ok = await confirmAction("Se van a crear órdenes agrupadas por proveedor para los productos con stock bajo.", { title: "¿Generar órdenes de compra automáticas?", confirmLabel: "Generar" });
+    if (!ok) return;
     setGeneratingOrders(true);
     try {
       await api.generateAutoOrders();
       await load();
       setTab("ordenes");
+      showToast({ message: "Órdenes generadas", tone: "success" });
     } catch (e) {
       console.error(e);
-      alert("Error al generar órdenes automáticas");
+      showToast({ message: "No se pudo generar las órdenes automáticas", tone: "danger" });
     } finally {
       setGeneratingOrders(false);
     }
@@ -685,7 +691,7 @@ function NewOrderForm({
 
   async function submit() {
     if (items.some((i) => !i.name.trim() || !i.unit_cost)) {
-      alert("Completá todos los ítems");
+      showToast({ message: "Completá todos los ítems", tone: "danger" });
       return;
     }
     setSaving(true);
@@ -701,9 +707,10 @@ function NewOrderForm({
         })),
       });
       onSaved();
+      showToast({ message: "Orden creada", tone: "success" });
     } catch (e) {
       console.error(e);
-      alert("Error al crear la orden");
+      showToast({ message: "No se pudo crear la orden", tone: "danger" });
     } finally {
       setSaving(false);
     }

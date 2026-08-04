@@ -3,6 +3,7 @@ import { api } from "@/lib/api";
 import type { BackupInfo, ConfigEntry, DeptButton, DeviceConfig, NetworkInfo, PendingSyncOp } from "@/types";
 import { arsStringToCents, centsToARS } from "@/lib/format";
 import { usePosModeStore } from "@/stores/posMode";
+import { confirmAction, showToast } from "@/stores/dialogs";
 import clsx from "clsx";
 
 type Tab = "general" | "finanzas" | "backup" | "sistema";
@@ -119,9 +120,9 @@ export default function Configuracion() {
   }
 
   async function doDeleteBackup(name: string) {
-    if (!confirm(`¿Eliminar backup "${name}"?`)) return;
-    try { await api.deleteBackup(name); setBackups((p) => p.filter((b) => b.name !== name)); }
-    catch (e) { alert(`Error: ${e}`); }
+    if (!(await confirmAction("Esta acción no se puede deshacer.", { title: `¿Eliminar backup "${name}"?`, danger: true, confirmLabel: "Eliminar" }))) return;
+    try { await api.deleteBackup(name); setBackups((p) => p.filter((b) => b.name !== name)); showToast({ message: "Backup eliminado" }); }
+    catch (e) { showToast({ message: `Error: ${e}`, tone: "danger" }); }
   }
 
   function formatBytes(b: number) {

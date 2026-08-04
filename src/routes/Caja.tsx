@@ -7,6 +7,7 @@ import clsx from "clsx";
 import PaymentModal from "@/components/PaymentModal";
 import { CashSessionPanel, OpenCashForm } from "./Caja_Sesion";
 import HelpButton from "@/components/HelpModal";
+import { confirmAction, showToast } from "@/stores/dialogs";
 import type { CashSession, Client, DeptButton, Product, Promotion } from "@/types";
 
 export default function Caja() {
@@ -690,8 +691,8 @@ ${itemsHtml}
 
           {/* ANULAR VENTA */}
           <button
-            onClick={() => {
-              if (confirm("¿Anular toda la venta?")) {
+            onClick={async () => {
+              if (await confirmAction("Se van a borrar todos los ítems del carrito actual.", { title: "¿Anular toda la venta?", danger: true, confirmLabel: "Anular" })) {
                 cart.clear();
                 setDiscountStr("");
                 promoProductsRef.current = {};
@@ -906,7 +907,7 @@ function SetPriceModal({
       onSaved(updated);
     } catch (e) {
       console.error(e);
-      alert("Error al guardar el precio");
+      showToast({ message: "No se pudo guardar el precio", tone: "danger" });
     } finally {
       setSaving(false);
     }

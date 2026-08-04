@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { centsToARS, arsStringToCents } from "@/lib/format";
+import { confirmAction, showToast } from "@/stores/dialogs";
 import type { Combo, ComboWithItems, NewCombo, NewComboItem, Product } from "@/types";
 import clsx from "clsx";
 
@@ -29,11 +30,12 @@ export default function Combos() {
   }
 
   async function handleDelete(id: number) {
-    if (!confirm("¿Eliminar este combo?")) return;
+    if (!(await confirmAction("Esta acción no se puede deshacer.", { title: "¿Eliminar este combo?", danger: true, confirmLabel: "Eliminar" }))) return;
     try {
       await api.deleteCombo(id);
       load();
-    } catch (e) { console.error(e); }
+      showToast({ message: "Combo eliminado" });
+    } catch (e) { console.error(e); showToast({ message: "No se pudo eliminar el combo", tone: "danger" }); }
   }
 
   async function handleSave(input: NewCombo, id?: number) {
@@ -45,8 +47,9 @@ export default function Combos() {
       }
       setEditing(null);
       load();
+      showToast({ message: id ? "Combo actualizado" : "Combo creado", tone: "success" });
     } catch (e) {
-      alert(`Error: ${String(e)}`);
+      showToast({ message: `Error: ${String(e)}`, tone: "danger" });
     }
   }
 
@@ -233,8 +236,8 @@ function ComboForm({ cw, onSave, onCancel }: {
   }
 
   function submit() {
-    if (!name.trim()) { alert("El nombre es obligatorio"); return; }
-    if (items.length === 0) { alert("Agregá al menos un componente"); return; }
+    if (!name.trim()) { showToast({ message: "El nombre es obligatorio", tone: "danger" }); return; }
+    if (items.length === 0) { showToast({ message: "Agregá al menos un componente", tone: "danger" }); return; }
     const input: NewCombo = {
       name: name.trim(),
       barcode: barcode.trim() || null,

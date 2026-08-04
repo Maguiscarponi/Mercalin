@@ -4,6 +4,7 @@ import { api } from "@/lib/api";
 import { centsToARS, arsStringToCents, formatDateTime } from "@/lib/format";
 import { useSearchParams } from "react-router-dom";
 import { useCatalogImport } from "@/stores/catalogImport";
+import { confirmAction, showToast } from "@/stores/dialogs";
 import type { BulkPriceInput, BulkPricePreviewItem, CatalogImportResult, CsvProductRow, DeadStockItem, ImportResult, LowStockProduct, MinStockSuggestion, PriceImpactItem, PriceSyncAlert, Product, ProductVelocity, StockMovement, Supplier } from "@/types";
 import clsx from "clsx";
 import HelpButton from "@/components/HelpModal";
@@ -139,12 +140,12 @@ export default function Productos() {
       load();
     } catch (err) {
       console.error(err);
-      alert("Error al guardar");
+      showToast({ message: "No se pudo guardar el producto", tone: "danger" });
     }
   }
 
   async function handleDelete(id: number) {
-    if (!confirm("¿Eliminar este producto?")) return;
+    if (!(await confirmAction("Esta acción no se puede deshacer.", { title: "¿Eliminar este producto?", danger: true, confirmLabel: "Eliminar" }))) return;
     await api.deleteProduct(id);
     load();
   }
@@ -694,7 +695,7 @@ function StockIaTab({ onProductsReload }: { onProductsReload: () => void }) {
       setSelected(new Set());
     } catch (err) {
       console.error(err);
-      alert("Error al aplicar sugerencias");
+      showToast({ message: "No se pudo aplicar las sugerencias", tone: "danger" });
     } finally {
       setApplying(false);
     }
@@ -840,7 +841,7 @@ function PrecioIaTab({ onProductsReload }: { onProductsReload: () => void }) {
       onProductsReload();
     } catch (err) {
       console.error(err);
-      alert("Error al actualizar el precio");
+      showToast({ message: "No se pudo actualizar el precio", tone: "danger" });
     } finally {
       setUpdatingId(null);
     }
@@ -970,7 +971,7 @@ function StockAdjustForm({
       onSaved();
     } catch (e) {
       console.error(e);
-      alert("Error al ajustar stock");
+      showToast({ message: "No se pudo ajustar el stock", tone: "danger" });
     } finally {
       setSaving(false);
     }
@@ -1346,7 +1347,7 @@ function QuickPriceInput({ product, onSaved }: { product: Product; onSaved: (p: 
       onSaved(updated);
     } catch (e) {
       console.error(e);
-      alert("Error al guardar el precio");
+      showToast({ message: "No se pudo guardar el precio", tone: "danger" });
     } finally {
       setSaving(false);
     }

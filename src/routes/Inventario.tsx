@@ -3,6 +3,7 @@ import { api } from "@/lib/api";
 import type { CountAdjustment, InventoryCountItem } from "@/types";
 import clsx from "clsx";
 import HelpButton from "@/components/HelpModal";
+import { confirmAction, showToast } from "@/stores/dialogs";
 
 type Step = "inicio" | "contando" | "revision" | "aplicado";
 
@@ -27,7 +28,7 @@ export default function Inventario() {
       setStep("contando");
     } catch (e) {
       console.error(e);
-      alert("Error al cargar productos");
+      showToast({ message: "No se pudieron cargar los productos", tone: "danger" });
     } finally {
       setLoading(false);
     }
@@ -51,11 +52,15 @@ export default function Inventario() {
       .map((p) => ({ product_id: p.product_id, counted_qty: Number(p.counted) }));
 
     if (adjustments.length === 0) {
-      alert("No hay diferencias — el stock ya está correcto.");
+      showToast({ message: "No hay diferencias — el stock ya está correcto" });
       return;
     }
 
-    if (!confirm(`¿Aplicar ${adjustments.length} ajuste(s) de stock? Esta acción modifica el inventario.`)) return;
+    const ok = await confirmAction(
+      `Se van a ajustar ${adjustments.length} producto(s) al stock que contaste.`,
+      { title: "¿Aplicar el conteo?", confirmLabel: "Aplicar" }
+    );
+    if (!ok) return;
 
     setApplying(true);
     try {
@@ -64,7 +69,7 @@ export default function Inventario() {
       setStep("aplicado");
     } catch (e) {
       console.error(e);
-      alert("Error al aplicar el conteo");
+      showToast({ message: "No se pudo aplicar el conteo", tone: "danger" });
     } finally {
       setApplying(false);
     }

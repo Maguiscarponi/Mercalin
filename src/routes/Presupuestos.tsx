@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { centsToARS, arsStringToCents, formatDateTime, todayISO } from "@/lib/format";
+import { confirmAction, showToast } from "@/stores/dialogs";
 import type { Client, NewQuote, NewQuoteItem, Product, Quote, QuoteWithItems, QuoteStatus } from "@/types";
 import clsx from "clsx";
 
@@ -45,13 +46,13 @@ export default function Presupuestos() {
       const updated = await api.updateQuoteStatus(id, status);
       setQuotes((prev) => prev.map((q) => (q.id === id ? updated : q)));
       if (detail?.quote.id === id) setDetail((d) => d ? { ...d, quote: updated } : d);
-    } catch (e) { console.error(e); alert("Error al cambiar estado"); }
+    } catch (e) { console.error(e); showToast({ message: "No se pudo cambiar el estado", tone: "danger" }); }
   }
 
   async function handleDelete(id: number) {
-    if (!confirm("¿Eliminar este presupuesto?")) return;
-    try { await api.deleteQuote(id); load(); setDetail(null); }
-    catch { alert("Error al eliminar"); }
+    if (!(await confirmAction("Esta acción no se puede deshacer.", { title: "¿Eliminar este presupuesto?", danger: true, confirmLabel: "Eliminar" }))) return;
+    try { await api.deleteQuote(id); load(); setDetail(null); showToast({ message: "Presupuesto eliminado" }); }
+    catch { showToast({ message: "No se pudo eliminar el presupuesto", tone: "danger" }); }
   }
 
   const visible = statusFilter ? quotes.filter((q) => q.status === statusFilter) : quotes;
@@ -334,7 +335,7 @@ function QuoteForm({ onCancel, onSaved }: { onCancel: () => void; onSaved: () =>
   const total = Math.max(0, subtotal - discountCents);
 
   async function handleSave() {
-    if (items.every((i) => !i.name.trim())) { alert("Agregá al menos un ítem"); return; }
+    if (items.every((i) => !i.name.trim())) { showToast({ message: "Agregá al menos un ítem", tone: "danger" }); return; }
     setSaving(true);
     try {
       const newItems: NewQuoteItem[] = items
@@ -356,9 +357,10 @@ function QuoteForm({ onCancel, onSaved }: { onCancel: () => void; onSaved: () =>
       };
       await api.createQuote(q);
       onSaved();
+      showToast({ message: "Presupuesto creado", tone: "success" });
     } catch (e) {
       console.error(e);
-      alert("Error al guardar el presupuesto");
+      showToast({ message: "No se pudo guardar el presupuesto", tone: "danger" });
     } finally {
       setSaving(false);
     }

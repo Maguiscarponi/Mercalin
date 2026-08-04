@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import type { CategoryStat } from "@/types";
+import { confirmAction, showToast } from "@/stores/dialogs";
 import clsx from "clsx";
 
 export default function Rubros() {
@@ -29,20 +30,22 @@ export default function Rubros() {
       load();
     } catch (e) {
       console.error(e);
-      alert("Error al renombrar");
+      showToast({ message: "No se pudo renombrar el rubro", tone: "danger" });
     } finally {
       setSavingRename(false);
     }
   }
 
   async function handleDelete(name: string) {
-    if (!confirm(`¿Eliminar el rubro "${name}"? Los productos quedarán sin categoría.`)) return;
+    const ok = await confirmAction("Los productos de este rubro quedarán sin categoría.", { title: `¿Eliminar el rubro "${name}"?`, danger: true, confirmLabel: "Eliminar" });
+    if (!ok) return;
     try {
       await api.deleteCategory(name);
       load();
+      showToast({ message: `Rubro "${name}" eliminado` });
     } catch (e) {
       console.error(e);
-      alert("Error al eliminar");
+      showToast({ message: "No se pudo eliminar el rubro", tone: "danger" });
     }
   }
 

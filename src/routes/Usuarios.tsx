@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { formatDate } from "@/lib/format";
+import { confirmAction, showToast } from "@/stores/dialogs";
 import type { NewUser, User, UserRole } from "@/types";
 import clsx from "clsx";
 
@@ -49,17 +50,19 @@ export default function Usuarios() {
       load();
     } catch (err) {
       console.error(err);
-      alert("Error al guardar usuario");
+      showToast({ message: "No se pudo guardar el usuario", tone: "danger" });
     }
   }
 
   async function handleDelete(id: number) {
-    if (!confirm("¿Desactivar este usuario?")) return;
+    if (!(await confirmAction("La persona no va a poder iniciar sesión hasta que se reactive.", { title: "¿Desactivar este usuario?", danger: true, confirmLabel: "Desactivar" }))) return;
     try {
       await api.deleteUser(id);
       load();
+      showToast({ message: "Usuario desactivado" });
     } catch (e) {
       console.error(e);
+      showToast({ message: "No se pudo desactivar el usuario", tone: "danger" });
     }
   }
 
@@ -67,9 +70,10 @@ export default function Usuarios() {
     try {
       await api.updateUser({ ...u, active: true });
       load();
+      showToast({ message: "Usuario reactivado", tone: "success" });
     } catch (e) {
       console.error(e);
-      alert("Error al reactivar");
+      showToast({ message: "No se pudo reactivar el usuario", tone: "danger" });
     }
   }
 
@@ -206,11 +210,11 @@ function UserForm({
 
   function submit() {
     if (!form.full_name?.trim() || !form.username?.trim()) {
-      alert("Nombre y usuario son obligatorios");
+      showToast({ message: "Nombre y usuario son obligatorios", tone: "danger" });
       return;
     }
     if (isNew && !form.password) {
-      alert("Ingresá una contraseña");
+      showToast({ message: "Ingresá una contraseña", tone: "danger" });
       return;
     }
     onSave(form);
@@ -292,14 +296,15 @@ function ChangePasswordModal({ user, onClose }: { user: User; onClose: () => voi
   const [saving, setSaving] = useState(false);
 
   async function submit() {
-    if (pw.length < 4) { alert("Mínimo 4 caracteres"); return; }
+    if (pw.length < 4) { showToast({ message: "Mínimo 4 caracteres", tone: "danger" }); return; }
     setSaving(true);
     try {
       await api.changePassword(user.id, pw);
       onClose();
+      showToast({ message: "Contraseña actualizada", tone: "success" });
     } catch (e) {
       console.error(e);
-      alert("Error al cambiar contraseña");
+      showToast({ message: "No se pudo cambiar la contraseña", tone: "danger" });
     } finally {
       setSaving(false);
     }

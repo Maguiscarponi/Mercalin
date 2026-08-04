@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { centsToARS } from "@/lib/format";
 import type { ArcaConfig, ArcaConfigInput, ElectronicInvoice } from "@/types";
+import { showToast } from "@/stores/dialogs";
 import clsx from "clsx";
 
 type Tab = "facturas" | "configuracion";
@@ -50,9 +51,9 @@ export default function Facturacion() {
     setRetrying(true);
     try {
       const count = await api.retryPendingInvoices();
-      if (count > 0) { alert(`✓ ${count} factura${count !== 1 ? "s" : ""} autorizada${count !== 1 ? "s" : ""}`); load(); }
-      else alert("Sin facturas pendientes o sin conexión a ARCA.");
-    } catch (e) { alert(`Error: ${e}`); }
+      if (count > 0) { showToast({ message: `${count} factura${count !== 1 ? "s" : ""} autorizada${count !== 1 ? "s" : ""}`, tone: "success" }); load(); }
+      else showToast({ message: "Sin facturas pendientes o sin conexión a ARCA" });
+    } catch (e) { showToast({ message: `Error: ${e}`, tone: "danger" }); }
     finally { setRetrying(false); }
   }
 
@@ -212,21 +213,22 @@ function ArcaSetup({ arcaConfig, onRefresh }: { arcaConfig: ArcaConfig | null; o
     try {
       await api.saveArcaConfig({ ...form, cuit: form.cuit.trim().replace(/-/g, "") });
       onRefresh();
-    } catch (e) { alert(`Error: ${e}`); }
+      showToast({ message: "Datos guardados", tone: "success" });
+    } catch (e) { showToast({ message: `Error: ${e}`, tone: "danger" }); }
     finally { setSavingCfg(false); }
   }
 
   async function generateKey() {
     setGeneratingKey(true); setCsr(null);
     try { const csrPem = await api.generateArcaKeypair(); setCsr(csrPem); onRefresh(); }
-    catch (e) { alert(`${e}`); }
+    catch (e) { showToast({ message: String(e), tone: "danger" }); }
     finally { setGeneratingKey(false); }
   }
 
   async function loadCert(file: File) {
     setLoadingCert(true);
-    try { const text = await file.text(); const msg = await api.loadArcaCertificate(text); alert(msg); onRefresh(); }
-    catch (e) { alert(`${e}`); }
+    try { const text = await file.text(); const msg = await api.loadArcaCertificate(text); showToast({ message: msg, tone: "success" }); onRefresh(); }
+    catch (e) { showToast({ message: String(e), tone: "danger" }); }
     finally { setLoadingCert(false); }
   }
 

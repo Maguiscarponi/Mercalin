@@ -5,6 +5,7 @@ import { api } from "@/lib/api";
 import { centsToARS, formatDateTime, todayISO } from "@/lib/format";
 import type { DailyReport, IvaReportItem, MarginCategory, MarginProduct, Product, ProductAffinity, ReorderItem, Sale, SaleWithItems, SalesByUser, TopProduct } from "@/types";
 import { markReportesVisited } from "@/components/OnboardingChecklist";
+import { confirmAction, showToast } from "@/stores/dialogs";
 import clsx from "clsx";
 
 const METHOD_LABELS: Record<string, string> = {
@@ -233,9 +234,15 @@ export default function Reportes() {
   }
 
   async function handleCancel(id: number) {
-    if (!confirm("¿Anular esta venta? Se revertirá el stock.")) return;
-    try { await api.cancelSale(id); await load(); setDetailSale(null); }
-    catch { alert("Error al anular la venta"); }
+    const ok = await confirmAction("Se va a revertir el stock de esta venta.", { title: `¿Anular la venta #${id}?`, danger: true, confirmLabel: "Anular" });
+    if (!ok) return;
+    try {
+      await api.cancelSale(id);
+      await load();
+      setDetailSale(null);
+      showToast({ message: `Venta #${id} anulada` });
+    }
+    catch { showToast({ message: "No se pudo anular la venta", tone: "danger" }); }
   }
 
   const maxCat = byCategory.length > 0 ? Math.max(...byCategory.map(([, v]) => v)) : 1;

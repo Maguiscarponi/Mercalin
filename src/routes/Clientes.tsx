@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { centsToARS, arsStringToCents, formatDateTime } from "@/lib/format";
+import { confirmAction, showToast } from "@/stores/dialogs";
 import type { Client, ClientAccountEntry, ClientRfm, ClientSegment, NewClient } from "@/types";
 import clsx from "clsx";
 
@@ -73,17 +74,18 @@ export default function Clientes() {
       load();
     } catch (e) {
       console.error(e);
-      alert("Error al guardar");
+      showToast({ message: "No se pudo guardar el cliente", tone: "danger" });
     }
   }
 
   async function handleDelete(client: Client) {
     const msg = client.balance_cents > 0
-      ? `${client.name} tiene una deuda de ${centsToARS(client.balance_cents)}. Si lo eliminás, se pierde el registro de esa cuenta corriente. ¿Eliminar igual?`
+      ? `${client.name} tiene una deuda de ${centsToARS(client.balance_cents)}. Si lo eliminás, se pierde el registro de esa cuenta corriente.`
       : `¿Eliminar a ${client.name}?`;
-    if (!confirm(msg)) return;
+    if (!(await confirmAction(msg, { title: "Eliminar cliente", danger: true, confirmLabel: "Eliminar" }))) return;
     await api.deleteClient(client.id);
     load();
+    showToast({ message: `${client.name} eliminado` });
   }
 
   function exportCsv(rows: Client[]) {
@@ -320,9 +322,10 @@ function ClientAccountModal({ client, onClose }: { client: Client; onClose: () =
       });
       setPayStr("");
       load();
+      showToast({ message: "Pago registrado", tone: "success" });
     } catch (e) {
       console.error(e);
-      alert("Error al registrar pago");
+      setPayError("No se pudo registrar el pago");
     } finally {
       setSaving(false);
     }

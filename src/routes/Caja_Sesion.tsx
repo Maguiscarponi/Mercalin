@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { centsToARS, arsStringToCents, formatDateTime } from "@/lib/format";
 import type { CashSession, CashMovement } from "@/types";
+import { showToast } from "@/stores/dialogs";
 import clsx from "clsx";
 
 interface Props {
@@ -204,7 +205,7 @@ function MovementForm({
       onSaved();
     } catch (e) {
       console.error(e);
-      alert("Error al guardar movimiento");
+      showToast({ message: "No se pudo guardar el movimiento", tone: "danger" });
     } finally {
       setSaving(false);
     }
@@ -306,7 +307,7 @@ function CloseForm({
       onClosed();
     } catch (e) {
       console.error(e);
-      alert("Error al cerrar la caja");
+      showToast({ message: "No se pudo cerrar la caja", tone: "danger" });
     } finally {
       setSaving(false);
     }
@@ -395,7 +396,7 @@ export function OpenCashForm({ onCancel, onOpened }: OpenFormProps) {
       onOpened(session);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      alert(msg || "Error al abrir la caja");
+      showToast({ message: msg || "No se pudo abrir la caja", tone: "danger" });
     } finally {
       setSaving(false);
     }

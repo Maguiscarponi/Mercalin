@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { centsToARS, arsStringToCents, todayISO } from "@/lib/format";
+import { confirmAction, showToast } from "@/stores/dialogs";
 import type { NewPromotion, Product, Promotion, PromoAppliesTo, PromoType } from "@/types";
 import clsx from "clsx";
 
@@ -57,12 +58,14 @@ export default function Promociones() {
   }
 
   async function handleDelete(id: number) {
-    if (!confirm("¿Eliminar esta promoción?")) return;
+    if (!(await confirmAction("Esta acción no se puede deshacer.", { title: "¿Eliminar esta promoción?", danger: true, confirmLabel: "Eliminar" }))) return;
     try {
       await api.deletePromotion(id);
       load();
+      showToast({ message: "Promoción eliminada" });
     } catch (e) {
       console.error(e);
+      showToast({ message: "No se pudo eliminar la promoción", tone: "danger" });
     }
   }
 
@@ -75,9 +78,10 @@ export default function Promociones() {
       }
       setEditing(null);
       load();
+      showToast({ message: "Promoción guardada", tone: "success" });
     } catch (err) {
       console.error(err);
-      alert("Error al guardar");
+      showToast({ message: "No se pudo guardar la promoción", tone: "danger" });
     }
   }
 
@@ -349,13 +353,13 @@ function PromoForm({
   }
 
   function submit() {
-    if (!form.name?.trim()) { alert("El nombre es obligatorio"); return; }
+    if (!form.name?.trim()) { showToast({ message: "El nombre es obligatorio", tone: "danger" }); return; }
     if (form.applies_to === "product" && !form.target_id) {
-      alert("Elegí el producto de la lista de sugerencias — si solo escribís el nombre, la promoción no se va a aplicar en la caja.");
+      showToast({ message: "Elegí el producto de la lista de sugerencias — si solo escribís el nombre, la promoción no se va a aplicar en la caja.", tone: "danger" });
       return;
     }
     if (form.applies_to === "category" && !form.target_name?.trim()) {
-      alert("Elegí una categoría.");
+      showToast({ message: "Elegí una categoría", tone: "danger" });
       return;
     }
     const value = form.promo_type === "fixed" ? arsStringToCents(valueStr) : parseFloat(valueStr) || 0;

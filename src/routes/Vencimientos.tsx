@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { formatDate, todayISO } from "@/lib/format";
+import { confirmAction, showToast } from "@/stores/dialogs";
 import type { ExpiringLot, NewProductLot, Product } from "@/types";
 import clsx from "clsx";
 
@@ -55,11 +56,16 @@ export default function Vencimientos() {
   }, [days]);
 
   async function retireLot(lot: ExpiringLot) {
-    if (!confirm(`¿Retirar este lote de "${lot.product_name}"? Se quitarán ${lot.qty} unidades del stock.`)) return;
+    const ok = await confirmAction(
+      `Se van a quitar ${lot.qty} unidades del stock.`,
+      { title: `¿Retirar el lote de "${lot.product_name}"?`, danger: true, confirmLabel: "Retirar" }
+    );
+    if (!ok) return;
     setRetiringId(lot.lot_id);
     try {
       await api.retireLot(lot.lot_id);
       await load();
+      showToast({ message: `Lote de "${lot.product_name}" retirado` });
     } finally {
       setRetiringId(null);
     }
@@ -249,7 +255,7 @@ function EditExpiryModal({
       onSaved();
     } catch (e) {
       console.error(e);
-      alert("Error al actualizar");
+      showToast({ message: "No se pudo actualizar el vencimiento", tone: "danger" });
     } finally {
       setSaving(false);
     }
@@ -301,8 +307,8 @@ function AddLotModal({
   }, []);
 
   async function save() {
-    if (!productId) { alert("Seleccioná un producto"); return; }
-    if (qty <= 0) { alert("La cantidad debe ser mayor a 0"); return; }
+    if (!productId) { showToast({ message: "Seleccioná un producto", tone: "danger" }); return; }
+    if (qty <= 0) { showToast({ message: "La cantidad debe ser mayor a 0", tone: "danger" }); return; }
     setSaving(true);
     try {
       const input: NewProductLot = {
@@ -314,9 +320,10 @@ function AddLotModal({
       };
       await api.addProductLot(input);
       onSaved();
+      showToast({ message: "Lote agregado", tone: "success" });
     } catch (e) {
       console.error(e);
-      alert("Error al crear lote");
+      showToast({ message: "No se pudo crear el lote", tone: "danger" });
     } finally {
       setSaving(false);
     }
