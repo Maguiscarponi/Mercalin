@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
+import mercalinLogo from "@/assets/mercalin-logo.svg";
 
 // Pantalla de activación: se muestra una sola vez, antes de poder usar la app
 // en esta instalación. La clave se calcula a partir del mail (ver
@@ -43,11 +44,8 @@ export default function Activation({ onActivated }: { onActivated: () => void })
     <div className="h-screen flex items-center justify-center bg-stone-100">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
-            <span className="text-3xl">🔑</span>
-          </div>
-          <h1 className="text-2xl font-bold text-stone-900">Activar Punto Simple POS</h1>
-          <p className="text-stone-500 text-sm mt-1">Se hace una sola vez. Después ingresás con este mail y contraseña.</p>
+          <img src={mercalinLogo} alt="Mercalin" className="h-14 mx-auto mb-4" />
+          <p className="text-stone-500 text-sm mt-1">Activá tu cuenta — se hace una sola vez. Después ingresás con este mail y contraseña.</p>
         </div>
 
         <div className="bg-white rounded-2xl shadow-sm border border-stone-200 p-8">

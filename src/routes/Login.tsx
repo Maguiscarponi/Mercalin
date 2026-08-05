@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
+import mercalinLogo from "@/assets/mercalin-logo.svg";
 
 export default function Login() {
   const setUser = useAuthStore((s) => s.setUser);
@@ -29,10 +30,7 @@ export default function Login() {
       <div className="w-full max-w-sm">
         {/* Logo / Header */}
         <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
-            <span className="text-3xl">🛒</span>
-          </div>
-          <h1 className="text-2xl font-bold text-stone-900">Punto Simple POS</h1>
+          <img src={mercalinLogo} alt="Mercalin" className="h-14 mx-auto mb-4" />
           <p className="text-stone-500 text-sm mt-1">Iniciá sesión para continuar</p>
         </div>
 
