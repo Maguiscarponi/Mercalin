@@ -1,9 +1,12 @@
 name: Publicar actualización
 
 # Se dispara al subir un tag de versión (ej: git tag v1.0.1 && git push origin v1.0.1).
-# Compila el instalador de Windows, lo firma con la clave de actualizaciones y publica
-# todo como un GitHub Release -- incluyendo latest.json, que es lo que la app ya
-# instalada consulta para saber si hay una versión nueva (ver src/stores/updater.ts).
+# Compila el instalador de Windows y lo firma con la clave de actualizaciones (tauri-action).
+# La creación de la release y la subida de archivos las hace un paso aparte
+# (softprops/action-gh-release) -- tauri-action venía fallando en silencio al crear
+# la release él mismo: el job terminaba en verde pero la release nunca se creaba,
+# sin ningún mensaje de error en el log. Separar "compilar" de "publicar" y usar una
+# acción distinta y más probada para lo segundo evita ese fallo.
 on:
   push:
     tags:
@@ -25,14 +28,46 @@ jobs:
 
       - run: npm ci
 
+      # Solo compila y firma -- sin tagName/releaseName/releaseId no intenta crear
+      # ni subir ninguna release, así que la firma no depende de esa parte.
       - uses: tauri-apps/tauri-action@v0
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           LICENSE_SECRET: ${{ secrets.LICENSE_SECRET }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: "Mercalin ${{ github.ref_name }}"
-          releaseDraft: true
+          projectPath: .
+
+      # Arma a mano el manifiesto que el updater de la app consulta
+      # (ver src/stores/updater.ts) -- mismo formato que generaba tauri-action.
+      - name: Generar latest.json
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart("v")
+          $exeSig = (Get-Content "src-tauri/target/release/bundle/nsis/Mercalin_${version}_x64-setup.exe.sig" -Raw).Trim()
+          $pubDate = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+          $manifest = [ordered]@{
+            version   = $version
+            notes     = "Mercalin ${{ github.ref_name }}"
+            pub_date  = $pubDate
+            platforms = [ordered]@{
+              "windows-x86_64" = [ordered]@{
+                signature = $exeSig
+                url       = "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/Mercalin_${version}_x64-setup.exe"
+              }
+            }
+          }
+          $manifest | ConvertTo-Json -Depth 5 | Set-Content -Path "latest.json" -Encoding utf8
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: "Mercalin ${{ github.ref_name }}"
+          draft: true
           prerelease: false
+          files: |
+            src-tauri/target/release/bundle/nsis/*.exe
+            src-tauri/target/release/bundle/nsis/*.exe.sig
+            src-tauri/target/release/bundle/msi/*.msi
+            src-tauri/target/release/bundle/msi/*.msi.sig
+            latest.json
