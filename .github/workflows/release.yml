@@ -67,6 +67,25 @@ jobs:
           }
           $manifest | ConvertTo-Json -Depth 5 | Set-Content -Path "latest.json" -Encoding utf8
 
+      # El tag ya existe (es lo que disparó este workflow) pero el backend de
+      # Releases de GitHub a veces tarda en "verlo" -- softprops/action-gh-release
+      # reintenta solo 2 veces, casi sin pausa, e insuficiente. Acá esperamos de
+      # verdad, consultando la API hasta que confirme el tag antes de seguir.
+      - name: Esperar a que el tag sea visible para la API de Releases
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          for i in $(seq 1 24); do
+            if gh api "repos/${{ github.repository }}/git/refs/tags/${{ github.ref_name }}" >/dev/null 2>&1; then
+              echo "Tag visible tras intento $i."
+              exit 0
+            fi
+            echo "Intento $i: tag todavía no visible, esperando..."
+            sleep 10
+          done
+          echo "El tag no quedó visible tras 4 minutos -- seguimos igual."
+
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
