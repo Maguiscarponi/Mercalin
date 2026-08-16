@@ -33,6 +33,6 @@ jobs:
           LICENSE_SECRET: ${{ secrets.LICENSE_SECRET }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: "Punto Simple POS ${{ github.ref_name }}"
+          releaseName: "Mercalin ${{ github.ref_name }}"
           releaseDraft: true
           prerelease: false
