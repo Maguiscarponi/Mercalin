@@ -9,8 +9,10 @@ name: Publicar actualización
 # acción distinta y más probada para lo segundo evita ese fallo. También hace falta
 # el permiso "Read and write permissions" en Settings > Actions > General del repo
 # (el default de solo lectura hacía que cualquier escritura fallara en silencio) y
-# fetch-depth: 0 en el checkout -- sin el historial/tags completos, GitHub a veces
-# no reconoce el tag recién pusheado y crea la release como "untagged-xxxxx".
+# fetch-depth: 0 en el checkout, y target_commitish explícito en el paso de abajo --
+# el tag recién pusheado tarda unos segundos en ser "descubierto" por el backend de
+# Releases de GitHub, y sin decirle a qué commit apunta, cae en crear la release
+# como "untagged-xxxxx" en vez de con el tag real.
 on:
   push:
     tags:
@@ -68,6 +70,7 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
+          target_commitish: ${{ github.sha }}
           name: "Mercalin ${{ github.ref_name }}"
           draft: true
           prerelease: false
