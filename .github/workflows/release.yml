@@ -6,7 +6,11 @@ name: Publicar actualización
 # (softprops/action-gh-release) -- tauri-action venía fallando en silencio al crear
 # la release él mismo: el job terminaba en verde pero la release nunca se creaba,
 # sin ningún mensaje de error en el log. Separar "compilar" de "publicar" y usar una
-# acción distinta y más probada para lo segundo evita ese fallo.
+# acción distinta y más probada para lo segundo evita ese fallo. También hace falta
+# el permiso "Read and write permissions" en Settings > Actions > General del repo
+# (el default de solo lectura hacía que cualquier escritura fallara en silencio) y
+# fetch-depth: 0 en el checkout -- sin el historial/tags completos, GitHub a veces
+# no reconoce el tag recién pusheado y crea la release como "untagged-xxxxx".
 on:
   push:
     tags:
@@ -19,6 +23,8 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
