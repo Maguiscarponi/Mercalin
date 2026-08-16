@@ -1,21 +1,55 @@
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import clsx from "clsx";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   LogOut, Maximize2, Minimize2, ChevronLeft, ChevronRight, ArrowLeft,
-  Store, Search,
+  Store, Search, Bell, AlertTriangle,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
 import { ensureCatalogImportListeners } from "@/stores/catalogImport";
 import { ensureSyncStatusListener, usePosModeStore } from "@/stores/posMode";
 import { useUpdaterStore } from "@/stores/updater";
+import { useStockTrackingStore } from "@/stores/stockTracking";
+import { useCombosEnabledStore } from "@/stores/combosEnabled";
+import { useInsightsStore } from "@/stores/insights";
 import { Download } from "lucide-react";
 import { useCommandPaletteStore } from "@/stores/commandPalette";
 import { NAV_GROUPS, KEY_ROUTES, ALT_KEY_ROUTES, ROLE_LABEL, hasAccess } from "@/lib/navigation";
 import DialogHost from "@/components/DialogHost";
 import CommandPalette from "@/components/CommandPalette";
+import { AllInsightsModal, insightBadgeClass } from "@/components/InsightsPanel";
+import { useEscapeToClose } from "@/lib/useEscapeToClose";
 import type { UserRole } from "@/types";
+
+// Recordatorio, no bloqueo: si hay una caja abierta y la dueña cierra la app
+// con la X, se avisa antes de salir — pero si elige "Salir sin cerrar" se
+// respeta, no se la obliga a cerrar la caja para poder irse.
+function CloseCajaWarningModal({
+  onGoToCaja, onExitAnyway, onCancel,
+}: {
+  onGoToCaja: () => void; onExitAnyway: () => void; onCancel: () => void;
+}) {
+  useEscapeToClose(onCancel);
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4" onClick={onCancel}>
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-2 mb-2">
+          <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0" />
+          <h2 className="text-sm font-semibold text-stone-800">Tenés una caja abierta</h2>
+        </div>
+        <p className="text-sm text-stone-500 mb-5">
+          Antes de cerrar el sistema, ¿querés cerrar la caja del turno? Si no, podés hacerlo más tarde desde Gestión de caja.
+        </p>
+        <div className="flex flex-col gap-2">
+          <button onClick={onGoToCaja} className="btn btn-primary w-full">Ir a cerrar caja</button>
+          <button onClick={onExitAnyway} className="btn btn-secondary w-full">Salir sin cerrar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // Un color de acento por sección — así cada grupo se reconoce de un vistazo
 // en vez de que las 19 pantallas sean el mismo blanco monocromo sobre gris.
@@ -38,6 +72,8 @@ export default function Layout() {
   const [businessName, setBusinessName] = useState("Punto Simple");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [showInsights, setShowInsights] = useState(false);
+  const [showCloseCajaWarning, setShowCloseCajaWarning] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   const user = useAuthStore((s) => s.user);
@@ -46,6 +82,8 @@ export default function Layout() {
   const posModeMode = usePosModeStore((s) => s.mode);
   const syncStatus = usePosModeStore((s) => s.syncStatus);
   const availableUpdate = useUpdaterStore((s) => s.update);
+  const combosEnabled = useCombosEnabledStore((s) => s.enabled);
+  const insights = useInsightsStore((s) => s.insights);
   const isFocusMode = FOCUS_MODE_ROUTES.has(location.pathname);
   const focusLabel = NAV_GROUPS.flatMap((g) => g.links).find((l) => l.to === location.pathname)?.label ?? "";
 
@@ -56,6 +94,45 @@ export default function Layout() {
   useEffect(() => { ensureCatalogImportListeners(); }, []);
   useEffect(() => { usePosModeStore.getState().hydrate(); ensureSyncStatusListener(); }, []);
   useEffect(() => { useUpdaterStore.getState().checkNow(); }, []);
+  useEffect(() => { useStockTrackingStore.getState().hydrate(); }, []);
+  useEffect(() => { useCombosEnabledStore.getState().hydrate(); }, []);
+
+  // Los consejos se recalculan solos al abrir la app y después cada 10 min
+  // — así la campanita tiene datos frescos aunque nunca se entre al Dashboard.
+  useEffect(() => {
+    useInsightsStore.getState().hydrate();
+    const id = setInterval(() => useInsightsStore.getState().refresh(), 10 * 60 * 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  // Al cerrar la ventana con la X, si queda una caja abierta se avisa antes
+  // de salir — pero es solo un recordatorio, "Salir sin cerrar" cierra igual.
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let cancelled = false;
+    getCurrentWindow().onCloseRequested(async (event) => {
+      try {
+        const session = await api.getCurrentSession();
+        if (session) {
+          event.preventDefault();
+          setShowCloseCajaWarning(true);
+        }
+      } catch {
+        // Si falla la consulta no bloqueamos el cierre de la app.
+      }
+    }).then((fn) => { if (cancelled) fn(); else unlisten = fn; });
+    return () => { cancelled = true; unlisten?.(); };
+  }, []);
+
+  function handleGoCloseCaja() {
+    setShowCloseCajaWarning(false);
+    navigate("/caja-gestion");
+  }
+
+  async function handleExitAnyway() {
+    setShowCloseCajaWarning(false);
+    await getCurrentWindow().destroy();
+  }
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -127,8 +204,8 @@ export default function Layout() {
           </button>
         )}
 
-        {/* Paleta de comandos */}
-        <div className={clsx("px-2 pt-2", !sidebarOpen && "px-1.5")}>
+        {/* Paleta de comandos + consejos */}
+        <div className={clsx("px-2 pt-2 space-y-1", !sidebarOpen && "px-1.5")}>
           <button
             onClick={() => useCommandPaletteStore.getState().setOpen(true)}
             title="Buscar (Ctrl+K)"
@@ -145,12 +222,43 @@ export default function Layout() {
               </>
             )}
           </button>
+
+          <button
+            onClick={() => setShowInsights(true)}
+            title="Consejos del día"
+            className={clsx(
+              "w-full flex items-center gap-2 text-stone-400 hover:text-stone-600 bg-stone-50 hover:bg-stone-100 rounded-lg transition-colors relative",
+              sidebarOpen ? "px-2.5 py-1.5" : "justify-center py-2"
+            )}
+          >
+            <Bell size={13} />
+            {sidebarOpen ? (
+              <>
+                <span className="text-xs">Consejos</span>
+                {insights.length > 0 && (
+                  <span className={clsx("ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full", insightBadgeClass(insights))}>
+                    {insights.length}
+                  </span>
+                )}
+              </>
+            ) : (
+              insights.length > 0 && (
+                <span className={clsx("absolute -top-1 -right-1 text-[9px] font-bold w-4 h-4 flex items-center justify-center rounded-full", insightBadgeClass(insights))}>
+                  {insights.length > 9 ? "9+" : insights.length}
+                </span>
+              )
+            )}
+          </button>
         </div>
 
         {/* Links */}
         <nav className="flex-1 py-2 overflow-y-auto overflow-x-hidden">
           {NAV_GROUPS.map((group) => {
-            const links = group.links.filter((l) => hasAccess(userRole, l.minRole) && (!l.serverOnly || posModeMode !== "client"));
+            const links = group.links.filter((l) =>
+              hasAccess(userRole, l.minRole) &&
+              (!l.serverOnly || posModeMode !== "client") &&
+              (l.featureFlag !== "combos" || combosEnabled)
+            );
             if (!links.length) return null;
             const accent = GROUP_ACCENT[group.label] ?? GROUP_ACCENT["Sistema"];
             return (
@@ -298,6 +406,18 @@ export default function Layout() {
             <span className="text-white text-[11px] font-semibold uppercase tracking-wider">{focusLabel}</span>
             <div className="flex-1" />
             <button
+              onClick={() => setShowInsights(true)}
+              title="Consejos del día"
+              className="text-white/70 hover:text-white hover:bg-white/10 transition-colors rounded-md w-8 h-8 flex items-center justify-center shrink-0 relative"
+            >
+              <Bell size={15} />
+              {insights.length > 0 && (
+                <span className={clsx("absolute top-1 right-1 text-[9px] font-bold w-3.5 h-3.5 flex items-center justify-center rounded-full", insightBadgeClass(insights))}>
+                  {insights.length > 9 ? "9+" : insights.length}
+                </span>
+              )}
+            </button>
+            <button
               onClick={toggleFullscreen}
               title={isFullscreen ? "Salir pantalla completa" : "Pantalla completa"}
               className="text-white/60 hover:text-white hover:bg-white/10 rounded-md transition-colors w-8 h-8 flex items-center justify-center shrink-0"
@@ -319,6 +439,20 @@ export default function Layout() {
       </main>
       <DialogHost />
       <CommandPalette />
+      {showInsights && (
+        <AllInsightsModal
+          insights={insights}
+          onClose={() => setShowInsights(false)}
+          onNavigate={navigate}
+        />
+      )}
+      {showCloseCajaWarning && (
+        <CloseCajaWarningModal
+          onGoToCaja={handleGoCloseCaja}
+          onExitAnyway={handleExitAnyway}
+          onCancel={() => setShowCloseCajaWarning(false)}
+        />
+      )}
     </div>
   );
 }

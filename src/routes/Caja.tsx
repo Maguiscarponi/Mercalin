@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useCart } from "@/stores/cart";
+import { useCart, type ParkedSale } from "@/stores/cart";
 import { api } from "@/lib/api";
 import { centsToARS, arsStringToCents, formatDateTime, todayISO, dateToLocalISO } from "@/lib/format";
 import { printHtml } from "@/lib/printHtml";
@@ -8,12 +8,19 @@ import { useEscapeToClose } from "@/lib/useEscapeToClose";
 import ModalCloseButton from "@/components/ui/ModalCloseButton";
 import clsx from "clsx";
 import PaymentModal from "@/components/PaymentModal";
+import TicketPrint from "@/components/TicketPrint";
 import { CashSessionPanel, OpenCashForm } from "./Caja_Sesion";
 import HelpButton from "@/components/HelpModal";
 import { confirmAction, showToast } from "@/stores/dialogs";
-import type { CashSession, Client, DeptButton, Product, Promotion } from "@/types";
+import { useStockTrackingStore } from "@/stores/stockTracking";
+import { useCombosEnabledStore } from "@/stores/combosEnabled";
+import type { CashSession, Client, ComboWithItems, DeptButton, Product, Promotion, SaleWithItems, WeighedLabel } from "@/types";
 
 export default function Caja() {
+  const stockTrackingEnabled = useStockTrackingStore((s) => s.enabled);
+  const combosEnabled = useCombosEnabledStore((s) => s.enabled);
+  const [combos, setCombos] = useState<ComboWithItems[]>([]);
+  const [showCombos, setShowCombos] = useState(false);
   const cart = useCart();
   const [scanValue, setScanValue] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -28,12 +35,22 @@ export default function Caja() {
   const [discountStr, setDiscountStr] = useState("");
   const [showPriceCheck, setShowPriceCheck] = useState(false);
   const [businessName, setBusinessName] = useState("Punto Simple POS");
+  const [businessAddress, setBusinessAddress] = useState("");
+  const [ticketFooter, setTicketFooter] = useState("¡Gracias por su compra!");
+  const [lastSale, setLastSale] = useState<SaleWithItems | null>(null);
+  const [showReprint, setShowReprint] = useState(false);
+  const [maxDiscountNoPin, setMaxDiscountNoPin] = useState(20);
+  const [supervisorApproved, setSupervisorApproved] = useState(false);
+  const [showApproval, setShowApproval] = useState(false);
   const [focusedResultIndex, setFocusedResultIndex] = useState(-1);
   const [priceList, setPriceList] = useState<1 | 2 | 3>(1);
   const [priceListNames, setPriceListNames] = useState<[string, string, string]>(["Minorista", "Mayorista", "Especial"]);
   const [discountMode, setDiscountMode] = useState<"$" | "%">("$");
   const [stockMap, setStockMap] = useState<Record<number, number>>({});
   const [costMap, setCostMap] = useState<Record<number, number>>({});
+  const [weighableMap, setWeighableMap] = useState<Record<number, boolean>>({});
+  const [weighPrompt, setWeighPrompt] = useState<{ name: string; product?: Product; editIdx?: number; currentKg?: number } | null>(null);
+  const [showParked, setShowParked] = useState(false);
   const [minMarginPct, setMinMarginPct] = useState(10);
   const [promos, setPromos] = useState<Promotion[]>([]);
   const [promoToast, setPromoToast] = useState<string | null>(null);
@@ -46,35 +63,59 @@ export default function Caja() {
   const promoProductsRef = useRef<Record<string, Product>>({});
 
   // Ítem del carrito que pide más cantidad de la que hay en stock — bloquea el cobro.
-  const stockIssueItem = cart.items.find(
-    (item) => item.product_id && stockMap[item.product_id] !== undefined && item.qty > stockMap[item.product_id]
-  );
+  // No aplica si el negocio apagó el seguimiento de stock (Configuración → General).
+  const stockIssueItem = stockTrackingEnabled
+    ? cart.items.find(
+        (item) => item.product_id && stockMap[item.product_id] !== undefined && item.qty > stockMap[item.product_id]
+      )
+    : undefined;
   const hasStockIssue = stockIssueItem !== undefined;
+
+  // Solo cuenta el descuento manual del carrito (no el de promociones, que ya
+  // vienen preconfiguradas por un admin) — es lo único que un cajero controla.
+  const discountPct = cart.subtotal_cents() > 0 ? (cart.discount_cents / cart.subtotal_cents()) * 100 : 0;
+  const needsApproval = discountPct > maxDiscountNoPin && !supervisorApproved;
+
+  function tryOpenPay() {
+    if (needsApproval) { setShowApproval(true); return; }
+    setPayOpen(true);
+  }
 
   useEffect(() => {
     Promise.all([
       api.listOpenSessions(),
       api.getConfig("dept_buttons"),
       api.getConfig("business_name"),
+      api.getConfig("business_address"),
+      api.getConfig("ticket_footer"),
       api.getConfig("price1_name"),
       api.getConfig("price2_name"),
       api.getConfig("price3_name"),
       api.listPromotions(),
       api.getConfig("min_margin_pct"),
-    ]).then(([sessions, btns, bname, p1, p2, p3, promoList, minMarg]) => {
+      api.getConfig("max_discount_pct_no_pin"),
+    ]).then(([sessions, btns, bname, baddr, tfooter, p1, p2, p3, promoList, minMarg, maxDto]) => {
       setOpenSessions(sessions);
       if (sessions.length === 1) setSession(sessions[0]);
       else if (sessions.length === 0) setSession(null);
       else setSession(null); // Multiple: show picker
       if (btns) { try { setDeptButtons(JSON.parse(btns)); } catch { /* ignore */ } }
       if (bname) setBusinessName(bname);
+      if (baddr) setBusinessAddress(baddr);
+      if (tfooter) setTicketFooter(tfooter);
       setPriceListNames([p1 || "Minorista", p2 || "Mayorista", p3 || "Especial"]);
       setPromos(promoList);
       if (minMarg) setMinMarginPct(Number(minMarg) || 10);
+      if (maxDto) setMaxDiscountNoPin(Number(maxDto) || 20);
     }).catch(console.error);
   }, []);
 
   useEffect(() => { scanRef.current?.focus(); }, []);
+
+  useEffect(() => {
+    if (!combosEnabled) { setCombos([]); return; }
+    api.listActiveCombos().then(setCombos).catch(console.error);
+  }, [combosEnabled]);
 
   // Grilla de acceso rápido: en vez de botones de departamento configurados a mano,
   // se auto-completa con los productos que más se agarran en los últimos 30 días
@@ -100,12 +141,12 @@ export default function Caja() {
           const scanEmpty = !(scanRef.current?.value.trim());
           if (scanEmpty && cart.items.length > 0 && session !== null && !hasStockIssue) {
             e.preventDefault();
-            setPayOpen(true);
+            tryOpenPay();
           }
         }
       }
       if (e.key === "F2" && cart.items.length > 0 && session !== null && !hasStockIssue && !payOpen && !showPriceCheck && !pendingPriceProduct) {
-        e.preventDefault(); setPayOpen(true);
+        e.preventDefault(); tryOpenPay();
       }
       if (e.key === "F3" && !payOpen && !pendingPriceProduct) {
         e.preventDefault(); setShowPriceCheck(true);
@@ -118,7 +159,7 @@ export default function Caja() {
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [cart.items.length, session, payOpen, showPriceCheck, showClientSearch, pendingPriceProduct, hasStockIssue]);
+  }, [cart.items.length, session, payOpen, showPriceCheck, showClientSearch, pendingPriceProduct, hasStockIssue, needsApproval]);
 
   function handleSearchChange(value: string) {
     setScanValue(value);
@@ -194,11 +235,28 @@ export default function Caja() {
     setFocusedResultIndex(-1);
     setError(null);
     try {
+      // Las etiquetas de paquete pesado tienen un código propio (prefijo "90",
+      // no choca con códigos de producto reales) — se chequea primero para no
+      // caer en la búsqueda difusa de más abajo.
+      const weighedLabel = await api.findWeighedLabel(code);
+      if (weighedLabel) {
+        addWeighedLabelSafely(weighedLabel);
+        setScanValue("");
+        return;
+      }
       const product = await api.findProductByBarcode(code);
       if (product) {
         addProductSafely(product);
         setScanValue("");
         return;
+      }
+      if (combosEnabled) {
+        const combo = await api.findComboByBarcode(code);
+        if (combo) {
+          addComboSafely(combo);
+          setScanValue("");
+          return;
+        }
       }
       const results = await api.listProducts(code, true);
       if (results.length === 1) {
@@ -330,10 +388,78 @@ export default function Caja() {
       setPendingPriceProduct(product);
       return;
     }
-    addWithPromo(product, price);
     setStockMap((m) => ({ ...m, [product.id]: product.stock }));
     setCostMap((m) => ({ ...m, [product.id]: product.cost_cents }));
+    setWeighableMap((m) => ({ ...m, [product.id]: product.is_weighable }));
+    if (product.is_weighable) {
+      setWeighPrompt({ name: product.name, product });
+      return;
+    }
+    addWithPromo(product, price);
     playScan();
+  }
+
+  // Pesables no usan promos (2x1/3x2 no aplican a algo que se pesa) — se agrega
+  // directo con el precio de la lista activa y el peso que cargó el cajero.
+  function confirmWeighed(kgRaw: number) {
+    if (!weighPrompt || kgRaw <= 0) return;
+    const kg = Math.round(kgRaw * 1000) / 1000;
+    if (weighPrompt.editIdx !== undefined) {
+      cart.setQty(weighPrompt.editIdx, kg);
+    } else if (weighPrompt.product) {
+      const price = getPriceForList(weighPrompt.product);
+      cart.addWeighedProduct(weighPrompt.product, price, kg);
+      playScan();
+    }
+    setWeighPrompt(null);
+  }
+
+  function addComboSafely(combo: ComboWithItems) {
+    cart.addCombo(combo.combo);
+    playScan();
+  }
+
+  // Etiqueta de paquete ya pesado (ver Etiquetas.tsx): el código es único por
+  // peso, así que se agrega directo con el peso y precio ya congelados —
+  // sin pasar por el WeighModal, porque ya se pesó al armar la etiqueta.
+  async function addWeighedLabelSafely(label: WeighedLabel) {
+    try {
+      const product = await api.getProduct(label.product_id);
+      cart.addWeighedProduct(product, label.unit_price_cents, label.weight_kg);
+      playScan();
+    } catch (err) {
+      console.error(err);
+      playError();
+      setError("No se pudo cargar el producto de la etiqueta");
+    }
+  }
+
+  async function cancelLastSale() {
+    if (!lastSale) return;
+    const ok = await confirmAction(
+      "Se va a revertir el stock de esta venta. Esta acción no se puede deshacer.",
+      { title: `¿Anular la venta #${lastSale.sale.id}?`, danger: true, confirmLabel: "Anular" }
+    );
+    if (!ok) return;
+    try {
+      await api.cancelSale(lastSale.sale.id);
+      const updated = await api.getSaleWithItems(lastSale.sale.id);
+      setLastSale(updated);
+      showToast({ message: `Venta #${lastSale.sale.id} anulada` });
+    } catch {
+      showToast({ message: "No se pudo anular la venta", tone: "danger" });
+    }
+  }
+
+  function resumeParkedSale(id: string) {
+    if (cart.items.length > 0) {
+      showToast({ message: "El carrito actual tiene ítems — aparcalo o vacialo antes de retomar otra venta.", tone: "danger" });
+      return;
+    }
+    cart.resumeParked(id);
+    setShowParked(false);
+    setSupervisorApproved(false);
+    scanRef.current?.focus();
   }
 
   function selectSearchResult(product: Product) {
@@ -552,7 +678,7 @@ ${itemsHtml}
                       <div>
                         <div className="font-semibold text-base leading-tight flex items-center gap-2">
                           {item.name}
-                          {item.product_id && stockMap[item.product_id] !== undefined && item.qty > stockMap[item.product_id] && (
+                          {stockTrackingEnabled && item.product_id && stockMap[item.product_id] !== undefined && item.qty > stockMap[item.product_id] && (
                             <span title={`Stock disponible: ${stockMap[item.product_id]}`} className="text-amber-500 text-sm">⚠</span>
                           )}
                         </div>
@@ -566,11 +692,21 @@ ${itemsHtml}
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2">
-                        <button onClick={() => bumpQty(idx, -1)} data-cart-ctrl="true" className="w-9 h-9 rounded-md border border-stone-300 hover:bg-stone-100 text-lg font-bold">−</button>
-                        <span className="tabular w-9 text-center font-bold text-base">{item.qty}</span>
-                        <button onClick={() => bumpQty(idx, 1)} data-cart-ctrl="true" className="w-9 h-9 rounded-md border border-stone-300 hover:bg-stone-100 text-lg font-bold">+</button>
-                      </div>
+                      {item.product_id && weighableMap[item.product_id] ? (
+                        <button
+                          onClick={() => setWeighPrompt({ name: item.name, editIdx: idx, currentKg: item.qty })}
+                          data-cart-ctrl="true"
+                          className="flex items-center gap-1.5 justify-center h-9 px-2 rounded-md border border-stone-300 hover:bg-stone-100 tabular font-bold text-base"
+                        >
+                          {item.qty.toFixed(3)} kg ✎
+                        </button>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <button onClick={() => bumpQty(idx, -1)} data-cart-ctrl="true" className="w-9 h-9 rounded-md border border-stone-300 hover:bg-stone-100 text-lg font-bold">−</button>
+                          <span className="tabular w-9 text-center font-bold text-base">{item.qty}</span>
+                          <button onClick={() => bumpQty(idx, 1)} data-cart-ctrl="true" className="w-9 h-9 rounded-md border border-stone-300 hover:bg-stone-100 text-lg font-bold">+</button>
+                        </div>
+                      )}
 
                       <div className="text-right">
                         <div className="tabular font-bold text-base">{centsToARS(lineTotal - discAmt)}</div>
@@ -667,6 +803,11 @@ ${itemsHtml}
               }}
               inputMode="numeric"
             />
+            {needsApproval && (
+              <span className="text-xs text-amber-600 font-medium shrink-0" title="Va a pedir autorización de un supervisor al cobrar">
+                🔒 requiere autorización
+              </span>
+            )}
             {discount > 0 && (
               <button
                 onClick={() => { setDiscountStr(""); cart.setDiscount(0); }}
@@ -696,7 +837,7 @@ ${itemsHtml}
 
           {/* COBRAR — botón dominante */}
           <button
-            onClick={() => setPayOpen(true)}
+            onClick={tryOpenPay}
             disabled={cart.items.length === 0 || session === null || hasStockIssue}
             className="w-full rounded-xl bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-black text-2xl disabled:opacity-35 disabled:cursor-not-allowed flex items-center justify-center gap-3 transition-colors shrink-0"
             style={{ height: "80px" }}
@@ -717,6 +858,7 @@ ${itemsHtml}
                 cart.clear();
                 setDiscountStr("");
                 promoProductsRef.current = {};
+                setSupervisorApproved(false);
               }
             }}
             disabled={cart.items.length === 0}
@@ -761,6 +903,46 @@ ${itemsHtml}
               >
                 📄 Presupuesto
               </button>
+              {lastSale && (
+                <button
+                  onClick={() => setShowReprint(true)}
+                  className="h-10 text-sm bg-stone-50 hover:bg-stone-100 border border-stone-200 rounded-lg flex items-center justify-center gap-1.5 font-medium text-stone-700"
+                >
+                  🖨 Reimprimir último
+                </button>
+              )}
+              {lastSale && !lastSale.sale.notes?.includes("[ANULADA]") && (
+                <button
+                  onClick={cancelLastSale}
+                  className="h-10 text-sm bg-stone-50 hover:bg-red-50 border border-stone-200 hover:border-red-200 rounded-lg flex items-center justify-center gap-1.5 font-medium text-red-600"
+                >
+                  🗑 Anular última venta
+                </button>
+              )}
+              {combosEnabled && combos.length > 0 && (
+                <button
+                  onClick={() => setShowCombos(true)}
+                  className="h-10 text-sm bg-stone-50 hover:bg-stone-100 border border-stone-200 rounded-lg flex items-center justify-center gap-1.5 font-medium text-stone-700"
+                >
+                  🎁 Combos
+                </button>
+              )}
+              {cart.items.length > 0 && (
+                <button
+                  onClick={() => { cart.parkCurrent(); setDiscountStr(""); setSupervisorApproved(false); scanRef.current?.focus(); }}
+                  className="h-10 text-sm bg-stone-50 hover:bg-stone-100 border border-stone-200 rounded-lg flex items-center justify-center gap-1.5 font-medium text-stone-700"
+                >
+                  🅿️ Aparcar venta
+                </button>
+              )}
+              {cart.parked.length > 0 && (
+                <button
+                  onClick={() => setShowParked(true)}
+                  className="h-10 text-sm bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg flex items-center justify-center gap-1.5 font-medium text-amber-700"
+                >
+                  📋 Aparcadas ({cart.parked.length})
+                </button>
+              )}
             </div>
             {/* Grilla de acceso rápido — auto-ordenada por venta real, sin configurar nada */}
             {quickProducts.length > 0 && (
@@ -811,11 +993,13 @@ ${itemsHtml}
           sessionId={session?.id ?? null}
           isRi={cart.client_is_ri}
           onClose={() => setPayOpen(false)}
-          onConfirmed={() => {
+          onConfirmed={(sale) => {
+            setLastSale(sale);
             cart.clear();
             setPayOpen(false);
             setDiscountStr("");
             promoProductsRef.current = {};
+            setSupervisorApproved(false);
             scanRef.current?.focus();
           }}
         />
@@ -855,6 +1039,52 @@ ${itemsHtml}
 
       {showPriceCheck && (
         <PriceCheckModal onClose={() => { setShowPriceCheck(false); scanRef.current?.focus(); }} />
+      )}
+
+      {showCombos && (
+        <CombosPickerModal
+          combos={combos}
+          onSelect={(c) => { addComboSafely(c); setShowCombos(false); scanRef.current?.focus(); }}
+          onClose={() => { setShowCombos(false); scanRef.current?.focus(); }}
+        />
+      )}
+
+      {showReprint && lastSale && (
+        <TicketPrint
+          sale={lastSale.sale}
+          items={lastSale.items}
+          businessName={businessName}
+          businessAddress={businessAddress}
+          ticketFooter={ticketFooter}
+          isRi={false}
+          onClose={() => { setShowReprint(false); scanRef.current?.focus(); }}
+        />
+      )}
+
+      {showApproval && (
+        <SupervisorApprovalModal
+          discountPct={discountPct}
+          onApproved={() => { setSupervisorApproved(true); setShowApproval(false); setPayOpen(true); }}
+          onCancel={() => setShowApproval(false)}
+        />
+      )}
+
+      {weighPrompt && (
+        <WeighModal
+          name={weighPrompt.name}
+          currentKg={weighPrompt.currentKg}
+          onConfirm={confirmWeighed}
+          onCancel={() => setWeighPrompt(null)}
+        />
+      )}
+
+      {showParked && (
+        <ParkedSalesModal
+          parked={cart.parked}
+          onResume={resumeParkedSale}
+          onDiscard={(id) => cart.discardParked(id)}
+          onClose={() => setShowParked(false)}
+        />
       )}
 
       {pendingPriceProduct && (
@@ -990,7 +1220,178 @@ function SetPriceModal({
   );
 }
 
+function ParkedSalesModal({
+  parked, onResume, onDiscard, onClose,
+}: {
+  parked: ParkedSale[];
+  onResume: (id: string) => void;
+  onDiscard: (id: string) => void;
+  onClose: () => void;
+}) {
+  useEscapeToClose(onClose);
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
+      <div className="relative bg-white rounded-lg shadow-xl w-[440px] max-h-[80vh] flex flex-col p-5" onClick={(e) => e.stopPropagation()}>
+        <ModalCloseButton onClick={onClose} />
+        <h3 className="font-semibold mb-3">📋 Ventas aparcadas</h3>
+        {parked.length === 0 ? (
+          <p className="text-sm text-stone-400 text-center py-8">No hay ninguna aparcada.</p>
+        ) : (
+          <div className="overflow-y-auto space-y-2">
+            {parked.map((p) => {
+              const total = p.items.reduce((s, i) => {
+                const line = i.unit_price_cents * i.qty;
+                return s + line - (line * i.discount_pct) / 100;
+              }, 0) - p.discount_cents;
+              return (
+                <div key={p.id} className="flex items-center justify-between gap-3 p-3 bg-stone-50 rounded-lg border border-stone-200">
+                  <div className="min-w-0">
+                    <div className="font-medium text-sm truncate">{p.label}</div>
+                    <div className="text-xs text-stone-400">
+                      {p.items.length} ítem{p.items.length !== 1 ? "s" : ""} · {centsToARS(Math.max(0, total))}
+                      {p.client_name && <> · {p.client_name}</>}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button onClick={() => onResume(p.id)} className="btn btn-primary text-xs px-2.5 py-1.5">Retomar</button>
+                    <button onClick={() => onDiscard(p.id)} title="Descartar" className="text-stone-400 hover:text-red-600 text-lg px-1">×</button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function WeighModal({
+  name, currentKg, onConfirm, onCancel,
+}: {
+  name: string;
+  currentKg?: number;
+  onConfirm: (kg: number) => void;
+  onCancel: () => void;
+}) {
+  const [kgStr, setKgStr] = useState(currentKg ? currentKg.toString() : "");
+  useEscapeToClose(onCancel);
+
+  function submit() {
+    const kg = parseFloat(kgStr.replace(",", "."));
+    if (!kg || kg <= 0) return;
+    onConfirm(kg);
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onCancel}>
+      <div className="relative bg-white rounded-lg shadow-xl w-[340px] p-6" onClick={(e) => e.stopPropagation()}>
+        <ModalCloseButton onClick={onCancel} />
+        <h3 className="font-semibold mb-1">⚖️ {name}</h3>
+        <p className="text-sm text-stone-500 mb-4">Cantidad en kilogramos</p>
+        <div className="relative">
+          <input
+            autoFocus
+            className="input tabular text-right h-12 text-lg pr-10"
+            placeholder="0.000"
+            value={kgStr}
+            onChange={(e) => setKgStr(e.target.value)}
+            inputMode="decimal"
+            onKeyDown={(e) => e.key === "Enter" && submit()}
+          />
+          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 text-sm">kg</span>
+        </div>
+        <div className="flex gap-2 mt-4">
+          <button onClick={onCancel} className="btn btn-secondary flex-1">Cancelar</button>
+          <button
+            onClick={submit}
+            disabled={!parseFloat(kgStr.replace(",", ".")) || parseFloat(kgStr.replace(",", ".")) <= 0}
+            className="btn btn-primary flex-1 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {currentKg !== undefined ? "Guardar" : "Agregar"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SupervisorApprovalModal({
+  discountPct, onApproved, onCancel,
+}: {
+  discountPct: number;
+  onApproved: () => void;
+  onCancel: () => void;
+}) {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [checking, setChecking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  useEscapeToClose(onCancel);
+
+  async function submit() {
+    if (!username.trim() || !password) return;
+    setChecking(true);
+    setError(null);
+    try {
+      const authorizer = await api.login(username.trim(), password);
+      if (authorizer.role !== "supervisor" && authorizer.role !== "admin") {
+        setError("Ese usuario no tiene permiso para autorizar descuentos.");
+        return;
+      }
+      onApproved();
+    } catch {
+      setError("Usuario o contraseña incorrectos.");
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onCancel}>
+      <div className="relative bg-white rounded-lg shadow-xl w-[380px] p-6" onClick={(e) => e.stopPropagation()}>
+        <ModalCloseButton onClick={onCancel} />
+        <h3 className="font-semibold mb-1">🔒 Autorización requerida</h3>
+        <p className="text-sm text-stone-500 mb-4">
+          El descuento de esta venta ({discountPct.toFixed(0)}%) supera el máximo que un cajero puede aplicar solo.
+          Pedile a un supervisor o admin que ingrese su usuario y contraseña para autorizarlo.
+        </p>
+        <div className="space-y-2">
+          <input
+            autoFocus
+            className="input"
+            placeholder="Usuario del supervisor"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && submit()}
+          />
+          <input
+            type="password"
+            className="input"
+            placeholder="Contraseña"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && submit()}
+          />
+        </div>
+        {error && <p className="text-sm text-red-600 mt-2">{error}</p>}
+        <div className="flex gap-2 mt-4">
+          <button onClick={onCancel} className="btn btn-secondary flex-1">Cancelar</button>
+          <button
+            onClick={submit}
+            disabled={checking || !username.trim() || !password}
+            className="btn btn-primary flex-1 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {checking ? "Verificando…" : "Autorizar"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function PriceCheckModal({ onClose }: { onClose: () => void }) {
+  const stockTrackingEnabled = useStockTrackingStore((s) => s.enabled);
   const [query, setQuery] = useState("");
   const [found, setFound] = useState<Product | null>(null);
   const [notFound, setNotFound] = useState(false);
@@ -1044,7 +1445,7 @@ function PriceCheckModal({ onClose }: { onClose: () => void }) {
             <div className="text-3xl font-bold text-emerald-700 mt-2">{centsToARS(found.price_cents)}</div>
             <div className="flex gap-4 mt-2 text-xs text-stone-500">
               {found.barcode && <span>Cód: {found.barcode}</span>}
-              <span>Stock: <strong className={found.stock <= found.min_stock ? "text-red-600" : ""}>{found.stock}</strong></span>
+              <span>Stock: <strong className={stockTrackingEnabled && found.stock <= found.min_stock ? "text-red-600" : ""}>{found.stock}</strong></span>
             </div>
           </div>
         )}
@@ -1054,6 +1455,41 @@ function PriceCheckModal({ onClose }: { onClose: () => void }) {
           </div>
         )}
         <button onClick={onClose} className="btn btn-secondary w-full mt-4">Cerrar</button>
+      </div>
+    </div>
+  );
+}
+
+function CombosPickerModal({
+  combos, onSelect, onClose,
+}: {
+  combos: ComboWithItems[];
+  onSelect: (c: ComboWithItems) => void;
+  onClose: () => void;
+}) {
+  useEscapeToClose(onClose);
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
+      <div className="relative bg-white rounded-lg shadow-xl w-[440px] max-h-[80vh] flex flex-col p-5" onClick={(e) => e.stopPropagation()}>
+        <ModalCloseButton onClick={onClose} />
+        <h3 className="font-semibold mb-3">Combos y packs</h3>
+        <div className="overflow-y-auto -mx-1 px-1 space-y-2">
+          {combos.map((c) => (
+            <button
+              key={c.combo.id}
+              onClick={() => onSelect(c)}
+              className="w-full text-left p-3 bg-stone-50 hover:bg-indigo-50 border border-stone-200 hover:border-indigo-200 rounded-lg transition-colors"
+            >
+              <div className="flex items-center justify-between">
+                <span className="font-medium">{c.combo.name}</span>
+                <span className="font-semibold tabular-nums">{centsToARS(c.combo.price_cents)}</span>
+              </div>
+              <p className="text-xs text-stone-400 mt-0.5">
+                {c.items.map((i) => `${i.qty}× ${i.product_name}`).join(" + ")}
+              </p>
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );

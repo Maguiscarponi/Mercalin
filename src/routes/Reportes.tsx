@@ -7,6 +7,7 @@ import { markReportesVisited } from "@/components/OnboardingChecklist";
 import { confirmAction, showToast } from "@/stores/dialogs";
 import { useEscapeToClose } from "@/lib/useEscapeToClose";
 import ModalCloseButton from "@/components/ui/ModalCloseButton";
+import TicketPrint from "@/components/TicketPrint";
 import { exportStyledExcel, CURRENCY_FMT, INT_FMT, PCT_FMT, type ExcelSheet } from "@/lib/excelExport";
 import { Loader2 } from "lucide-react";
 import clsx from "clsx";
@@ -69,6 +70,22 @@ export default function Reportes() {
   const [loadingAffinity, setLoadingAffinity] = useState(false);
   const [exportingExcel, setExportingExcel] = useState(false);
   const [exportingIva, setExportingIva] = useState(false);
+  const [businessName, setBusinessName] = useState("Punto Simple POS");
+  const [businessAddress, setBusinessAddress] = useState("");
+  const [ticketFooter, setTicketFooter] = useState("¡Gracias por su compra!");
+  const [reprintSale, setReprintSale] = useState<SaleWithItems | null>(null);
+
+  useEffect(() => {
+    Promise.all([
+      api.getConfig("business_name"),
+      api.getConfig("business_address"),
+      api.getConfig("ticket_footer"),
+    ]).then(([bname, baddr, tfooter]) => {
+      if (bname) setBusinessName(bname);
+      if (baddr) setBusinessAddress(baddr);
+      if (tfooter) setTicketFooter(tfooter);
+    }).catch(console.error);
+  }, []);
 
   const [fromDate, toDate] = getRange(period, customFrom, customTo);
 
@@ -172,6 +189,10 @@ export default function Reportes() {
     if (!report) return;
     setExportingExcel(true);
     try {
+      // No reutiliza el estado `sales` (recortado a 500 para la tabla en pantalla) —
+      // pide todo el período de nuevo sin límite para que el Excel no quede truncado
+      // en meses con muchas ventas.
+      const allSales = await api.listSalesRange(fromDate, toDate, 1000000);
       const sheets: ExcelSheet[] = [
         {
           name: "Ventas",
@@ -184,7 +205,7 @@ export default function Reportes() {
             { header: "Cliente", key: "client", width: 22 },
             { header: "Estado", key: "status", width: 12 },
           ],
-          rows: sales.map((s) => ({
+          rows: allSales.map((s) => ({
             id: s.id,
             date: formatDateTime(s.created_at),
             total: s.total_cents / 100,
@@ -369,11 +390,14 @@ export default function Reportes() {
         {/* Fechas personalizadas */}
         {period === "personalizado" && (
           <div className="flex items-center gap-2 text-sm">
-            <input type="date" className="input w-auto text-sm" value={customFrom}
+            <input type="date" className="input w-auto text-sm" value={customFrom} max={customTo}
               onChange={(e) => setCustomFrom(e.target.value)} />
             <span className="text-stone-400">→</span>
-            <input type="date" className="input w-auto text-sm" value={customTo}
+            <input type="date" className="input w-auto text-sm" value={customTo} min={customFrom}
               onChange={(e) => setCustomTo(e.target.value)} />
+            {customFrom > customTo && (
+              <span className="text-xs text-red-600">"Desde" es posterior a "Hasta" — no va a haber resultados</span>
+            )}
           </div>
         )}
         {period !== "personalizado" && (
@@ -548,6 +572,11 @@ export default function Reportes() {
               onChange={(e) => setSalesFilter(e.target.value)}
             />
           </div>
+          {sales.length >= 500 && (
+            <div className="px-4 py-1.5 bg-amber-50 border-b border-amber-200 text-xs text-amber-800 shrink-0">
+              Mostrando las primeras 500 ventas del período — puede haber más. El total exacto está en la pestaña Resumen; "Exportar Excel" incluye todas.
+            </div>
+          )}
           <div className="flex-1 overflow-y-auto">
             {(() => {
               const f = salesFilter.toLowerCase();
@@ -673,8 +702,12 @@ export default function Reportes() {
             </div>
           )}
           {!loadingMargins && marginProducts.length > 0 && (() => {
+            // Sin costo cargado (cost_cents=0) el margen calculado da 100% — no es una
+            // ganancia real, es un dato faltante. Se excluyen del Pareto y de las alertas
+            // de margen para no señalar como "estrella" justo a los peor cargados.
+            const sinCosto = marginProducts.filter(p => p.cost_cents === 0 && p.price_cents > 0);
             // ── Pareto 80/20 ──────────────────────────────────────────────────
-            const withSales = marginProducts.filter(p => p.profit_cents > 0 && p.units_sold > 0)
+            const withSales = marginProducts.filter(p => p.profit_cents > 0 && p.units_sold > 0 && p.cost_cents > 0)
               .sort((a, b) => b.profit_cents - a.profit_cents);
             const totalProfit = withSales.reduce((s, p) => s + p.profit_cents, 0);
             let cum = 0;
@@ -686,8 +719,8 @@ export default function Reportes() {
               if (p.product_id) paretoIds.add(p.product_id);
               if (cum / totalProfit >= 0.8) break;
             }
-            const negativoCount = marginProducts.filter(p => p.margin_pct < 0 && p.units_sold > 0).length;
-            const bajoCount = marginProducts.filter(p => p.margin_pct >= 0 && p.margin_pct < 15 && p.units_sold > 0).length;
+            const negativoCount = marginProducts.filter(p => p.margin_pct < 0 && p.units_sold > 0 && p.cost_cents > 0).length;
+            const bajoCount = marginProducts.filter(p => p.margin_pct >= 0 && p.margin_pct < 15 && p.units_sold > 0 && p.cost_cents > 0).length;
             return (
               <div className="space-y-4">
                 {/* Insight Pareto */}
@@ -705,7 +738,7 @@ export default function Reportes() {
                   </div>
                 )}
                 {/* Alertas de margen */}
-                {(negativoCount > 0 || bajoCount > 0) && (
+                {(negativoCount > 0 || bajoCount > 0 || sinCosto.length > 0) && (
                   <div className="flex gap-3 flex-wrap">
                     {negativoCount > 0 && (
                       <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm text-red-800 font-medium">
@@ -715,6 +748,11 @@ export default function Reportes() {
                     {bajoCount > 0 && (
                       <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-sm text-amber-800 font-medium">
                         🟡 {bajoCount} producto{bajoCount !== 1 ? "s" : ""} con margen menor al 15%
+                      </div>
+                    )}
+                    {sinCosto.length > 0 && (
+                      <div className="bg-stone-100 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-600 font-medium">
+                        ⚪ {sinCosto.length} producto{sinCosto.length !== 1 ? "s" : ""} sin costo cargado — su margen no se puede calcular
                       </div>
                     )}
                   </div>
@@ -747,14 +785,20 @@ export default function Reportes() {
                                : <span className="text-stone-400">—</span>}
                             </td>
                             <td className="py-2 text-right tabular">
-                              <span className={clsx(
-                                "text-xs px-2 py-0.5 rounded-full font-medium",
-                                p.margin_pct >= 30 ? "bg-emerald-100 text-emerald-700" :
-                                p.margin_pct >= 15 ? "bg-yellow-100 text-yellow-700" :
-                                "bg-red-100 text-red-700"
-                              )}>
-                                {p.margin_pct.toFixed(1)}%
-                              </span>
+                              {p.cost_cents === 0 && p.price_cents > 0 ? (
+                                <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-stone-100 text-stone-500">
+                                  Sin costo
+                                </span>
+                              ) : (
+                                <span className={clsx(
+                                  "text-xs px-2 py-0.5 rounded-full font-medium",
+                                  p.margin_pct >= 30 ? "bg-emerald-100 text-emerald-700" :
+                                  p.margin_pct >= 15 ? "bg-yellow-100 text-yellow-700" :
+                                  "bg-red-100 text-red-700"
+                                )}>
+                                  {p.margin_pct.toFixed(1)}%
+                                </span>
+                              )}
                             </td>
                           </tr>
                         );
@@ -772,7 +816,9 @@ export default function Reportes() {
         <div className="flex-1 overflow-y-auto space-y-4">
           {loadingStock && <p className="text-stone-500 text-sm">Cargando…</p>}
           {!loadingStock && (() => {
-            const active = allProducts.filter((p) => p.active);
+            // Excluye productos sin precio NI costo cargado (típico de un import fantasma
+            // sin terminar de cargar) — no aportan valor real y solo inflan el conteo.
+            const active = allProducts.filter((p) => p.active && !(p.price_cents === 0 && p.cost_cents === 0));
             const totalValue = active.reduce((s, p) => s + p.stock * p.cost_cents, 0);
             const totalSaleValue = active.reduce((s, p) => s + p.stock * p.price_cents, 0);
             const sorted = [...active].sort((a, b) => (b.stock * b.cost_cents) - (a.stock * a.cost_cents));
@@ -964,6 +1010,7 @@ export default function Reportes() {
                               { header: "Total", key: "total", width: 14, numFmt: CURRENCY_FMT, align: "right" },
                               { header: "Neto", key: "neto", width: 14, numFmt: CURRENCY_FMT, align: "right" },
                               { header: "IVA", key: "iva", width: 14, numFmt: CURRENCY_FMT, align: "right" },
+                              { header: "Origen", key: "origin", width: 14 },
                             ],
                             rows: ivaItems.map((i) => ({
                               date: i.date,
@@ -973,6 +1020,7 @@ export default function Reportes() {
                               total: i.total_cents / 100,
                               neto: i.neto_cents / 100,
                               iva: i.iva_cents / 100,
+                              origin: i.is_invoiced ? "Real (AFIP)" : "Estimado",
                             })),
                           }], `libro_iva_${fromDate}_${toDate}.xlsx`);
                           showToast({ message: "Libro IVA exportado a Excel", tone: "success" });
@@ -999,6 +1047,7 @@ export default function Reportes() {
                         <th className="text-right px-4 py-2 font-medium">Total</th>
                         <th className="text-right px-4 py-2 font-medium">Neto</th>
                         <th className="text-right px-4 py-2 font-medium">IVA</th>
+                        <th className="text-center px-4 py-2 font-medium">Origen</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1011,6 +1060,13 @@ export default function Reportes() {
                           <td className="px-4 py-2 text-right tabular font-medium">{centsToARS(item.total_cents)}</td>
                           <td className="px-4 py-2 text-right tabular text-stone-600">{centsToARS(item.neto_cents)}</td>
                           <td className="px-4 py-2 text-right tabular text-indigo-600">{centsToARS(item.iva_cents)}</td>
+                          <td className="px-4 py-2 text-center">
+                            {item.is_invoiced ? (
+                              <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-medium">Real (AFIP)</span>
+                            ) : (
+                              <span className="text-xs px-2 py-0.5 rounded-full bg-stone-100 text-stone-500 font-medium">Estimado</span>
+                            )}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -1020,6 +1076,7 @@ export default function Reportes() {
                         <td className="px-4 py-2.5 text-right tabular">{centsToARS(totalBruto)}</td>
                         <td className="px-4 py-2.5 text-right tabular">{centsToARS(totalNeto)}</td>
                         <td className="px-4 py-2.5 text-right tabular text-indigo-600">{centsToARS(totalIva)}</td>
+                        <td />
                       </tr>
                     </tfoot>
                   </table>
@@ -1031,7 +1088,19 @@ export default function Reportes() {
       )}
 
       {detailSale && (
-        <SaleDetailModal sw={detailSale} onClose={() => setDetailSale(null)} onCancel={handleCancel} />
+        <SaleDetailModal sw={detailSale} onClose={() => setDetailSale(null)} onCancel={handleCancel} onReprint={() => setReprintSale(detailSale)} />
+      )}
+
+      {reprintSale && (
+        <TicketPrint
+          sale={reprintSale.sale}
+          items={reprintSale.items}
+          businessName={businessName}
+          businessAddress={businessAddress}
+          ticketFooter={ticketFooter}
+          isRi={false}
+          onClose={() => setReprintSale(null)}
+        />
       )}
     </div>
 
@@ -1080,30 +1149,30 @@ function PrintReport({
   const th: React.CSSProperties = {
     ...cell,
     fontWeight: 700,
-    background: "#EEF2FF",
+    background: "#f2f2f2",
     fontSize: "9pt",
     textTransform: "uppercase",
     letterSpacing: "0.05em",
-    color: "#4338CA",
+    color: "#000",
   };
   const sectionTitle: React.CSSProperties = {
     fontWeight: 700,
     fontSize: "13pt",
     marginBottom: "10px",
-    borderBottom: "2px solid #4F46E5",
+    borderBottom: "2px solid #000",
     paddingBottom: "6px",
-    color: "#1e1b4b",
+    color: "#000",
   };
 
   return (
-    <div style={{ fontFamily: "'Inter', Arial, sans-serif", color: "#111", maxWidth: "900px", margin: "0 auto" }}>
+    <div style={{ fontFamily: "'Plus Jakarta Sans Variable', 'Inter', Arial, sans-serif", color: "#111", maxWidth: "900px", margin: "0 auto" }}>
       {/* Encabezado */}
-      <div style={{ borderBottom: "4px solid #4F46E5", paddingBottom: "12px", marginBottom: "24px", display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
+      <div style={{ borderBottom: "4px solid #000", paddingBottom: "12px", marginBottom: "24px", display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
         <div>
-          <div style={{ fontSize: "22pt", fontWeight: 800, lineHeight: 1, color: "#312e81" }}>Informe de Ventas</div>
-          <div style={{ color: "#6b7280", fontSize: "12pt", marginTop: "4px" }}>Período: {periodLabel}</div>
+          <div style={{ fontSize: "22pt", fontWeight: 800, lineHeight: 1, color: "#000" }}>Informe de Ventas</div>
+          <div style={{ color: "#4b5563", fontSize: "12pt", marginTop: "4px" }}>Período: {periodLabel}</div>
         </div>
-        <div style={{ textAlign: "right", color: "#9ca3af", fontSize: "10pt" }}>
+        <div style={{ textAlign: "right", color: "#6b7280", fontSize: "10pt" }}>
           <div>Punto Simple POS</div>
           <div>Generado: {new Date().toLocaleString("es-AR")}</div>
         </div>
@@ -1117,9 +1186,9 @@ function PrintReport({
           { label: "Ticket promedio", value: report.sales_count > 0 ? centsToARS(Math.round(report.total_cents / report.sales_count)) : centsToARS(0) },
           { label: "Descuentos", value: centsToARS(report.discount_cents) },
         ].map((k) => (
-          <div key={k.label} style={{ border: "1px solid #e5e7eb", borderTop: "3px solid #4F46E5", borderRadius: "8px", padding: "14px", background: "#fafafe" }}>
+          <div key={k.label} style={{ border: "1px solid #d1d5db", borderTop: "3px solid #000", borderRadius: "8px", padding: "14px", background: "#fafafa" }}>
             <div style={{ fontSize: "9pt", color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.05em" }}>{k.label}</div>
-            <div style={{ fontSize: "18pt", fontWeight: 800, marginTop: "4px", color: "#312e81" }}>{k.value}</div>
+            <div style={{ fontSize: "18pt", fontWeight: 800, marginTop: "4px", color: "#000" }}>{k.value}</div>
           </div>
         ))}
       </div>
@@ -1230,7 +1299,7 @@ function PrintReport({
                   <td style={{ ...cell, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{centsToARS(c.revenue_cents)}</td>
                   <td style={{ ...cell, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{centsToARS(c.cost_cents)}</td>
                   <td style={{ ...cell, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{centsToARS(c.profit_cents)}</td>
-                  <td style={{ ...cell, textAlign: "right", color: c.margin_pct >= 20 ? "#16a34a" : "#d97706" }}>{c.margin_pct.toFixed(1)}%</td>
+                  <td style={{ ...cell, textAlign: "right", fontWeight: c.margin_pct >= 20 ? 700 : 400 }}>{c.margin_pct.toFixed(1)}%</td>
                 </tr>
               ))}
             </tbody>
@@ -1247,7 +1316,7 @@ function PrintReport({
   );
 }
 
-function SaleDetailModal({ sw, onClose, onCancel }: { sw: SaleWithItems; onClose: () => void; onCancel: (id: number) => void }) {
+function SaleDetailModal({ sw, onClose, onCancel, onReprint }: { sw: SaleWithItems; onClose: () => void; onCancel: (id: number) => void; onReprint: () => void }) {
   const { sale, items } = sw;
   const cancelled = sale.notes?.includes("[ANULADA]");
   useEscapeToClose(onClose);
@@ -1310,6 +1379,7 @@ function SaleDetailModal({ sw, onClose, onCancel }: { sw: SaleWithItems; onClose
           </div>
         </div>
         <div className="p-4 border-t border-stone-200 flex gap-2">
+          <button onClick={onReprint} className="btn btn-secondary text-sm flex-1">🖨 Reimprimir ticket</button>
           {!cancelled && (
             <button onClick={() => onCancel(sale.id)} className="btn text-sm text-red-600 border border-red-200 hover:bg-red-50 flex-1">
               Anular venta

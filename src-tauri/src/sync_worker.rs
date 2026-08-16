@@ -83,7 +83,7 @@ fn drain_queue(queue: &Arc<Mutex<Connection>>, server_addr: &str) {
                 let conn = queue.lock();
                 if ok {
                     let _ = conn.execute(
-                        "UPDATE pending_sync_ops SET status='synced', synced_at=datetime('now','localtime') WHERE id=?1",
+                        "UPDATE pending_sync_ops SET status='synced', synced_at=datetime('now') WHERE id=?1",
                         params![id],
                     );
                 } else {
@@ -124,8 +124,8 @@ fn upsert_products(db: &Arc<Mutex<Connection>>, data: &Value) {
                 p.get("price2_cents").and_then(|v| v.as_i64()).unwrap_or(0),
                 p.get("price3_cents").and_then(|v| v.as_i64()).unwrap_or(0),
                 p.get("cost_cents").and_then(|v| v.as_i64()).unwrap_or(0),
-                p.get("stock").and_then(|v| v.as_i64()).unwrap_or(0),
-                p.get("min_stock").and_then(|v| v.as_i64()).unwrap_or(0),
+                p.get("stock").and_then(|v| v.as_f64()).unwrap_or(0.0),
+                p.get("min_stock").and_then(|v| v.as_f64()).unwrap_or(0.0),
                 p.get("category").and_then(|v| v.as_str()),
                 p.get("is_weighable").and_then(|v| v.as_bool()).unwrap_or(false) as i64,
                 p.get("active").and_then(|v| v.as_bool()).unwrap_or(true) as i64,

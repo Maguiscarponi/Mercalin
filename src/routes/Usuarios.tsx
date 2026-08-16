@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { formatDate } from "@/lib/format";
 import { confirmAction, showToast } from "@/stores/dialogs";
+import { useAuthStore } from "@/stores/auth";
 import Field from "@/components/ui/Field";
 import { useEscapeToClose } from "@/lib/useEscapeToClose";
 import ModalCloseButton from "@/components/ui/ModalCloseButton";
@@ -21,6 +22,7 @@ const ROLE_COLORS: Record<UserRole, string> = {
 };
 
 export default function Usuarios() {
+  const actorId = useAuthStore((s) => s.user?.id ?? null);
   const [users, setUsers] = useState<User[]>([]);
   const [editing, setEditing] = useState<Partial<User> | null>(null);
   const [showPassModal, setShowPassModal] = useState<User | null>(null);
@@ -40,38 +42,40 @@ export default function Usuarios() {
   async function handleSave(u: Partial<User> & { password?: string }) {
     try {
       if (u.id) {
-        await api.updateUser(u as User);
+        await api.updateUser(u as User, actorId);
       } else {
         await api.createUser({
           username: u.username!,
           full_name: u.full_name!,
           password: u.password || "1234",
           role: u.role as UserRole,
-        } as NewUser);
+        } as NewUser, actorId);
       }
       setEditing(null);
       load();
     } catch (err) {
       console.error(err);
-      showToast({ message: "No se pudo guardar el usuario", tone: "danger" });
+      const message = typeof err === "string" ? err : err instanceof Error ? err.message : "No se pudo guardar el usuario";
+      showToast({ message, tone: "danger" });
     }
   }
 
   async function handleDelete(id: number) {
     if (!(await confirmAction("La persona no va a poder iniciar sesión hasta que se reactive.", { title: "¿Desactivar este usuario?", danger: true, confirmLabel: "Desactivar" }))) return;
     try {
-      await api.deleteUser(id);
+      await api.deleteUser(id, actorId);
       load();
       showToast({ message: "Usuario desactivado" });
     } catch (e) {
       console.error(e);
-      showToast({ message: "No se pudo desactivar el usuario", tone: "danger" });
+      const message = typeof e === "string" ? e : e instanceof Error ? e.message : "No se pudo desactivar el usuario";
+      showToast({ message, tone: "danger" });
     }
   }
 
   async function handleReactivate(u: User) {
     try {
-      await api.updateUser({ ...u, active: true });
+      await api.updateUser({ ...u, active: true }, actorId);
       load();
       showToast({ message: "Usuario reactivado", tone: "success" });
     } catch (e) {
@@ -297,6 +301,7 @@ function UserForm({
 }
 
 function ChangePasswordModal({ user, onClose }: { user: User; onClose: () => void }) {
+  const actorId = useAuthStore((s) => s.user?.id ?? null);
   const [pw, setPw] = useState("");
   const [saving, setSaving] = useState(false);
   useEscapeToClose(onClose);
@@ -305,7 +310,7 @@ function ChangePasswordModal({ user, onClose }: { user: User; onClose: () => voi
     if (pw.length < 4) { showToast({ message: "Mínimo 4 caracteres", tone: "danger" }); return; }
     setSaving(true);
     try {
-      await api.changePassword(user.id, pw);
+      await api.changePassword(user.id, pw, actorId);
       onClose();
       showToast({ message: "Contraseña actualizada", tone: "success" });
     } catch (e) {

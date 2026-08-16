@@ -54,13 +54,13 @@ pub fn create_return(input: NewReturn, state: State<AppState>) -> CmdResult<Retu
         .map_err(err)?;
 
         if let Some(pid) = item.product_id {
-            let qty_before: i64 = tx
+            let qty_before: f64 = tx
                 .query_row("SELECT stock FROM products WHERE id=?1", params![pid], |r| r.get(0))
-                .unwrap_or(0);
+                .unwrap_or(0.0);
 
             tx.execute(
                 "UPDATE products SET stock=stock+?1, updated_at=CURRENT_TIMESTAMP WHERE id=?2",
-                params![item.qty as i64, pid],
+                params![item.qty, pid],
             )
             .map_err(err)?;
 
@@ -69,9 +69,9 @@ pub fn create_return(input: NewReturn, state: State<AppState>) -> CmdResult<Retu
                  VALUES (?1, 'ajuste', ?2, ?3, ?4, 'Devolución #' || ?5)",
                 params![
                     pid,
-                    item.qty as i64,
+                    item.qty,
                     qty_before,
-                    qty_before + item.qty as i64,
+                    qty_before + item.qty,
                     return_id,
                 ],
             )

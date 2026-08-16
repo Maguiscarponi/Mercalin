@@ -124,22 +124,47 @@ pub fn margin_report(
 ) -> CmdResult<Vec<MarginProduct>> {
     let conn = state.db.lock();
 
+    // Union con combos: un combo vendido se guarda en sale_items con product_id=NULL
+    // y combo_id=<id> (no dos líneas separadas), así que sin este bloque su facturación
+    // quedaba invisible acá aunque sí contara en el Resumen — su "costo" es la suma de
+    // los costos de sus componentes.
     let mut stmt = conn.prepare(
-        "SELECT
-            p.id as product_id,
-            p.name,
-            p.category,
-            p.price_cents,
-            p.cost_cents,
-            COALESCE(SUM(si.qty), 0) as units_sold,
-            COALESCE(SUM(si.qty * si.unit_price_cents * (1 - si.discount_pct/100.0)), 0) as revenue_cents
-         FROM products p
-         LEFT JOIN sale_items si ON p.id = si.product_id
-         LEFT JOIN sales s ON si.sale_id = s.id
-             AND date(s.created_at, 'localtime') BETWEEN ?1 AND ?2
-             AND (s.notes IS NULL OR s.notes NOT LIKE '%[ANULADA]%')
-         WHERE p.active = 1
-         GROUP BY p.id, p.name, p.category, p.price_cents, p.cost_cents
+        "SELECT * FROM (
+            SELECT
+                p.id as product_id,
+                p.name,
+                p.category,
+                p.price_cents,
+                p.cost_cents,
+                COALESCE(SUM(si.qty), 0) as units_sold,
+                COALESCE(SUM(si.qty * si.unit_price_cents * (1 - si.discount_pct/100.0)), 0) as revenue_cents
+             FROM products p
+             LEFT JOIN sale_items si ON p.id = si.product_id AND si.combo_id IS NULL
+             LEFT JOIN sales s ON si.sale_id = s.id
+                 AND date(s.created_at, 'localtime') BETWEEN ?1 AND ?2
+                 AND (s.notes IS NULL OR s.notes NOT LIKE '%[ANULADA]%')
+             WHERE p.active = 1
+             GROUP BY p.id, p.name, p.category, p.price_cents, p.cost_cents
+
+             UNION ALL
+
+             SELECT
+                -c.id as product_id,
+                c.name,
+                'Combos' as category,
+                c.price_cents,
+                COALESCE((SELECT SUM(ci.qty * pr.cost_cents) FROM combo_items ci
+                          JOIN products pr ON ci.product_id = pr.id WHERE ci.combo_id = c.id), 0) as cost_cents,
+                COALESCE(SUM(si.qty), 0) as units_sold,
+                COALESCE(SUM(si.qty * si.unit_price_cents * (1 - si.discount_pct/100.0)), 0) as revenue_cents
+             FROM combos c
+             LEFT JOIN sale_items si ON c.id = si.combo_id
+             LEFT JOIN sales s ON si.sale_id = s.id
+                 AND date(s.created_at, 'localtime') BETWEEN ?1 AND ?2
+                 AND (s.notes IS NULL OR s.notes NOT LIKE '%[ANULADA]%')
+             WHERE c.active = 1
+             GROUP BY c.id, c.name, c.price_cents
+         )
          ORDER BY revenue_cents DESC
          LIMIT 500",
     ).map_err(err)?;
@@ -187,15 +212,30 @@ pub fn margin_by_category(
     let conn = state.db.lock();
 
     let mut stmt = conn.prepare(
-        "SELECT
-            COALESCE(p.category, 'Sin categoría') as category,
-            COALESCE(SUM(si.qty * si.unit_price_cents * (1 - si.discount_pct/100.0)), 0) as revenue_cents,
-            COALESCE(SUM(si.qty * p.cost_cents), 0) as cost_cents
-         FROM products p
-         JOIN sale_items si ON p.id = si.product_id
-         JOIN sales s ON si.sale_id = s.id
-         WHERE date(s.created_at, 'localtime') BETWEEN ?1 AND ?2
-           AND (s.notes IS NULL OR s.notes NOT LIKE '%[ANULADA]%')
+        "SELECT category, SUM(revenue_cents) as revenue_cents, SUM(cost_cents) as cost_cents FROM (
+            SELECT
+                COALESCE(p.category, 'Sin categoría') as category,
+                si.qty * si.unit_price_cents * (1 - si.discount_pct/100.0) as revenue_cents,
+                si.qty * p.cost_cents as cost_cents
+             FROM sale_items si
+             JOIN products p ON si.product_id = p.id AND si.combo_id IS NULL
+             JOIN sales s ON si.sale_id = s.id
+             WHERE date(s.created_at, 'localtime') BETWEEN ?1 AND ?2
+               AND (s.notes IS NULL OR s.notes NOT LIKE '%[ANULADA]%')
+
+             UNION ALL
+
+             SELECT
+                'Combos' as category,
+                si.qty * si.unit_price_cents * (1 - si.discount_pct/100.0) as revenue_cents,
+                si.qty * COALESCE((SELECT SUM(ci.qty * pr.cost_cents) FROM combo_items ci
+                          JOIN products pr ON ci.product_id = pr.id WHERE ci.combo_id = si.combo_id), 0) as cost_cents
+             FROM sale_items si
+             JOIN sales s ON si.sale_id = s.id
+             WHERE si.combo_id IS NOT NULL
+               AND date(s.created_at, 'localtime') BETWEEN ?1 AND ?2
+               AND (s.notes IS NULL OR s.notes NOT LIKE '%[ANULADA]%')
+         )
          GROUP BY category
          ORDER BY revenue_cents DESC",
     ).map_err(err)?;
@@ -245,11 +285,16 @@ pub fn get_iva_report(
 
     let divisor = 1.0 + iva_rate / 100.0;
 
+    // Si la venta tiene una factura electrónica autorizada por AFIP, su neto/iva real
+    // (validado por ARCA, con la alícuota correcta ítem por ítem) reemplaza la estimación
+    // pareja de dividir por (1+tasa) — mucho más preciso para las ventas que sí se facturan.
     let mut stmt = conn.prepare(
         "SELECT s.id, date(s.created_at,'localtime') as date, s.payment_method,
-                s.total_cents, c.name as client_name
+                s.total_cents, c.name as client_name,
+                ei.neto_cents as inv_neto, ei.iva_cents as inv_iva
          FROM sales s
          LEFT JOIN clients c ON s.client_id = c.id
+         LEFT JOIN electronic_invoices ei ON ei.sale_id = s.id AND ei.status = 'autorizada'
          WHERE date(s.created_at,'localtime') BETWEEN ?1 AND ?2
            AND (s.notes IS NULL OR s.notes NOT LIKE '%[ANULADA]%')
          ORDER BY s.created_at ASC",
@@ -257,8 +302,15 @@ pub fn get_iva_report(
 
     let rows = stmt.query_map(params![from_date, to_date], |row| {
         let total: i64 = row.get("total_cents")?;
-        let neto = (total as f64 / divisor).round() as i64;
-        let iva  = total - neto;
+        let inv_neto: Option<i64> = row.get("inv_neto")?;
+        let inv_iva: Option<i64> = row.get("inv_iva")?;
+        let (neto, iva, is_invoiced) = match (inv_neto, inv_iva) {
+            (Some(n), Some(i)) => (n, i, true),
+            _ => {
+                let neto = (total as f64 / divisor).round() as i64;
+                (neto, total - neto, false)
+            }
+        };
         Ok(IvaReportItem {
             date: row.get("date")?,
             sale_id: row.get("id")?,
@@ -267,6 +319,7 @@ pub fn get_iva_report(
             neto_cents: neto,
             iva_cents: iva,
             client_name: row.get("client_name")?,
+            is_invoiced,
         })
     }).map_err(err)?;
 

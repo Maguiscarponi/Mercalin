@@ -2,6 +2,7 @@ import { useState } from "react";
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
 import mercalinLogo from "@/assets/mercalin-logo.svg";
+import type { LicenseStatus } from "@/types";
 
 // Pantalla de activación: se muestra una sola vez, antes de poder usar la app
 // en esta instalación. La clave se calcula a partir del mail (ver
@@ -11,7 +12,7 @@ import mercalinLogo from "@/assets/mercalin-logo.svg";
 // login de todos los días es con datos reales, no con credenciales genéricas
 // que cualquiera que instale la app conoce de antemano — y deja logueada a la
 // persona en el mismo paso, sin una segunda pantalla de login redundante.
-export default function Activation({ onActivated }: { onActivated: () => void }) {
+export default function Activation({ onActivated }: { onActivated: (status: LicenseStatus) => void }) {
   const setUser = useAuthStore((s) => s.setUser);
   const [businessName, setBusinessName] = useState("");
   const [email, setEmail] = useState("");
@@ -26,13 +27,13 @@ export default function Activation({ onActivated }: { onActivated: () => void })
     setLoading(true);
     setError(null);
     try {
-      await api.activateLicense(email.trim(), key.trim());
+      const status = await api.activateLicense(email.trim(), key.trim());
       const user = await api.claimAdminAccount(email.trim(), password);
       // El nombre del negocio se guarda después de activar/loguear a propósito: si
       // la clave resulta inválida, no queremos haber tocado nada todavía.
       await api.setConfig({ key: "business_name", value: businessName.trim() });
       setUser(user);
-      onActivated();
+      onActivated(status);
     } catch (err) {
       setError(String(err));
     } finally {

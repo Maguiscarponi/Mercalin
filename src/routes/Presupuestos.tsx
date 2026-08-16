@@ -1,12 +1,26 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
 import { centsToARS, arsStringToCents, formatDateTime, todayISO } from "@/lib/format";
 import { confirmAction, showToast } from "@/stores/dialogs";
 import { printHtml } from "@/lib/printHtml";
 import { useEscapeToClose } from "@/lib/useEscapeToClose";
 import ModalCloseButton from "@/components/ui/ModalCloseButton";
-import type { Client, NewQuote, NewQuoteItem, Product, Quote, QuoteWithItems, QuoteStatus } from "@/types";
+import { useCart } from "@/stores/cart";
+import type { CartItem, Client, NewQuote, NewQuoteItem, Product, Quote, QuoteWithItems, QuoteStatus } from "@/types";
 import clsx from "clsx";
+
+// Un presupuesto vencido nunca se marca solo en la base (no hay cron) — esto
+// calcula "¿venció?" al vuelo a partir de la fecha, para mostrarlo aunque el
+// estado guardado siga diciendo "borrador"/"enviado". No pisa un estado que ya
+// se resolvió a mano (aprobado/rechazado/vencido).
+function displayStatus(q: Pick<Quote, "status" | "valid_until">): QuoteStatus {
+  const s = q.status as QuoteStatus;
+  if ((s === "borrador" || s === "enviado") && q.valid_until && q.valid_until < todayISO()) {
+    return "vencido";
+  }
+  return s;
+}
 
 const STATUS_LABELS: Record<QuoteStatus, string> = {
   borrador: "Borrador",
@@ -29,7 +43,11 @@ export default function Presupuestos() {
   const [loading, setLoading] = useState(false);
   const [detail, setDetail] = useState<QuoteWithItems | null>(null);
   const [creating, setCreating] = useState(false);
+  const [editingQuote, setEditingQuote] = useState<QuoteWithItems | null>(null);
   const [statusFilter, setStatusFilter] = useState<QuoteStatus | "">("");
+  const [search, setSearch] = useState("");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
 
   async function load() {
     setLoading(true);
@@ -58,7 +76,14 @@ export default function Presupuestos() {
     catch { showToast({ message: "No se pudo eliminar el presupuesto", tone: "danger" }); }
   }
 
-  const visible = statusFilter ? quotes.filter((q) => q.status === statusFilter) : quotes;
+  const visible = quotes.filter((q) => {
+    if (statusFilter && displayStatus(q) !== statusFilter) return false;
+    if (search.trim() && !(q.client_name || "").toLowerCase().includes(search.trim().toLowerCase())) return false;
+    const day = q.created_at.slice(0, 10);
+    if (fromDate && day < fromDate) return false;
+    if (toDate && day > toDate) return false;
+    return true;
+  });
 
   return (
     <div className="h-full flex flex-col p-4 gap-4">
@@ -73,7 +98,7 @@ export default function Presupuestos() {
               Todos ({quotes.length})
             </button>
             {(Object.keys(STATUS_LABELS) as QuoteStatus[]).map((s) => {
-              const count = quotes.filter((q) => q.status === s).length;
+              const count = quotes.filter((q) => displayStatus(q) === s).length;
               if (count === 0 && statusFilter !== s) return null;
               return (
                 <button
@@ -90,6 +115,27 @@ export default function Presupuestos() {
         <button onClick={() => setCreating(true)} className="btn btn-primary">
           Nuevo presupuesto
         </button>
+      </div>
+
+      <div className="flex gap-2 items-center">
+        <input
+          className="input flex-1 max-w-xs"
+          placeholder="Buscar por cliente…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        <span className="text-xs text-stone-400">Creado entre</span>
+        <input type="date" className="input w-40 text-sm" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
+        <span className="text-xs text-stone-400">y</span>
+        <input type="date" className="input w-40 text-sm" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+        {(search || fromDate || toDate) && (
+          <button
+            onClick={() => { setSearch(""); setFromDate(""); setToDate(""); }}
+            className="text-xs text-stone-400 hover:text-red-600"
+          >
+            Limpiar
+          </button>
+        )}
       </div>
 
       <div className="card flex-1 overflow-y-auto">
@@ -119,8 +165,8 @@ export default function Presupuestos() {
                   <td className="px-4 py-2.5 font-medium">{q.client_name || <span className="text-stone-400">—</span>}</td>
                   <td className="px-4 py-2.5 text-right tabular font-semibold">{centsToARS(q.total_cents)}</td>
                   <td className="px-4 py-2.5 text-center">
-                    <span className={clsx("text-xs px-2 py-0.5 rounded-full font-medium", STATUS_COLORS[q.status as QuoteStatus])}>
-                      {STATUS_LABELS[q.status as QuoteStatus] || q.status}
+                    <span className={clsx("text-xs px-2 py-0.5 rounded-full font-medium", STATUS_COLORS[displayStatus(q)])}>
+                      {STATUS_LABELS[displayStatus(q)]}
                     </span>
                   </td>
                   <td className="px-4 py-2.5 text-xs text-stone-500">{q.valid_until || "—"}</td>
@@ -144,13 +190,15 @@ export default function Presupuestos() {
           onClose={() => setDetail(null)}
           onChangeStatus={handleChangeStatus}
           onDelete={handleDelete}
+          onEdit={(qw) => { setEditingQuote(qw); setDetail(null); }}
         />
       )}
 
-      {creating && (
+      {(creating || editingQuote) && (
         <QuoteForm
-          onCancel={() => setCreating(false)}
-          onSaved={() => { setCreating(false); load(); }}
+          initial={editingQuote ?? undefined}
+          onCancel={() => { setCreating(false); setEditingQuote(null); }}
+          onSaved={() => { setCreating(false); setEditingQuote(null); load(); }}
         />
       )}
     </div>
@@ -162,14 +210,54 @@ function QuoteDetailModal({
   onClose,
   onChangeStatus,
   onDelete,
+  onEdit,
 }: {
   qw: QuoteWithItems;
   onClose: () => void;
   onChangeStatus: (id: number, status: string) => void;
   onDelete: (id: number) => void;
+  onEdit: (qw: QuoteWithItems) => void;
 }) {
   const { quote, items } = qw;
   useEscapeToClose(onClose);
+  const cart = useCart();
+  const navigate = useNavigate();
+  const [converting, setConverting] = useState(false);
+
+  // Reutiliza el carrito global de Caja: cargar los ítems del presupuesto ahí
+  // evita reimplementar el "armado de venta" — se navega directo a cobrar.
+  // Los precios quedan congelados tal como se los presupuestó (no se
+  // re-cotizan contra el catálogo actual).
+  async function handleConvert() {
+    if (cart.items.length > 0) {
+      const ok = await confirmAction(
+        "El carrito de Caja ya tiene productos cargados. Se van a reemplazar por los de este presupuesto.",
+        { title: "¿Reemplazar carrito actual?", confirmLabel: "Reemplazar" }
+      );
+      if (!ok) return;
+    }
+    setConverting(true);
+    try {
+      let isRi = false;
+      if (quote.client_id) {
+        try { isRi = (await api.getClient(quote.client_id)).is_ri; } catch { /* sigue sin RI */ }
+      }
+      const cartItems: CartItem[] = items.map((i) => ({
+        product_id: i.product_id,
+        barcode: null,
+        name: i.name,
+        unit_price_cents: i.unit_price_cents,
+        discount_pct: i.discount_pct,
+        qty: i.qty,
+      }));
+      cart.loadItems(cartItems, quote.discount_cents, quote.client_id, quote.client_name, isRi);
+      if (quote.status !== "aprobado") onChangeStatus(quote.id, "aprobado");
+      onClose();
+      navigate("/caja");
+    } finally {
+      setConverting(false);
+    }
+  }
 
   function printQuote() {
     const html = `<html><head><title>Presupuesto #${quote.id}</title>
@@ -230,8 +318,8 @@ function QuoteDetailModal({
           </div>
           <div className="text-right space-y-2">
             <div>
-              <span className={clsx("text-xs px-2 py-1 rounded-full font-medium", STATUS_COLORS[quote.status as QuoteStatus])}>
-                {STATUS_LABELS[quote.status as QuoteStatus] || quote.status}
+              <span className={clsx("text-xs px-2 py-1 rounded-full font-medium", STATUS_COLORS[displayStatus(quote)])}>
+                {STATUS_LABELS[displayStatus(quote)]}
               </span>
             </div>
             <select
@@ -291,26 +379,43 @@ function QuoteDetailModal({
           </div>
         </div>
 
-        <div className="p-4 border-t border-stone-200 flex gap-2">
-          <button onClick={() => onDelete(quote.id)} className="btn text-sm text-red-600 border border-red-200 hover:bg-red-50">Eliminar</button>
-          <button onClick={printQuote} className="btn btn-secondary flex-1">Imprimir</button>
-          <button onClick={onClose} className="btn btn-secondary flex-1">Cerrar</button>
+        <div className="p-4 border-t border-stone-200 space-y-2">
+          <button onClick={handleConvert} disabled={converting} className="btn btn-primary w-full disabled:opacity-40">
+            {converting ? "Convirtiendo…" : "Convertir en venta"}
+          </button>
+          <div className="flex gap-2">
+            <button onClick={() => onEdit(qw)} className="btn btn-secondary flex-1 text-sm">Editar</button>
+            <button onClick={printQuote} className="btn btn-secondary flex-1 text-sm">Imprimir</button>
+            <button onClick={onClose} className="btn btn-secondary flex-1 text-sm">Cerrar</button>
+          </div>
+          <button onClick={() => onDelete(quote.id)} className="w-full text-xs text-red-600 hover:underline">Eliminar presupuesto</button>
         </div>
       </div>
     </div>
   );
 }
 
-function QuoteForm({ onCancel, onSaved }: { onCancel: () => void; onSaved: () => void }) {
+function QuoteForm({ initial, onCancel, onSaved }: { initial?: QuoteWithItems; onCancel: () => void; onSaved: () => void }) {
   const [clients, setClients] = useState<Client[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
-  const [clientId, setClientId] = useState<number | null>(null);
-  const [validUntil, setValidUntil] = useState("");
-  const [notes, setNotes] = useState("");
-  const [discountStr, setDiscountStr] = useState("");
-  const [items, setItems] = useState<{ product_id: number | null; name: string; unit_price_cents: number; discount_pct: number; qty: number; priceStr: string }[]>([
-    { product_id: null, name: "", unit_price_cents: 0, discount_pct: 0, qty: 1, priceStr: "" },
-  ]);
+  const [clientId, setClientId] = useState<number | null>(initial?.quote.client_id ?? null);
+  const [validUntil, setValidUntil] = useState(initial?.quote.valid_until ?? "");
+  const [notes, setNotes] = useState(initial?.quote.notes ?? "");
+  const [discountStr, setDiscountStr] = useState(
+    initial && initial.quote.discount_cents > 0 ? (initial.quote.discount_cents / 100).toFixed(2) : ""
+  );
+  const [items, setItems] = useState<{ product_id: number | null; name: string; unit_price_cents: number; discount_pct: number; qty: number; priceStr: string }[]>(
+    initial && initial.items.length > 0
+      ? initial.items.map((i) => ({
+          product_id: i.product_id,
+          name: i.name,
+          unit_price_cents: i.unit_price_cents,
+          discount_pct: i.discount_pct,
+          qty: i.qty,
+          priceStr: (i.unit_price_cents / 100).toFixed(2),
+        }))
+      : [{ product_id: null, name: "", unit_price_cents: 0, discount_pct: 0, qty: 1, priceStr: "" }]
+  );
   const [saving, setSaving] = useState(false);
   const [productQuery, setProductQuery] = useState("");
   useEscapeToClose(onCancel);
@@ -382,9 +487,14 @@ function QuoteForm({ onCancel, onSaved }: { onCancel: () => void; onSaved: () =>
         notes: notes.trim() || null,
         valid_until: validUntil || null,
       };
-      await api.createQuote(q);
+      if (initial) {
+        await api.updateQuote(initial.quote.id, q);
+        showToast({ message: "Presupuesto actualizado", tone: "success" });
+      } else {
+        await api.createQuote(q);
+        showToast({ message: "Presupuesto creado", tone: "success" });
+      }
       onSaved();
-      showToast({ message: "Presupuesto creado", tone: "success" });
     } catch (e) {
       console.error(e);
       showToast({ message: "No se pudo guardar el presupuesto", tone: "danger" });
@@ -398,7 +508,7 @@ function QuoteForm({ onCancel, onSaved }: { onCancel: () => void; onSaved: () =>
       <div className="relative bg-white rounded-lg shadow-xl w-[680px] max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
         <ModalCloseButton onClick={onCancel} />
         <div className="p-5 border-b border-stone-200 pr-10">
-          <h2 className="font-semibold text-lg">Nuevo presupuesto</h2>
+          <h2 className="font-semibold text-lg">{initial ? `Editar presupuesto #${initial.quote.id}` : "Nuevo presupuesto"}</h2>
         </div>
 
         <div className="flex-1 overflow-y-auto p-5 space-y-4">
@@ -525,7 +635,7 @@ function QuoteForm({ onCancel, onSaved }: { onCancel: () => void; onSaved: () =>
         <div className="p-4 border-t border-stone-200 flex gap-2">
           <button onClick={onCancel} className="btn btn-secondary flex-1">Cancelar</button>
           <button onClick={handleSave} disabled={saving} className="btn btn-primary flex-1 disabled:opacity-40">
-            {saving ? "Guardando…" : "Crear presupuesto"}
+            {saving ? "Guardando…" : initial ? "Guardar cambios" : "Crear presupuesto"}
           </button>
         </div>
       </div>

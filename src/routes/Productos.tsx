@@ -4,7 +4,7 @@ import { api } from "@/lib/api";
 import { centsToARS, arsStringToCents, formatDateTime } from "@/lib/format";
 import { useSearchParams } from "react-router-dom";
 import { confirmAction, showToast } from "@/stores/dialogs";
-import type { BulkPriceInput, BulkPricePreviewItem, CsvProductRow, DeadStockItem, ImportResult, LowStockProduct, MinStockSuggestion, PriceImpactItem, PriceSyncAlert, Product, ProductVelocity, StockMovement, Supplier } from "@/types";
+import type { BulkPriceInput, BulkPricePreviewItem, Combo, CsvProductRow, DeadStockItem, ImportResult, LowStockProduct, MinStockSuggestion, PriceImpactItem, PriceSyncAlert, Product, ProductVelocity, StockMovement, Supplier } from "@/types";
 import clsx from "clsx";
 import { Loader2 } from "lucide-react";
 import HelpButton from "@/components/HelpModal";
@@ -12,6 +12,33 @@ import Field from "@/components/ui/Field";
 import { useEscapeToClose } from "@/lib/useEscapeToClose";
 import ModalCloseButton from "@/components/ui/ModalCloseButton";
 import { exportStyledExcel, CURRENCY_FMT, INT_FMT } from "@/lib/excelExport";
+import { useStockTrackingStore } from "@/stores/stockTracking";
+
+// Se guarda como data URI directo en `image_path` (no un archivo en disco) para no
+// tener que lidiar con el asset-protocol/scope de Tauri solo para mostrar una foto
+// chica de producto. Se reduce a 300px y JPEG 80% para que no infle demasiado la base.
+function resizeImageToDataUrl(file: File, maxDim = 300, quality = 0.8): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("No se pudo leer el archivo"));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error("No se pudo leer la imagen"));
+      img.onload = () => {
+        const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        const ctx = canvas.getContext("2d");
+        if (!ctx) { reject(new Error("No se pudo procesar la imagen")); return; }
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL("image/jpeg", quality));
+      };
+      img.src = reader.result as string;
+    };
+    reader.readAsDataURL(file);
+  });
+}
 
 function VelocityBadge({ v }: { v: ProductVelocity | undefined }) {
   if (!v) return null;
@@ -41,7 +68,7 @@ function VelocityBadge({ v }: { v: ProductVelocity | undefined }) {
 const PAGE_SIZE = 50;
 
 // ── Tabs ──────────────────────────────────────────────────────────────────────
-type ProductTab = "todos" | "agregar" | "alertas" | "sin_movimiento" | "sin_precio" | "stock_ia" | "precio_ia";
+type ProductTab = "todos" | "agregar" | "alertas" | "sin_movimiento" | "sin_precio" | "stock_ia" | "precio_ia" | "inactivos";
 
 function MarginBadge({ price, cost }: { price: number; cost: number }) {
   if (cost <= 0 || price <= 0) return null;
@@ -60,25 +87,34 @@ function MarginBadge({ price, cost }: { price: number; cost: number }) {
 }
 
 export default function Productos() {
+  const stockTrackingEnabled = useStockTrackingStore((s) => s.enabled);
   const [searchParams, setSearchParams] = useSearchParams();
   const [products, setProducts] = useState<Product[]>([]);
   const [velocities, setVelocities] = useState<Map<number, ProductVelocity>>(new Map());
   const [priceSyncAlerts, setPriceSyncAlerts] = useState<Set<number>>(new Set());
   const [deadStock, setDeadStock] = useState<DeadStockItem[]>([]);
   const [lowStock, setLowStock] = useState<LowStockProduct[]>([]);
+  const [inactiveProducts, setInactiveProducts] = useState<Product[]>([]);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [editing, setEditing] = useState<Partial<Product> | null>(null);
   const [adjusting, setAdjusting] = useState<Product | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [showBulkEdit, setShowBulkEdit] = useState(false);
   const [viewingMovements, setViewingMovements] = useState<Product | null>(null);
   const [tab, setTab] = useState<ProductTab>(
     searchParams.get("tab") === "sin_movimiento" ? "sin_movimiento" : "todos"
   );
-  const [categoryFilter, setCategoryFilter] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState(searchParams.get("category") ?? "");
+  const [brandFilter, setBrandFilter] = useState(searchParams.get("brand") ?? "");
+  const [supplierFilter, setSupplierFilter] = useState("");
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [tabSearch, setTabSearch] = useState("");
   const [page, setPage] = useState(1);
   const [showImport, setShowImport] = useState(false);
   const [showBulkPrice, setShowBulkPrice] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [priceListNames, setPriceListNames] = useState<[string, string, string]>(["Minorista", "Mayorista", "Especial"]);
 
   async function load() {
     setLoading(true);
@@ -102,8 +138,22 @@ export default function Productos() {
     }
   }
 
+  async function loadInactive() {
+    try { setInactiveProducts(await api.listInactiveProducts()); }
+    catch (e) { console.error(e); }
+  }
+
   useEffect(() => {
     load();
+    loadInactive();
+    api.listSuppliers().then(setSuppliers).catch(console.error);
+    Promise.all([
+      api.getConfig("price1_name"),
+      api.getConfig("price2_name"),
+      api.getConfig("price3_name"),
+    ]).then(([p1, p2, p3]) => {
+      setPriceListNames([p1 || "Minorista", p2 || "Mayorista", p3 || "Especial"]);
+    }).catch(console.error);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -114,7 +164,7 @@ export default function Productos() {
   }, [query]);
 
   // Resetear página al cambiar filtros
-  useEffect(() => { setPage(1); }, [query, categoryFilter, tab]);
+  useEffect(() => { setPage(1); setSelectedIds(new Set()); setTabSearch(""); }, [query, categoryFilter, brandFilter, supplierFilter, tab]);
 
   async function handleSave(p: Partial<Product>) {
     try {
@@ -131,24 +181,49 @@ export default function Productos() {
           stock: p.stock || 0,
           min_stock: p.min_stock || 0,
           category: p.category || null,
+          brand: p.brand || null,
           is_weighable: p.is_weighable || false,
           active: true,
           supplier_id: p.supplier_id || null,
           expires_at: p.expires_at || null,
+          image_path: p.image_path || null,
         });
       }
       setEditing(null);
       load();
     } catch (err) {
       console.error(err);
-      showToast({ message: "No se pudo guardar el producto", tone: "danger" });
+      const message = typeof err === "string" ? err : err instanceof Error ? err.message : "No se pudo guardar el producto";
+      showToast({ message, tone: "danger" });
     }
   }
 
   async function handleDelete(id: number) {
-    if (!(await confirmAction("Esta acción no se puede deshacer.", { title: "¿Eliminar este producto?", danger: true, confirmLabel: "Eliminar" }))) return;
+    let msg = "No va a aparecer en Productos ni se va a poder vender hasta que lo reactives desde \"Inactivos\".";
+    try {
+      const combos = await api.listCombosForProduct(id);
+      const activeCombos = combos.filter((c) => c.active);
+      if (activeCombos.length > 0) {
+        msg = `Participa en ${activeCombos.length} combo${activeCombos.length !== 1 ? "s" : ""} activo${activeCombos.length !== 1 ? "s" : ""} (${activeCombos.map((c) => c.name).join(", ")}), que van a seguir vendiéndose sin este componente. ` + msg;
+      }
+    } catch (e) { console.error(e); }
+    if (!(await confirmAction(msg, { title: "¿Desactivar este producto?", danger: true, confirmLabel: "Desactivar" }))) return;
     await api.deleteProduct(id);
     load();
+    loadInactive();
+    showToast({ message: "Producto desactivado" });
+  }
+
+  async function handleReactivate(id: number) {
+    try {
+      await api.reactivateProduct(id);
+      load();
+      loadInactive();
+      showToast({ message: "Producto reactivado" });
+    } catch (e) {
+      console.error(e);
+      showToast({ message: "No se pudo reactivar el producto", tone: "danger" });
+    }
   }
 
   async function exportXlsx(rows: Product[]) {
@@ -161,12 +236,13 @@ export default function Productos() {
             { header: "Código", key: "barcode", width: 16 },
             { header: "Nombre", key: "name", width: 32 },
             { header: "Costo", key: "cost", width: 12, numFmt: CURRENCY_FMT, align: "right" },
-            { header: "Precio minorista", key: "price1", width: 16, numFmt: CURRENCY_FMT, align: "right" },
-            { header: "Precio mayorista", key: "price2", width: 16, numFmt: CURRENCY_FMT, align: "right" },
-            { header: "Precio especial", key: "price3", width: 16, numFmt: CURRENCY_FMT, align: "right" },
+            { header: `Precio ${priceListNames[0]}`, key: "price1", width: 16, numFmt: CURRENCY_FMT, align: "right" },
+            { header: `Precio ${priceListNames[1]}`, key: "price2", width: 16, numFmt: CURRENCY_FMT, align: "right" },
+            { header: `Precio ${priceListNames[2]}`, key: "price3", width: 16, numFmt: CURRENCY_FMT, align: "right" },
             { header: "Stock", key: "stock", width: 10, numFmt: INT_FMT, align: "right" },
             { header: "Stock mínimo", key: "minStock", width: 12, numFmt: INT_FMT, align: "right" },
             { header: "Categoría", key: "category", width: 18 },
+            { header: "Marca", key: "brand", width: 16 },
             { header: "Vencimiento", key: "expires", width: 14 },
           ],
           rows: rows.map((p) => ({
@@ -179,6 +255,7 @@ export default function Productos() {
             stock: p.stock,
             minStock: p.min_stock,
             category: p.category || "",
+            brand: p.brand || "",
             expires: p.expires_at || "",
           })),
         }],
@@ -234,6 +311,7 @@ export default function Productos() {
           { id: "sin_precio", label: `Sin precio (${products.filter((p) => p.price_cents <= 0).length})` },
           { id: "stock_ia", label: "Stock mín. IA" },
           { id: "precio_ia", label: "Impacto de precio" },
+          { id: "inactivos", label: `Inactivos (${inactiveProducts.length})` },
         ] as const).map(({ id, label }) => (
           <button
             key={id}
@@ -263,24 +341,77 @@ export default function Productos() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
-          <select
-            className="input w-48 text-sm"
-            value={categoryFilter}
-            onChange={(e) => setCategoryFilter(e.target.value)}
-          >
-            <option value="">Todas las categorías</option>
-            {[...new Set(products.map((p) => p.category).filter(Boolean) as string[])].sort().map((c) => (
-              <option key={c} value={c}>{c}</option>
-            ))}
-          </select>
+          {(() => {
+            // En "Sin precio" las opciones se acotan a lo que ese subconjunto realmente
+            // tiene -- elegir una categoría/marca sin ningún producto sin precio ahí
+            // daba 0 resultados sin ninguna pista de por qué.
+            const scoped = tab === "sin_precio" ? products.filter((p) => p.price_cents <= 0) : products;
+            const scopedSupplierIds = new Set(scoped.map((p) => p.supplier_id).filter((id): id is number => id != null));
+            return (
+              <>
+                <select
+                  className="input w-48 text-sm"
+                  value={categoryFilter}
+                  onChange={(e) => setCategoryFilter(e.target.value)}
+                >
+                  <option value="">Todas las categorías</option>
+                  {[...new Set(scoped.map((p) => p.category).filter(Boolean) as string[])].sort().map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+                <select
+                  className="input w-48 text-sm"
+                  value={brandFilter}
+                  onChange={(e) => setBrandFilter(e.target.value)}
+                >
+                  <option value="">Todas las marcas</option>
+                  {[...new Set(scoped.map((p) => p.brand).filter(Boolean) as string[])].sort().map((b) => (
+                    <option key={b} value={b}>{b}</option>
+                  ))}
+                </select>
+                <select
+                  className="input w-48 text-sm"
+                  value={supplierFilter}
+                  onChange={(e) => setSupplierFilter(e.target.value)}
+                >
+                  <option value="">Todos los proveedores</option>
+                  {suppliers.filter((s) => scopedSupplierIds.has(s.id)).map((s) => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </select>
+              </>
+            );
+          })()}
+          {tab === "todos" && selectedIds.size > 0 && (
+            <button onClick={() => setShowBulkEdit(true)} className="btn btn-secondary text-sm whitespace-nowrap">
+              Editar {selectedIds.size} seleccionado{selectedIds.size !== 1 ? "s" : ""}
+            </button>
+          )}
         </div>
+      )}
+
+      {(tab === "alertas" || tab === "sin_movimiento" || tab === "stock_ia" || tab === "precio_ia") && (
+        <input
+          type="text"
+          className="input"
+          placeholder="Buscar por nombre…"
+          value={tabSearch}
+          onChange={(e) => setTabSearch(e.target.value)}
+        />
       )}
 
       {tab === "alertas" ? (
         <div className="card flex-1 overflow-y-auto">
-          {lowStock.length === 0 ? (
+          {(() => {
+            const q = tabSearch.trim().toLowerCase();
+            const filteredLowStock = q ? lowStock.filter((p) => p.name.toLowerCase().includes(q)) : lowStock;
+            return lowStock.length === 0 ? (
             <div className="flex items-center justify-center h-full text-stone-400 text-sm">
               No hay productos con stock bajo
+            </div>
+          ) : filteredLowStock.length === 0 ? (
+            <div className="flex items-center justify-center h-full text-stone-400 text-sm">
+              Sin resultados para "{tabSearch}"
             </div>
           ) : (
             <table className="w-full">
@@ -294,7 +425,7 @@ export default function Productos() {
                 </tr>
               </thead>
               <tbody>
-                {lowStock.map((p) => (
+                {filteredLowStock.map((p) => (
                   <tr key={p.id} className="border-t border-stone-100 hover:bg-red-50 transition-colors">
                     <td className="table-cell font-semibold">{p.name}</td>
                     <td className="table-cell text-stone-500">{p.category || "—"}</td>
@@ -315,10 +446,14 @@ export default function Productos() {
                 ))}
               </tbody>
             </table>
-          )}
+          );
+          })()}
         </div>
       ) : tab === "todos" ? (() => {
-          const filtered = products.filter((p) => !categoryFilter || p.category === categoryFilter);
+          const filtered = products
+            .filter((p) => !categoryFilter || p.category === categoryFilter)
+            .filter((p) => !brandFilter || p.brand === brandFilter)
+            .filter((p) => !supplierFilter || String(p.supplier_id) === supplierFilter);
           const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
           const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
           return (
@@ -327,6 +462,19 @@ export default function Productos() {
                 <table className="w-full">
                   <thead>
                     <tr className="table-header">
+                      <th className="w-8">
+                        <input
+                          type="checkbox"
+                          checked={paginated.length > 0 && paginated.every((p) => selectedIds.has(p.id))}
+                          onChange={(e) => {
+                            setSelectedIds((prev) => {
+                              const next = new Set(prev);
+                              for (const p of paginated) { e.target.checked ? next.add(p.id) : next.delete(p.id); }
+                              return next;
+                            });
+                          }}
+                        />
+                      </th>
                       <th>Código</th>
                       <th>Nombre</th>
                       <th className="text-right">Costo</th>
@@ -338,12 +486,12 @@ export default function Productos() {
                   <tbody>
                     {loading && (
                       <tr>
-                        <td colSpan={6} className="text-center py-10 text-stone-400">Cargando…</td>
+                        <td colSpan={7} className="text-center py-10 text-stone-400">Cargando…</td>
                       </tr>
                     )}
                     {!loading && paginated.length === 0 && (
                       <tr>
-                        <td colSpan={6} className="text-center py-10">
+                        <td colSpan={7} className="text-center py-10">
                           {products.length === 0 ? (
                             <div className="flex flex-col items-center gap-3">
                               <p className="text-stone-500">Todavía no tenés productos con precio cargado.</p>
@@ -368,10 +516,32 @@ export default function Productos() {
                     )}
                     {paginated.map((p) => (
                       <tr key={p.id} className="table-row">
+                        <td className="table-cell">
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.has(p.id)}
+                            onChange={() => setSelectedIds((prev) => {
+                              const next = new Set(prev);
+                              next.has(p.id) ? next.delete(p.id) : next.add(p.id);
+                              return next;
+                            })}
+                          />
+                        </td>
                         <td className="table-cell font-mono text-sm text-stone-500">{p.barcode || "—"}</td>
                         <td className="table-cell">
-                          <div className="font-semibold text-stone-900">{p.name}</div>
-                          {p.category && <div className="text-xs text-stone-400 uppercase tracking-wide mt-0.5">{p.category}</div>}
+                          <div className="flex items-center gap-2">
+                            {p.image_path && (
+                              <img src={p.image_path} alt="" className="w-8 h-8 rounded object-cover border border-stone-200 shrink-0" />
+                            )}
+                            <div>
+                              <div className="font-semibold text-stone-900">{p.name}</div>
+                              {(p.category || p.brand) && (
+                                <div className="text-xs text-stone-400 uppercase tracking-wide mt-0.5">
+                                  {[p.category, p.brand].filter(Boolean).join(" · ")}
+                                </div>
+                              )}
+                            </div>
+                          </div>
                         </td>
                         <td className="table-cell text-right tabular">{centsToARS(p.cost_cents)}</td>
                         <td className="table-cell text-right tabular">
@@ -397,9 +567,9 @@ export default function Productos() {
                           </div>
                         </td>
                         <td className="table-cell text-right tabular">
-                          <span className={clsx("font-semibold text-base", p.stock <= p.min_stock ? "text-red-600" : "text-stone-800")}>
+                          <span className={clsx("font-semibold text-base", stockTrackingEnabled && p.stock <= p.min_stock ? "text-red-600" : "text-stone-800")}>
                             {p.stock}
-                            {p.stock <= p.min_stock && <span className="ml-1 text-sm">⚠</span>}
+                            {stockTrackingEnabled && p.stock <= p.min_stock && <span className="ml-1 text-sm">⚠</span>}
                           </span>
                           <VelocityBadge v={velocities.get(p.id)} />
                         </td>
@@ -408,7 +578,7 @@ export default function Productos() {
                             <button onClick={() => setAdjusting(p)} className="btn-table-neutral">Stock</button>
                             <button onClick={() => setViewingMovements(p)} className="btn-table-neutral">Historial</button>
                             <button onClick={() => setEditing(p)} className="btn-table-neutral">Editar</button>
-                            <button onClick={() => handleDelete(p.id)} className="btn-table-danger">Borrar</button>
+                            <button onClick={() => handleDelete(p.id)} className="btn-table-danger">Desactivar</button>
                           </div>
                         </td>
                       </tr>
@@ -456,6 +626,8 @@ export default function Productos() {
           const filtered = products
             .filter((p) => p.price_cents <= 0)
             .filter((p) => !categoryFilter || p.category === categoryFilter)
+            .filter((p) => !brandFilter || p.brand === brandFilter)
+            .filter((p) => !supplierFilter || String(p.supplier_id) === supplierFilter)
             .filter((p) => !q || p.name.toLowerCase().includes(q) || (p.barcode || "").includes(q));
           const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
           const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -489,8 +661,19 @@ export default function Productos() {
                       <tr key={p.id} className="table-row">
                         <td className="table-cell font-mono text-sm text-stone-500">{p.barcode || "—"}</td>
                         <td className="table-cell">
-                          <div className="font-semibold text-stone-900">{p.name}</div>
-                          {p.category && <div className="text-xs text-stone-400 uppercase tracking-wide mt-0.5">{p.category}</div>}
+                          <div className="flex items-center gap-2">
+                            {p.image_path && (
+                              <img src={p.image_path} alt="" className="w-8 h-8 rounded object-cover border border-stone-200 shrink-0" />
+                            )}
+                            <div>
+                              <div className="font-semibold text-stone-900">{p.name}</div>
+                              {(p.category || p.brand) && (
+                                <div className="text-xs text-stone-400 uppercase tracking-wide mt-0.5">
+                                  {[p.category, p.brand].filter(Boolean).join(" · ")}
+                                </div>
+                              )}
+                            </div>
+                          </div>
                         </td>
                         <td className="table-cell text-right tabular">{centsToARS(p.cost_cents)}</td>
                         <td className="table-cell text-right">
@@ -525,18 +708,25 @@ export default function Productos() {
       }
 
       {/* ── Tab: Sin movimiento ─────────────────────────────────────────── */}
-      {tab === "sin_movimiento" && (
+      {tab === "sin_movimiento" && (() => {
+        const q = tabSearch.trim().toLowerCase();
+        const filteredDeadStock = q ? deadStock.filter((d) => d.name.toLowerCase().includes(q)) : deadStock;
+        return (
         <div className="card flex-1 overflow-y-auto">
           {deadStock.length === 0 ? (
             <div className="flex items-center justify-center h-full text-stone-400 text-sm">
               Todos los productos tuvieron al menos una venta en los últimos 30 días
             </div>
+          ) : filteredDeadStock.length === 0 ? (
+            <div className="flex items-center justify-center h-full text-stone-400 text-sm">
+              Sin resultados para "{tabSearch}"
+            </div>
           ) : (
             <>
               <div className="px-4 py-3 bg-amber-50 border-b border-amber-100 flex items-center gap-3">
                 <span className="text-sm text-amber-800 font-medium">
-                  {deadStock.length} productos sin ventas en 30 días ·{" "}
-                  {centsToARS(deadStock.reduce((s, d) => s + d.capital_cents, 0))} inmovilizados
+                  {filteredDeadStock.length} productos sin ventas en 30 días ·{" "}
+                  {centsToARS(filteredDeadStock.reduce((s, d) => s + d.capital_cents, 0))} inmovilizados
                 </span>
                 <span className="text-xs text-amber-600">
                   Considerá ofertas o liquidación para recuperar ese capital
@@ -555,7 +745,7 @@ export default function Productos() {
                   </tr>
                 </thead>
                 <tbody>
-                  {deadStock.map((d) => (
+                  {filteredDeadStock.map((d) => (
                     <tr key={d.product_id} className="table-row">
                       <td className="table-cell font-semibold">{d.name}</td>
                       <td className="table-cell text-stone-500">{d.category || "—"}</td>
@@ -585,7 +775,8 @@ export default function Productos() {
             </>
           )}
         </div>
-      )}
+        );
+      })()}
 
       {/* ── Tab: Agregar producto ──────────────────────────────────────── */}
       {tab === "agregar" && (
@@ -597,24 +788,58 @@ export default function Productos() {
 
       {/* ── Tab: Stock mín. IA ─────────────────────────────────────────── */}
       {tab === "stock_ia" && (
-        <StockIaTab onProductsReload={load} />
+        <StockIaTab onProductsReload={load} search={tabSearch} />
       )}
 
       {/* ── Tab: Impacto de precio ─────────────────────────────────────── */}
       {tab === "precio_ia" && (
-        <PrecioIaTab onProductsReload={load} />
+        <PrecioIaTab onProductsReload={load} search={tabSearch} />
+      )}
+
+      {tab === "inactivos" && (
+        <div className="card flex-1 overflow-y-auto">
+          {inactiveProducts.length === 0 ? (
+            <div className="flex items-center justify-center h-full text-stone-400 text-sm">
+              No hay productos desactivados
+            </div>
+          ) : (
+            <table className="w-full">
+              <thead>
+                <tr className="table-header">
+                  <th>Código</th>
+                  <th>Nombre</th>
+                  <th className="text-right">Precio</th>
+                  <th className="px-4 py-2.5 text-xs font-bold uppercase tracking-wide text-stone-500 bg-stone-50 sticky top-0">Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {inactiveProducts.map((p) => (
+                  <tr key={p.id} className="border-t border-stone-100 hover:bg-stone-50 transition-colors">
+                    <td className="table-cell font-mono text-sm text-stone-500">{p.barcode || "—"}</td>
+                    <td className="table-cell font-semibold">{p.name}</td>
+                    <td className="table-cell text-right tabular">{centsToARS(p.price_cents)}</td>
+                    <td className="table-cell text-right">
+                      <button onClick={() => handleReactivate(p.id)} className="btn-table-success">Reactivar</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
       )}
 
       {editing && (
         <ProductForm
           initial={editing}
+          priceListNames={priceListNames}
           onCancel={() => setEditing(null)}
           onSave={handleSave}
         />
       )}
 
       {adjusting && (
-        <StockAdjustForm
+        <StockForm
           product={adjusting}
           onCancel={() => setAdjusting(null)}
           onSaved={() => {
@@ -645,13 +870,21 @@ export default function Productos() {
         />
       )}
 
+      {showBulkEdit && (
+        <BulkEditSelectedModal
+          ids={[...selectedIds]}
+          onClose={() => setShowBulkEdit(false)}
+          onSaved={() => { setShowBulkEdit(false); setSelectedIds(new Set()); load(); }}
+        />
+      )}
+
       <HelpButton module="productos" />
     </div>
   );
 }
 
 // ── StockIaTab ────────────────────────────────────────────────────────────────
-function StockIaTab({ onProductsReload }: { onProductsReload: () => void }) {
+function StockIaTab({ onProductsReload, search }: { onProductsReload: () => void; search: string }) {
   const [suggestions, setSuggestions] = useState<MinStockSuggestion[]>([]);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
@@ -666,14 +899,17 @@ function StockIaTab({ onProductsReload }: { onProductsReload: () => void }) {
       .finally(() => setLoading(false));
   }, []);
 
-  const allSelected = suggestions.length > 0 && selected.size === suggestions.length;
+  const q = search.trim().toLowerCase();
+  const filtered = q ? suggestions.filter((s) => s.name.toLowerCase().includes(q)) : suggestions;
+  const allSelected = filtered.length > 0 && filtered.every((s) => selected.has(s.product_id));
 
   function toggleAll() {
-    if (allSelected) {
-      setSelected(new Set());
-    } else {
-      setSelected(new Set(suggestions.map((s) => s.product_id)));
-    }
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (allSelected) { for (const s of filtered) next.delete(s.product_id); }
+      else { for (const s of filtered) next.add(s.product_id); }
+      return next;
+    });
   }
 
   function toggleOne(id: number) {
@@ -716,6 +952,14 @@ function StockIaTab({ onProductsReload }: { onProductsReload: () => void }) {
     return (
       <div className="card flex-1 flex items-center justify-center">
         <p className="text-stone-400 text-sm">Todos los stocks mínimos están correctamente calibrados ✓</p>
+      </div>
+    );
+  }
+
+  if (filtered.length === 0) {
+    return (
+      <div className="card flex-1 flex items-center justify-center">
+        <p className="text-stone-400 text-sm">Sin resultados para "{search}"</p>
       </div>
     );
   }
@@ -763,7 +1007,7 @@ function StockIaTab({ onProductsReload }: { onProductsReload: () => void }) {
             </tr>
           </thead>
           <tbody>
-            {suggestions.map((s) => {
+            {filtered.map((s) => {
               const isIncrease = s.suggested_min_stock > s.current_min_stock;
               const isDecrease = s.suggested_min_stock < s.current_min_stock;
               const diffClass = isIncrease
@@ -818,7 +1062,7 @@ function StockIaTab({ onProductsReload }: { onProductsReload: () => void }) {
 }
 
 // ── PrecioIaTab ───────────────────────────────────────────────────────────────
-function PrecioIaTab({ onProductsReload }: { onProductsReload: () => void }) {
+function PrecioIaTab({ onProductsReload, search }: { onProductsReload: () => void; search: string }) {
   const [items, setItems] = useState<PriceImpactItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState<number | null>(null);
@@ -850,7 +1094,9 @@ function PrecioIaTab({ onProductsReload }: { onProductsReload: () => void }) {
     }
   }
 
-  const totalGainCents = items.reduce((sum, i) => sum + i.monthly_gain_cents, 0);
+  const q = search.trim().toLowerCase();
+  const filtered = q ? items.filter((i) => i.name.toLowerCase().includes(q)) : items;
+  const totalGainCents = filtered.reduce((sum, i) => sum + i.monthly_gain_cents, 0);
 
   if (loading) {
     return (
@@ -864,6 +1110,14 @@ function PrecioIaTab({ onProductsReload }: { onProductsReload: () => void }) {
     return (
       <div className="card flex-1 flex items-center justify-center">
         <p className="text-stone-400 text-sm">Todos los productos tienen margen suficiente ✓</p>
+      </div>
+    );
+  }
+
+  if (filtered.length === 0) {
+    return (
+      <div className="card flex-1 flex items-center justify-center">
+        <p className="text-stone-400 text-sm">Sin resultados para "{search}"</p>
       </div>
     );
   }
@@ -896,7 +1150,7 @@ function PrecioIaTab({ onProductsReload }: { onProductsReload: () => void }) {
             </tr>
           </thead>
           <tbody>
-            {items.map((item) => {
+            {filtered.map((item) => {
               const marginClass =
                 item.current_margin_pct < 5
                   ? "text-red-600 font-semibold"
@@ -943,7 +1197,14 @@ function PrecioIaTab({ onProductsReload }: { onProductsReload: () => void }) {
   );
 }
 
-function StockAdjustForm({
+// Un solo modal para todo lo que toca el stock, con dos modos —
+// antes eran dos botones separados ("Stock" y "Recibir") que a los ojos de
+// la dueña hacían "lo mismo" (las dos suman al total). La diferencia real es
+// que "sumar" registra un lote con costo y vencimiento propios (vía
+// add_product_lot, el mismo comando que usa Vencimientos para "agregar lote
+// manual"), mientras que "corregir" pisa el total directo — pensado para
+// cuando se cuenta la mercadería a mano y no coincide con lo que dice el sistema.
+function StockForm({
   product,
   onCancel,
   onSaved,
@@ -952,30 +1213,54 @@ function StockAdjustForm({
   onCancel: () => void;
   onSaved: () => void;
 }) {
-  const [newStock, setNewStock] = useState(product.stock.toString());
-  const [notes, setNotes] = useState("");
+  const [mode, setMode] = useState<"sumar" | "corregir">("sumar");
   const [saving, setSaving] = useState(false);
   useEscapeToClose(onCancel);
   const isWeighable = product.is_weighable;
   const unitLabel = isWeighable ? "kg" : "unidades";
   const parseVal = (s: string) => (isWeighable ? parseFloat(s) : parseInt(s, 10));
 
+  // Modo "sumar" — llegó mercadería
+  const [qtyStr, setQtyStr] = useState("");
+  const [costStr, setCostStr] = useState(product.cost_cents ? (product.cost_cents / 100).toString() : "");
+  const [expiresAt, setExpiresAt] = useState("");
+  const [sumNotes, setSumNotes] = useState("");
+  const qty = isWeighable ? parseFloat(qtyStr) : parseInt(qtyStr, 10);
+
+  // Modo "corregir" — el total no coincide con lo contado
+  const [newStock, setNewStock] = useState(product.stock.toString());
+  const [adjNotes, setAdjNotes] = useState("");
   const diff = parseVal(newStock) - product.stock;
 
+  const canSubmit = mode === "sumar" ? !isNaN(qty) && qty > 0 : !isNaN(parseVal(newStock)) && parseVal(newStock) >= 0;
+
   async function submit() {
-    const val = parseVal(newStock);
-    if (isNaN(val) || val < 0) return;
+    if (!canSubmit) return;
     setSaving(true);
     try {
-      await api.adjustStock({
-        product_id: product.id,
-        new_stock: val,
-        notes: notes.trim() || null,
-      });
+      if (mode === "sumar") {
+        await api.addProductLot({
+          product_id: product.id,
+          qty,
+          cost_cents: arsStringToCents(costStr),
+          expires_at: expiresAt || null,
+          notes: sumNotes.trim() || "Ingreso de mercadería",
+        });
+        showToast({ message: "Stock recibido" });
+      } else {
+        await api.adjustStock({
+          product_id: product.id,
+          new_stock: parseVal(newStock),
+          notes: adjNotes.trim() || null,
+        });
+      }
       onSaved();
     } catch (e) {
       console.error(e);
-      showToast({ message: "No se pudo ajustar el stock", tone: "danger" });
+      showToast({
+        message: mode === "sumar" ? "No se pudo registrar el ingreso de stock" : "No se pudo ajustar el stock",
+        tone: "danger",
+      });
     } finally {
       setSaving(false);
     }
@@ -983,53 +1268,122 @@ function StockAdjustForm({
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onCancel}>
-      <div className="relative bg-white rounded-lg shadow-xl w-[380px] p-6" onClick={(e) => e.stopPropagation()}>
+      <div className="relative bg-white rounded-lg shadow-xl w-[400px] p-6" onClick={(e) => e.stopPropagation()}>
         <ModalCloseButton onClick={onCancel} />
-        <h2 className="text-lg font-semibold mb-1">Ajustar stock</h2>
+        <h2 className="text-lg font-semibold mb-1">Stock</h2>
         <p className="text-sm text-stone-500 mb-4">{product.name}</p>
+
+        <div className="flex bg-stone-100 rounded-lg p-1 mb-4 text-sm">
+          <button
+            onClick={() => setMode("sumar")}
+            className={clsx(
+              "flex-1 py-1.5 rounded-md font-medium transition-colors",
+              mode === "sumar" ? "bg-white shadow-sm text-indigo-700" : "text-stone-500 hover:text-stone-700"
+            )}
+          >
+            Sumar mercadería
+          </button>
+          <button
+            onClick={() => setMode("corregir")}
+            className={clsx(
+              "flex-1 py-1.5 rounded-md font-medium transition-colors",
+              mode === "corregir" ? "bg-white shadow-sm text-indigo-700" : "text-stone-500 hover:text-stone-700"
+            )}
+          >
+            Corregir total
+          </button>
+        </div>
 
         <div className="bg-stone-50 rounded-md p-3 mb-4 text-sm flex justify-between">
           <span className="text-stone-600">Stock actual</span>
           <span className="font-semibold tabular">{product.stock} {unitLabel}</span>
         </div>
 
-        <label className="block mb-3">
-          <span className="text-xs font-medium text-stone-600 block mb-1">Nuevo stock</span>
-          <input
-            autoFocus
-            type="number"
-            min={0}
-            step={isWeighable ? "0.001" : "1"}
-            className="input tabular text-right h-12 text-lg"
-            value={newStock}
-            onChange={(e) => setNewStock(e.target.value)}
-          />
-        </label>
+        {mode === "sumar" ? (
+          <>
+            <label className="block mb-3">
+              <span className="text-xs font-medium text-stone-600 block mb-1">Cantidad recibida</span>
+              <input
+                autoFocus
+                type="number"
+                min={0}
+                step={isWeighable ? "0.001" : "1"}
+                className="input tabular text-right h-12 text-lg"
+                value={qtyStr}
+                onChange={(e) => setQtyStr(e.target.value)}
+                placeholder={isWeighable ? "0.000" : "0"}
+              />
+            </label>
+            <label className="block mb-3">
+              <span className="text-xs font-medium text-stone-600 block mb-1">Costo unitario ($, opcional)</span>
+              <input
+                className="input tabular text-right"
+                value={costStr}
+                onChange={(e) => setCostStr(e.target.value)}
+                placeholder="0"
+              />
+            </label>
+            <label className="block mb-3">
+              <span className="text-xs font-medium text-stone-600 block mb-1">Fecha de vencimiento (opcional)</span>
+              <input
+                type="date"
+                className="input"
+                value={expiresAt}
+                onChange={(e) => setExpiresAt(e.target.value)}
+              />
+            </label>
+            <label className="block mb-5">
+              <span className="text-xs font-medium text-stone-600 block mb-1">Motivo (opcional)</span>
+              <input
+                className="input"
+                value={sumNotes}
+                onChange={(e) => setSumNotes(e.target.value)}
+                placeholder="Ej: Compra a proveedor, reposición..."
+                onKeyDown={(e) => e.key === "Enter" && submit()}
+              />
+            </label>
+          </>
+        ) : (
+          <>
+            <label className="block mb-3">
+              <span className="text-xs font-medium text-stone-600 block mb-1">Nuevo stock total</span>
+              <input
+                autoFocus
+                type="number"
+                min={0}
+                step={isWeighable ? "0.001" : "1"}
+                className="input tabular text-right h-12 text-lg"
+                value={newStock}
+                onChange={(e) => setNewStock(e.target.value)}
+              />
+            </label>
 
-        {newStock && !isNaN(parseVal(newStock)) && parseVal(newStock) !== product.stock && (
-          <div className={clsx(
-            "text-sm text-center py-2 rounded-md mb-4 font-medium",
-            diff > 0 ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"
-          )}>
-            {diff > 0 ? `+${diff}` : diff} {unitLabel}
-          </div>
+            {newStock && !isNaN(parseVal(newStock)) && parseVal(newStock) !== product.stock && (
+              <div className={clsx(
+                "text-sm text-center py-2 rounded-md mb-4 font-medium",
+                diff > 0 ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"
+              )}>
+                {diff > 0 ? `+${diff}` : diff} {unitLabel}
+              </div>
+            )}
+
+            <label className="block mb-5">
+              <span className="text-xs font-medium text-stone-600 block mb-1">Motivo (opcional)</span>
+              <input
+                className="input"
+                value={adjNotes}
+                onChange={(e) => setAdjNotes(e.target.value)}
+                placeholder="Ej: Conteo físico, merma, corrección..."
+                onKeyDown={(e) => e.key === "Enter" && submit()}
+              />
+            </label>
+          </>
         )}
-
-        <label className="block mb-5">
-          <span className="text-xs font-medium text-stone-600 block mb-1">Motivo (opcional)</span>
-          <input
-            className="input"
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            placeholder="Ej: Ingreso de mercadería, corrección..."
-            onKeyDown={(e) => e.key === "Enter" && submit()}
-          />
-        </label>
 
         <div className="flex gap-2">
           <button onClick={onCancel} className="btn btn-secondary flex-1">Cancelar</button>
-          <button onClick={submit} disabled={saving} className="btn btn-primary flex-1">
-            {saving ? "Guardando…" : "Guardar"}
+          <button onClick={submit} disabled={saving || !canSubmit} className="btn btn-primary flex-1 disabled:opacity-40">
+            {saving ? "Guardando…" : mode === "sumar" ? "Recibir" : "Guardar"}
           </button>
         </div>
       </div>
@@ -1126,10 +1480,12 @@ function StockMovementsModal({
 
 function ProductForm({
   initial,
+  priceListNames,
   onCancel,
   onSave,
 }: {
   initial: Partial<Product>;
+  priceListNames: [string, string, string];
   onCancel: () => void;
   onSave: (p: Partial<Product>) => void;
 }) {
@@ -1148,16 +1504,36 @@ function ProductForm({
   );
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
+  const [brands, setBrands] = useState<string[]>([]);
+  const [usedInCombos, setUsedInCombos] = useState<Combo[]>([]);
+  const [imgProcessing, setImgProcessing] = useState(false);
   useEscapeToClose(onCancel);
 
   useEffect(() => {
     api.listSuppliers().then(setSuppliers).catch(console.error);
     api.listCategories().then((cats) => setCategories(cats.map((c) => c.name).filter(Boolean))).catch(console.error);
+    api.listBrands().then((b) => setBrands(b.map((x) => x.name).filter(Boolean))).catch(console.error);
+    if (initial.id) {
+      api.listCombosForProduct(initial.id).then(setUsedInCombos).catch(console.error);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Si lo tipeado matchea una categoría/marca existente salvo mayúsculas o espacios
+  // (ej. "bebidas " vs "Bebidas"), usa el nombre ya existente en vez de crear un
+  // duplicado casi idéntico que después hay que ir a fusionar a mano.
+  function snapToExisting(value: string | null | undefined, existing: string[]): string | null {
+    const trimmed = value?.trim();
+    if (!trimmed) return null;
+    const match = existing.find((e) => e.toLowerCase() === trimmed.toLowerCase());
+    return match ?? trimmed;
+  }
 
   function submit() {
     onSave({
       ...form,
+      category: snapToExisting(form.category, categories),
+      brand: snapToExisting(form.brand, brands),
       price_cents: arsStringToCents(priceStr),
       price2_cents: arsStringToCents(price2Str),
       price3_cents: arsStringToCents(price3Str),
@@ -1202,7 +1578,7 @@ function ProductForm({
           </Field>
 
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Costo ($)">
+            <Field label={form.is_weighable ? "Costo por kg ($)" : "Costo ($)"}>
               <input
                 className="input tabular text-right"
                 value={costStr}
@@ -1210,7 +1586,7 @@ function ProductForm({
                 placeholder="1000"
               />
             </Field>
-            <Field label="Precio minorista ($)">
+            <Field label={`Precio ${priceListNames[0].toLowerCase()}${form.is_weighable ? " por kg" : ""} ($)`}>
               <input
                 className="input tabular text-right"
                 value={priceStr}
@@ -1221,7 +1597,7 @@ function ProductForm({
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Precio mayorista ($)">
+            <Field label={`Precio ${priceListNames[1].toLowerCase()}${form.is_weighable ? " por kg" : ""} ($)`}>
               <input
                 className="input tabular text-right"
                 value={price2Str}
@@ -1229,7 +1605,7 @@ function ProductForm({
                 placeholder="0 = no aplica"
               />
             </Field>
-            <Field label="Precio especial ($)">
+            <Field label={`Precio ${priceListNames[2].toLowerCase()}${form.is_weighable ? " por kg" : ""} ($)`}>
               <input
                 className="input tabular text-right"
                 value={price3Str}
@@ -1275,6 +1651,64 @@ function ProductForm({
             <datalist id="product-category-options">
               {categories.map((c) => <option key={c} value={c} />)}
             </datalist>
+          </Field>
+
+          <Field label="Marca (opcional)">
+            <input
+              className="input"
+              list="product-brand-options"
+              value={form.brand || ""}
+              onChange={(e) => setForm({ ...form, brand: e.target.value })}
+              placeholder="Coca-Cola, Arcor, Marolio…"
+            />
+            <datalist id="product-brand-options">
+              {brands.map((b) => <option key={b} value={b} />)}
+            </datalist>
+          </Field>
+
+          {usedInCombos.length > 0 && (
+            <div className="text-xs text-stone-500 bg-stone-50 border border-stone-200 rounded-md px-3 py-2">
+              Usado en {usedInCombos.length} combo{usedInCombos.length !== 1 ? "s" : ""}: {usedInCombos.map((c) => c.name).join(", ")}
+            </div>
+          )}
+
+          <Field label="Foto (opcional)">
+            <div className="flex items-center gap-3">
+              {form.image_path ? (
+                <img src={form.image_path} alt="" className="w-14 h-14 rounded-md object-cover border border-stone-200" />
+              ) : (
+                <div className="w-14 h-14 rounded-md border border-dashed border-stone-300 flex items-center justify-center text-stone-300 text-xs">Sin foto</div>
+              )}
+              <label className="btn btn-secondary text-sm cursor-pointer">
+                {imgProcessing ? "Procesando…" : "Elegir imagen"}
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  disabled={imgProcessing}
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = "";
+                    if (!file) return;
+                    setImgProcessing(true);
+                    try {
+                      const dataUrl = await resizeImageToDataUrl(file);
+                      setForm((f) => ({ ...f, image_path: dataUrl }));
+                    } catch (err) {
+                      console.error(err);
+                      showToast({ message: "No se pudo procesar la imagen", tone: "danger" });
+                    } finally {
+                      setImgProcessing(false);
+                    }
+                  }}
+                />
+              </label>
+              {form.image_path && (
+                <button type="button" onClick={() => setForm((f) => ({ ...f, image_path: null }))} className="text-xs text-stone-400 hover:text-red-600">
+                  Quitar
+                </button>
+              )}
+            </div>
           </Field>
 
           <Field label="Fecha de vencimiento (opcional)">
@@ -1476,6 +1910,7 @@ function ImportCsvModal({ onClose, onImported }: { onClose: () => void; onImport
   const [importing, setImporting] = useState(false);
   const [result, setResult] = useState<ImportResult | null>(null);
   const [parseError, setParseError] = useState<string | null>(null);
+  const [duplicateBarcodes, setDuplicateBarcodes] = useState<string[]>([]);
   useEscapeToClose(onClose);
 
   function parseCsvText(text: string): CsvProductRow[] {
@@ -1490,12 +1925,17 @@ function ImportCsvModal({ onClose, onImported }: { onClose: () => void; onImport
     };
     const iName      = idx(["nombre", "name"]);
     const iPrice     = idx(["precio", "price"]);
+    const iPrice2    = idx(["precio_mayorista", "price2"]);
+    const iPrice3    = idx(["precio_especial", "price3"]);
     const iCost      = idx(["costo", "cost"]);
     const iStock     = idx(["stock"]);
     const iMinStock  = idx(["stock_minimo", "min_stock"]);
     const iBarcode   = idx(["codigo_barras", "barcode", "codigo"]);
     const iCategory  = idx(["categoria", "category"]);
+    const iBrand     = idx(["marca", "brand"]);
     const iSupplierId = idx(["proveedor_id", "supplier_id"]);
+    const iSupplierName = idx(["proveedor", "supplier"]);
+    const iWeighable = idx(["se_vende_por_peso", "is_weighable", "pesable"]);
     const iExpiresAt = idx(["vencimiento", "expires_at"]);
 
     if (iName < 0) throw new Error("Columna 'nombre' no encontrada. Es requerida.");
@@ -1505,6 +1945,8 @@ function ImportCsvModal({ onClose, onImported }: { onClose: () => void; onImport
       const name = iName >= 0 ? (cols[iName] ?? "").trim() : "";
       if (!name) return null;
       const rawPrice = iPrice >= 0 ? cols[iPrice] ?? "" : "";
+      const rawPrice2 = iPrice2 >= 0 ? cols[iPrice2] ?? "" : "";
+      const rawPrice3 = iPrice3 >= 0 ? cols[iPrice3] ?? "" : "";
       const rawCost  = iCost  >= 0 ? cols[iCost]  ?? "" : "";
       const rawStock = iStock >= 0 ? cols[iStock]  ?? "" : "";
       const rawMin   = iMinStock >= 0 ? cols[iMinStock] ?? "" : "";
@@ -1512,15 +1954,23 @@ function ImportCsvModal({ onClose, onImported }: { onClose: () => void; onImport
       const rawExp   = iExpiresAt >= 0 ? cols[iExpiresAt] ?? "" : "";
       const barcode  = iBarcode >= 0 ? (cols[iBarcode] ?? "").trim() || null : null;
       const category = iCategory >= 0 ? (cols[iCategory] ?? "").trim() || null : null;
+      const brand    = iBrand >= 0 ? (cols[iBrand] ?? "").trim() || null : null;
+      const supplierName = iSupplierName >= 0 ? (cols[iSupplierName] ?? "").trim() || null : null;
+      const rawWeighable = iWeighable >= 0 ? (cols[iWeighable] ?? "").trim().toLowerCase() : "";
       return {
         name,
         barcode,
         price_cents: Math.round((parseFloat(rawPrice.replace(",", ".")) || 0) * 100),
+        price2_cents: Math.round((parseFloat(rawPrice2.replace(",", ".")) || 0) * 100),
+        price3_cents: Math.round((parseFloat(rawPrice3.replace(",", ".")) || 0) * 100),
         cost_cents:  Math.round((parseFloat(rawCost.replace(",", "."))  || 0) * 100),
-        stock:       parseInt(rawStock) || 0,
-        min_stock:   parseInt(rawMin) || 0,
+        stock:       parseFloat(rawStock.replace(",", ".")) || 0,
+        min_stock:   parseFloat(rawMin.replace(",", ".")) || 0,
         category,
+        brand,
         supplier_id: rawSupId ? (parseInt(rawSupId) || null) : null,
+        supplier_name: supplierName,
+        is_weighable: ["1", "si", "sí", "true", "x"].includes(rawWeighable),
         expires_at:  rawExp ? rawExp : null,
       } satisfies CsvProductRow;
     }).filter((r): r is CsvProductRow => r !== null);
@@ -1559,9 +2009,20 @@ function ImportCsvModal({ onClose, onImported }: { onClose: () => void; onImport
   function handleParse() {
     setParseError(null);
     setParsedRows(null);
+    setDuplicateBarcodes([]);
     try {
       const rows = parseCsvText(csvText);
       if (rows.length === 0) { setParseError("No se encontraron filas válidas. Verificá que el archivo tenga datos y la columna 'nombre'."); return; }
+      // Dos filas con el mismo código de barras se resuelven en silencio (la última
+      // pisa a la anterior) -- avisamos antes de importar en vez de dejarlo pasar.
+      const seen = new Map<string, number>();
+      const dupes = new Set<string>();
+      rows.forEach((r) => {
+        if (!r.barcode) return;
+        seen.set(r.barcode, (seen.get(r.barcode) ?? 0) + 1);
+        if (seen.get(r.barcode)! > 1) dupes.add(r.barcode);
+      });
+      setDuplicateBarcodes([...dupes]);
       setParsedRows(rows);
     } catch (err: unknown) {
       setParseError(err instanceof Error ? err.message : "Error al parsear el CSV.");
@@ -1595,7 +2056,8 @@ function ImportCsvModal({ onClose, onImported }: { onClose: () => void; onImport
           <div className="bg-stone-50 border border-stone-200 rounded-md p-3 text-xs text-stone-600 space-y-1.5">
             <p className="font-semibold text-stone-700">Columnas reconocidas (la primera fila debe ser el encabezado):</p>
             <p className="font-mono bg-white border border-stone-200 rounded px-2 py-1.5 leading-relaxed">
-              nombre (requerido), precio, costo, stock, codigo_barras, categoria, stock_minimo, proveedor_id, vencimiento
+              nombre (requerido), precio, precio_mayorista, precio_especial, costo, stock, codigo_barras, categoria, marca,
+              stock_minimo, proveedor_id (o proveedor por nombre), se_vende_por_peso, vencimiento
             </p>
             <p>Separadores soportados: coma (,) o punto y coma (;). También podés subir un archivo Excel (.xlsx/.xls).</p>
           </div>
@@ -1628,6 +2090,12 @@ function ImportCsvModal({ onClose, onImported }: { onClose: () => void; onImport
             </div>
           )}
 
+          {duplicateBarcodes.length > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded p-3 text-xs text-amber-800">
+              {duplicateBarcodes.length} código{duplicateBarcodes.length !== 1 ? "s" : ""} de barras repetido{duplicateBarcodes.length !== 1 ? "s" : ""} dentro del archivo ({duplicateBarcodes.slice(0, 5).join(", ")}{duplicateBarcodes.length > 5 ? "…" : ""}) — solo va a quedar cargada la última fila de cada uno.
+            </div>
+          )}
+
           {/* Previsualización */}
           {parsedRows && (
             <div>
@@ -1638,7 +2106,7 @@ function ImportCsvModal({ onClose, onImported }: { onClose: () => void; onImport
                 <table className="w-full text-xs">
                   <thead className="bg-stone-50 text-stone-500 uppercase">
                     <tr>
-                      {["Nombre", "Precio", "Costo", "Stock", "Categoría", "Código"].map((h) => (
+                      {["Nombre", "Precio", "Costo", "Stock", "Categoría", "Marca", "Código"].map((h) => (
                         <th key={h} className="px-2 py-1.5 text-left font-medium whitespace-nowrap">{h}</th>
                       ))}
                     </tr>
@@ -1651,6 +2119,7 @@ function ImportCsvModal({ onClose, onImported }: { onClose: () => void; onImport
                         <td className="px-2 py-1.5 tabular">{centsToARS(r.cost_cents)}</td>
                         <td className="px-2 py-1.5 tabular">{r.stock}</td>
                         <td className="px-2 py-1.5">{r.category || "—"}</td>
+                        <td className="px-2 py-1.5">{r.brand || "—"}</td>
                         <td className="px-2 py-1.5 font-mono">{r.barcode || "—"}</td>
                       </tr>
                     ))}
@@ -1709,10 +2178,117 @@ function ImportCsvModal({ onClose, onImported }: { onClose: () => void; onImport
   );
 }
 
+// Edición masiva de categoría/marca/proveedor para los productos tildados en "Todos" —
+// solo aplica los campos que la usuaria realmente completó, no pisa los demás.
+function BulkEditSelectedModal({ ids, onClose, onSaved }: { ids: number[]; onClose: () => void; onSaved: () => void }) {
+  const [categories, setCategories] = useState<string[]>([]);
+  const [brands, setBrands] = useState<string[]>([]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [category, setCategory] = useState("");
+  const [brand, setBrand] = useState("");
+  const [supplierId, setSupplierId] = useState("");
+  const [saving, setSaving] = useState(false);
+  useEscapeToClose(onClose);
+
+  useEffect(() => {
+    api.listCategories().then((cats) => setCategories(cats.map((c) => c.name).filter(Boolean))).catch(console.error);
+    api.listBrands().then((b) => setBrands(b.map((x) => x.name).filter(Boolean))).catch(console.error);
+    api.listSuppliers().then(setSuppliers).catch(console.error);
+  }, []);
+
+  const nothingToApply = !category && !brand && !supplierId;
+
+  function snapToExisting(value: string, existing: string[]): string {
+    const match = existing.find((e) => e.toLowerCase() === value.trim().toLowerCase());
+    return match ?? value.trim();
+  }
+
+  async function submit() {
+    setSaving(true);
+    try {
+      const calls: Promise<number>[] = [];
+      if (category) calls.push(api.bulkSetCategory(ids, snapToExisting(category, categories)));
+      if (brand) calls.push(api.bulkSetBrand(ids, snapToExisting(brand, brands)));
+      if (supplierId) calls.push(api.bulkSetSupplier(ids, Number(supplierId)));
+      await Promise.all(calls);
+      showToast({ message: `${ids.length} producto${ids.length !== 1 ? "s" : ""} actualizados` });
+      onSaved();
+    } catch (e) {
+      console.error(e);
+      showToast({ message: "No se pudo aplicar la edición masiva", tone: "danger" });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
+      <div className="relative bg-white rounded-lg shadow-xl w-[420px] p-6" onClick={(e) => e.stopPropagation()}>
+        <ModalCloseButton onClick={onClose} />
+        <h2 className="text-lg font-semibold mb-1">Editar seleccionados</h2>
+        <p className="text-sm text-stone-500 mb-4">
+          {ids.length} producto{ids.length !== 1 ? "s" : ""} — completá solo los campos que querés cambiar.
+        </p>
+
+        <label className="block mb-3">
+          <span className="text-xs font-medium text-stone-600 block mb-1">Categoría</span>
+          <input
+            className="input"
+            list="bulk-edit-category-options"
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+            placeholder="Dejar vacío = no cambiar"
+          />
+          <datalist id="bulk-edit-category-options">
+            {categories.map((c) => <option key={c} value={c} />)}
+          </datalist>
+        </label>
+
+        <label className="block mb-3">
+          <span className="text-xs font-medium text-stone-600 block mb-1">Marca</span>
+          <input
+            className="input"
+            list="bulk-edit-brand-options"
+            value={brand}
+            onChange={(e) => setBrand(e.target.value)}
+            placeholder="Dejar vacío = no cambiar"
+          />
+          <datalist id="bulk-edit-brand-options">
+            {brands.map((b) => <option key={b} value={b} />)}
+          </datalist>
+        </label>
+
+        <label className="block mb-5">
+          <span className="text-xs font-medium text-stone-600 block mb-1">Proveedor</span>
+          <select className="input" value={supplierId} onChange={(e) => setSupplierId(e.target.value)}>
+            <option value="">No cambiar</option>
+            {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+        </label>
+
+        <div className="flex gap-2">
+          <button onClick={onClose} className="btn btn-secondary flex-1">Cancelar</button>
+          <button onClick={submit} disabled={saving || nothingToApply} className="btn btn-primary flex-1 disabled:opacity-40">
+            {saving ? "Aplicando…" : "Aplicar"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function BulkPriceModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
   // Filter state
   const [filterType, setFilterType] = useState<BulkPriceInput["filter_type"]>("all");
   const [filterValue, setFilterValue] = useState("");
+  const [categories, setCategories] = useState<string[]>([]);
+  const [brands, setBrands] = useState<string[]>([]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  useEffect(() => {
+    api.listCategories().then((cats) => setCategories(cats.map((c) => c.name).filter(Boolean))).catch(console.error);
+    api.listBrands().then((b) => setBrands(b.map((x) => x.name).filter(Boolean))).catch(console.error);
+    api.listSuppliers().then(setSuppliers).catch(console.error);
+  }, []);
   // Price % increase
   const [pricePct, setPricePct] = useState("");
   // Cost update
@@ -1789,35 +2365,53 @@ function BulkPriceModal({ onClose, onSaved }: { onClose: () => void; onSaved: ()
               >
                 <option value="all">Todos los productos</option>
                 <option value="category">Por categoría</option>
-                <option value="supplier">Por proveedor (ID)</option>
+                <option value="brand">Por marca</option>
+                <option value="supplier">Por proveedor</option>
               </select>
             </div>
 
             {filterType === "category" && (
               <div>
-                <label className="text-xs font-medium text-stone-600 block mb-1">Nombre de la categoría</label>
-                <input
+                <label className="text-xs font-medium text-stone-600 block mb-1">Categoría</label>
+                <select
                   autoFocus
                   className="input w-full"
-                  placeholder="Ej: Bebidas"
                   value={filterValue}
                   onChange={(e) => { setFilterValue(e.target.value); resetPreview(); }}
-                />
+                >
+                  <option value="">Elegir categoría…</option>
+                  {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+            )}
+
+            {filterType === "brand" && (
+              <div>
+                <label className="text-xs font-medium text-stone-600 block mb-1">Marca</label>
+                <select
+                  autoFocus
+                  className="input w-full"
+                  value={filterValue}
+                  onChange={(e) => { setFilterValue(e.target.value); resetPreview(); }}
+                >
+                  <option value="">Elegir marca…</option>
+                  {brands.map((b) => <option key={b} value={b}>{b}</option>)}
+                </select>
               </div>
             )}
 
             {filterType === "supplier" && (
               <div>
-                <label className="text-xs font-medium text-stone-600 block mb-1">ID del proveedor</label>
-                <input
+                <label className="text-xs font-medium text-stone-600 block mb-1">Proveedor</label>
+                <select
                   autoFocus
-                  type="number"
-                  min={1}
-                  className="input w-full tabular"
-                  placeholder="Ej: 3"
+                  className="input w-full"
                   value={filterValue}
                   onChange={(e) => { setFilterValue(e.target.value); resetPreview(); }}
-                />
+                >
+                  <option value="">Elegir proveedor…</option>
+                  {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
               </div>
             )}
           </div>

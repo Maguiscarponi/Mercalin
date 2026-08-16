@@ -3,6 +3,7 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import Layout from "./components/Layout";
 import Login from "./routes/Login";
 import Activation from "./routes/Activation";
+import TrialExpired from "./routes/TrialExpired";
 import { api } from "./lib/api";
 import Dashboard from "./routes/Dashboard";
 import Caja from "./routes/Caja";
@@ -26,7 +27,7 @@ import Facturacion from "./routes/Facturacion";
 import { useAuthStore } from "./stores/auth";
 import { usePosModeStore } from "./stores/posMode";
 import { ROUTE_MIN_ROLE, defaultRouteFor, hasAccess } from "./lib/navigation";
-import type { UserRole } from "./types";
+import type { LicenseStatus, UserRole } from "./types";
 
 // Cubre el acceso directo por URL a pantallas que el nav ya oculta en modo
 // cliente (ver `serverOnly` en navigation.ts) — ocultar el link del menú no
@@ -53,16 +54,25 @@ function RequireRole({ path, children }: { path: string; children: React.ReactNo
 
 export default function App() {
   const user = useAuthStore((s) => s.user);
-  const [licensed, setLicensed] = useState<boolean | null>(null);
+  const [licenseStatus, setLicenseStatus] = useState<LicenseStatus | null>(null);
 
   useEffect(() => {
-    api.getLicenseStatus().then((s) => setLicensed(s.activated)).catch(() => setLicensed(false));
+    const NOT_ACTIVATED: LicenseStatus = { activated: false, email: null, kind: null, expiresAt: null, expired: false };
+    const fetchStatus = () =>
+      api.getLicenseStatus().then(setLicenseStatus).catch(() => setLicenseStatus(NOT_ACTIVATED));
+    fetchStatus();
+    // Revisa cada 60s por si la prueba vence con la app ya abierta (un turno
+    // largo de caja) -- sin esto, solo se detectaría el vencimiento al
+    // reabrir la app. Es una sola llamada local, sin red.
+    const id = setInterval(fetchStatus, 60_000);
+    return () => clearInterval(id);
   }, []);
 
   // null = todavía no se chequeó (evita el flash de la pantalla de activación
   // en cada arranque, mientras se resuelve la promesa).
-  if (licensed === null) return <div className="h-screen bg-stone-100" />;
-  if (!licensed) return <Activation onActivated={() => setLicensed(true)} />;
+  if (licenseStatus === null) return <div className="h-screen bg-stone-100" />;
+  if (!licenseStatus.activated) return <Activation onActivated={setLicenseStatus} />;
+  if (licenseStatus.expired) return <TrialExpired status={licenseStatus} onUnlocked={setLicenseStatus} />;
 
   if (!user) return <Login />;
 

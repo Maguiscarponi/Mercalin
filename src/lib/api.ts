@@ -1,5 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
 import { rpc } from "@/lib/rpc";
+import { useAuthStore } from "@/stores/auth";
+
+// api.ts es un módulo plano (no un componente), así que no puede usar el hook
+// useAuthStore() directamente -- .getState() es la forma de leer el store fuera de React.
+function currentUserId(): number | null {
+  return useAuthStore.getState().user?.id ?? null;
+}
 import type {
   DeviceConfig, PendingSyncOp, LicenseStatus,
   ArcaConfig, ArcaConfigInput, ElectronicInvoice, InvoiceInput,
@@ -19,6 +26,7 @@ import type {
   ImportResult, Insight, InventoryCountItem, IvaReportItem,
   NetworkInfo,
   NewProduct, Product, ProductLot, NewProductLot, ProductVelocity, PriceSyncAlert,
+  WeighedLabel, NewWeighedLabel,
   Promotion, NewPromotion,
   PurchaseOrder, PurchaseOrderItem, NewPurchaseOrder, PurchaseProjection,
   Quote, QuoteWithItems, NewQuote,
@@ -34,6 +42,13 @@ export const api = {
   findProductByBarcode: (barcode: string) =>
     rpc<Product | null>("find_product_by_barcode", { barcode }),
 
+  // Etiquetas de paquete pesado: código único por peso puntual, ver Etiquetas.tsx/Caja.tsx.
+  createWeighedLabel: (input: NewWeighedLabel) =>
+    rpc<WeighedLabel>("create_weighed_label", { input, userId: currentUserId() }),
+
+  findWeighedLabel: (barcode: string) =>
+    rpc<WeighedLabel | null>("find_weighed_label", { barcode }),
+
   getProduct: (id: number) =>
     rpc<Product>("get_product", { id }),
 
@@ -44,13 +59,28 @@ export const api = {
     rpc<Product[]>("list_products", { query, includeGhosts }),
 
   createProduct: (product: NewProduct) =>
-    rpc<Product>("create_product", { product }),
+    rpc<Product>("create_product", { product, userId: currentUserId() }),
 
   updateProduct: (product: Product) =>
-    rpc<Product>("update_product", { product }),
+    rpc<Product>("update_product", { product, userId: currentUserId() }),
 
   deleteProduct: (id: number) =>
-    rpc<void>("delete_product", { id }),
+    rpc<void>("delete_product", { id, userId: currentUserId() }),
+
+  listInactiveProducts: () =>
+    rpc<Product[]>("list_inactive_products"),
+
+  reactivateProduct: (id: number) =>
+    rpc<void>("reactivate_product", { id, userId: currentUserId() }),
+
+  bulkSetCategory: (ids: number[], category: string | null) =>
+    rpc<number>("bulk_set_category", { ids, category, userId: currentUserId() }),
+
+  bulkSetBrand: (ids: number[], brand: string | null) =>
+    rpc<number>("bulk_set_brand", { ids, brand, userId: currentUserId() }),
+
+  bulkSetSupplier: (ids: number[], supplierId: number | null) =>
+    rpc<number>("bulk_set_supplier", { ids, supplierId, userId: currentUserId() }),
 
   listExpiringProducts: (days = 30) =>
     rpc<ExpiringProduct[]>("list_expiring_products", { days }),
@@ -61,6 +91,9 @@ export const api = {
   listCategories: () =>
     rpc<CategoryStat[]>("list_categories"),
 
+  listBrands: () =>
+    rpc<CategoryStat[]>("list_brands"),
+
   createCategory: (name: string) =>
     rpc<void>("create_category", { name }),
 
@@ -69,6 +102,12 @@ export const api = {
 
   deleteCategory: (name: string) =>
     rpc<number>("delete_category", { name }),
+
+  renameBrand: (oldName: string, newName: string) =>
+    rpc<number>("rename_brand", { oldName, newName }),
+
+  deleteBrand: (name: string) =>
+    rpc<number>("delete_brand", { name }),
 
   // ─── Ventas ─────────────────────────────────────────────────────────
   createSale: (input: SaleInput) =>
@@ -110,7 +149,7 @@ export const api = {
 
   // ─── Stock ──────────────────────────────────────────────────────────
   adjustStock: (input: StockAdjustInput) =>
-    rpc<void>("adjust_stock", { input }),
+    rpc<void>("adjust_stock", { input, userId: currentUserId() }),
 
   listLowStock: () =>
     rpc<LowStockProduct[]>("list_low_stock"),
@@ -161,6 +200,12 @@ export const api = {
 
   deleteClient: (id: number) =>
     rpc<void>("delete_client", { id }),
+
+  listInactiveClients: () =>
+    rpc<Client[]>("list_inactive_clients"),
+
+  reactivateClient: (id: number) =>
+    rpc<void>("reactivate_client", { id }),
 
   clientAccountHistory: (clientId: number) =>
     rpc<ClientAccountEntry[]>("client_account_history", { clientId }),
@@ -213,17 +258,17 @@ export const api = {
   listUsers: () =>
     rpc<User[]>("list_users"),
 
-  createUser: (user: NewUser) =>
-    rpc<User>("create_user", { user }),
+  createUser: (user: NewUser, actorId: number | null) =>
+    rpc<User>("create_user", { user, actorId }),
 
-  updateUser: (user: User) =>
-    rpc<User>("update_user", { user }),
+  updateUser: (user: User, actorId: number | null) =>
+    rpc<User>("update_user", { user, actorId }),
 
-  changePassword: (userId: number, newPassword: string) =>
-    rpc<void>("change_password", { userId, newPassword }),
+  changePassword: (userId: number, newPassword: string, actorId: number | null) =>
+    rpc<void>("change_password", { userId, newPassword, actorId }),
 
-  deleteUser: (id: number) =>
-    rpc<void>("delete_user", { id }),
+  deleteUser: (id: number, actorId: number | null) =>
+    rpc<void>("delete_user", { id, actorId }),
 
   // ─── Reportes adicionales ────────────────────────────────────────────────────
   salesByUser: (fromDate: string, toDate: string) =>
@@ -279,6 +324,9 @@ export const api = {
   createQuote: (quote: NewQuote) =>
     rpc<Quote>("create_quote", { quote }),
 
+  updateQuote: (id: number, quote: NewQuote) =>
+    rpc<Quote>("update_quote", { id, quote }),
+
   updateQuoteStatus: (id: number, status: string) =>
     rpc<Quote>("update_quote_status", { id, status }),
 
@@ -331,7 +379,7 @@ export const api = {
     rpc<MinStockSuggestion[]>("get_min_stock_suggestions"),
 
   applyMinStockSuggestions: (suggestions: MinStockSuggestion[]) =>
-    rpc<number>("apply_min_stock_suggestions", { suggestions }),
+    rpc<number>("apply_min_stock_suggestions", { suggestions, userId: currentUserId() }),
 
   getPriceImpactProjections: () =>
     rpc<PriceImpactItem[]>("get_price_impact_projections"),
@@ -347,10 +395,10 @@ export const api = {
     rpc<BulkPricePreviewItem[]>("preview_bulk_update_prices", { input }),
 
   applyBulkUpdatePrices: (input: BulkPriceInput) =>
-    rpc<number>("apply_bulk_update_prices", { input }),
+    rpc<number>("apply_bulk_update_prices", { input, userId: currentUserId() }),
 
   importProductsCsv: (rows: CsvProductRow[]) =>
-    rpc<ImportResult>("import_products_csv", { rows }),
+    rpc<ImportResult>("import_products_csv", { rows, userId: currentUserId() }),
 
   // ─── Fase 3: Proveedores ──────────────────────────────────────────────────────
   getSupplierLeadTimes: () =>
@@ -371,7 +419,7 @@ export const api = {
     rpc<InventoryCountItem[]>("list_inventory_count"),
 
   applyInventoryCount: (adjustments: CountAdjustment[]) =>
-    rpc<number>("apply_inventory_count", { adjustments }),
+    rpc<number>("apply_inventory_count", { adjustments, userId: currentUserId() }),
 
   // ─── Lotes (FEFO) ────────────────────────────────────────────────────────────
   listProductLots: (productId: number) =>
@@ -381,10 +429,10 @@ export const api = {
     rpc<ExpiringLot[]>("list_expiring_lots", { days }),
 
   addProductLot: (input: NewProductLot) =>
-    rpc<ProductLot>("add_product_lot", { input }),
+    rpc<ProductLot>("add_product_lot", { input, userId: currentUserId() }),
 
   retireLot: (lotId: number) =>
-    rpc<void>("retire_lot", { lotId }),
+    rpc<void>("retire_lot", { lotId, userId: currentUserId() }),
 
   updateLotExpiry: (lotId: number, expiresAt: string | null) =>
     rpc<void>("update_lot_expiry", { lotId, expiresAt }),
@@ -392,6 +440,9 @@ export const api = {
   // ─── Combos y packs ──────────────────────────────────────────────────────────
   listCombos: () =>
     rpc<ComboWithItems[]>("list_combos"),
+
+  listCombosForProduct: (productId: number) =>
+    rpc<Combo[]>("list_combos_for_product", { productId }),
 
   listActiveCombos: () =>
     rpc<ComboWithItems[]>("list_active_combos"),

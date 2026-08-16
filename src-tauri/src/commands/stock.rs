@@ -5,11 +5,11 @@ use rusqlite::params;
 use tauri::State;
 
 #[tauri::command]
-pub fn adjust_stock(input: StockAdjustInput, state: State<AppState>) -> CmdResult<()> {
+pub fn adjust_stock(input: StockAdjustInput, user_id: Option<i64>, state: State<AppState>) -> CmdResult<()> {
     let mut conn = state.db.lock();
     let tx = conn.transaction().map_err(err)?;
 
-    let qty_before: i64 = tx
+    let qty_before: f64 = tx
         .query_row(
             "SELECT stock FROM products WHERE id = ?1 AND active = 1",
             params![input.product_id],
@@ -38,7 +38,7 @@ pub fn adjust_stock(input: StockAdjustInput, state: State<AppState>) -> CmdResul
     )
     .map_err(err)?;
 
-    if input.new_stock == 0 {
+    if input.new_stock == 0.0 {
         // Zerear todos los lotes del producto para mantener consistencia
         tx.execute(
             "UPDATE product_lots SET qty = 0 WHERE product_id = ?1",
@@ -50,7 +50,7 @@ pub fn adjust_stock(input: StockAdjustInput, state: State<AppState>) -> CmdResul
     tx.commit().map_err(err)?;
 
     let detail = format!("Stock: {} → {}", qty_before, input.new_stock);
-    log_action(&conn, None, "ajuste_stock", "producto", Some(input.product_id), Some(&detail));
+    log_action(&conn, user_id, "ajuste_stock", "producto", Some(input.product_id), Some(&detail));
 
     Ok(())
 }
@@ -58,6 +58,9 @@ pub fn adjust_stock(input: StockAdjustInput, state: State<AppState>) -> CmdResul
 #[tauri::command]
 pub fn list_low_stock(state: State<AppState>) -> CmdResult<Vec<LowStockProduct>> {
     let conn = state.db.lock();
+    if !crate::db::stock_tracking_enabled(&conn) {
+        return Ok(Vec::new());
+    }
     let mut stmt = conn
         .prepare(
             "SELECT id, barcode, name, stock, min_stock, category
@@ -148,6 +151,7 @@ pub fn top_products(
              FROM sale_items si
              JOIN sales s ON si.sale_id = s.id
              WHERE datetime(s.created_at, 'localtime') >= ?1 AND datetime(s.created_at, 'localtime') <= ?2
+                   AND (s.notes IS NULL OR s.notes NOT LIKE '%[ANULADA]%')
              GROUP BY si.product_id, si.name
              ORDER BY total_cents DESC
              LIMIT ?3",
@@ -195,6 +199,7 @@ pub fn top_products_by_qty(
              JOIN sales s ON si.sale_id = s.id
              WHERE datetime(s.created_at, 'localtime') >= ?1 AND datetime(s.created_at, 'localtime') <= ?2
                    AND si.product_id IS NOT NULL
+                   AND (s.notes IS NULL OR s.notes NOT LIKE '%[ANULADA]%')
              GROUP BY si.product_id, si.name
              ORDER BY total_qty DESC
              LIMIT ?3",
@@ -236,6 +241,7 @@ pub fn sales_by_category(
              JOIN sales s ON si.sale_id = s.id
              LEFT JOIN products p ON si.product_id = p.id
              WHERE datetime(s.created_at, 'localtime') >= ?1 AND datetime(s.created_at, 'localtime') <= ?2
+                   AND (s.notes IS NULL OR s.notes NOT LIKE '%[ANULADA]%')
              GROUP BY cat
              ORDER BY total_cents DESC",
         )
@@ -257,9 +263,15 @@ pub fn sales_by_category(
 #[tauri::command]
 pub fn reorder_by_supplier(state: State<AppState>) -> CmdResult<Vec<ReorderItem>> {
     let conn = state.db.lock();
+    if !crate::db::stock_tracking_enabled(&conn) {
+        return Ok(Vec::new());
+    }
+    // need_qty apunta a reponer hasta 2x el mínimo (no solo mínimo+1) — mismo criterio
+    // ya usado en pedidos automáticos y proyección de compras (ver suppliers.rs), para
+    // no dejar al negocio otra vez al borde del mínimo apenas se recibe el pedido.
     let mut stmt = conn.prepare(
         "SELECT p.id, p.barcode, p.name, p.stock, p.min_stock,
-                (p.min_stock - p.stock + 1) as need_qty,
+                (p.min_stock * 2 - p.stock) as need_qty,
                 p.category, p.cost_cents,
                 s.id as supplier_id, s.name as supplier_name
          FROM products p
@@ -274,7 +286,7 @@ pub fn reorder_by_supplier(state: State<AppState>) -> CmdResult<Vec<ReorderItem>
             name: row.get("name")?,
             stock: row.get("stock")?,
             min_stock: row.get("min_stock")?,
-            need_qty: row.get::<_, i64>("need_qty").unwrap_or(1).max(1),
+            need_qty: row.get::<_, f64>("need_qty").unwrap_or(1.0).max(1.0),
             category: row.get("category")?,
             cost_cents: row.get("cost_cents")?,
             supplier_id: row.get("supplier_id")?,
@@ -289,7 +301,13 @@ pub fn reorder_by_supplier(state: State<AppState>) -> CmdResult<Vec<ReorderItem>
 #[tauri::command]
 pub fn get_dead_stock(days: i64, state: State<AppState>) -> CmdResult<Vec<DeadStockItem>> {
     let conn = state.db.lock();
+    if !crate::db::stock_tracking_enabled(&conn) {
+        return Ok(Vec::new());
+    }
     let days_str = format!("-{} days", days);
+    // Sin LIMIT: un catálogo real puede tener más de 50 productos sin ventas en 30 días,
+    // y truncar acá subestimaba en silencio tanto el contador de la pestaña como el
+    // capital inmovilizado mostrado (mismo bug de fondo ya corregido en Reportes).
     let mut stmt = conn.prepare(
         "SELECT p.id, p.name, p.category, p.stock, p.cost_cents,
                 p.stock * p.cost_cents as capital_cents,
@@ -310,8 +328,7 @@ pub fn get_dead_stock(days: i64, state: State<AppState>) -> CmdResult<Vec<DeadSt
                WHERE date(s.created_at,'localtime') >= date('now','localtime', ?1)
                  AND (s.notes IS NULL OR s.notes NOT LIKE '%[ANULADA]%')
                  AND si.product_id IS NOT NULL)
-         ORDER BY capital_cents DESC
-         LIMIT 50",
+         ORDER BY capital_cents DESC",
     ).map_err(err)?;
 
     let rows: Vec<DeadStockItem> = stmt.query_map(params![days_str], |row| {
@@ -353,6 +370,7 @@ pub fn list_inventory_count(state: State<AppState>) -> CmdResult<Vec<InventoryCo
 #[tauri::command]
 pub fn apply_inventory_count(
     adjustments: Vec<CountAdjustment>,
+    user_id: Option<i64>,
     state: State<AppState>,
 ) -> CmdResult<i64> {
     let mut conn = state.db.lock();
@@ -360,9 +378,9 @@ pub fn apply_inventory_count(
     let mut count = 0i64;
 
     for adj in &adjustments {
-        let qty_before: i64 = tx
+        let qty_before: f64 = tx
             .query_row("SELECT stock FROM products WHERE id=?1", params![adj.product_id], |r| r.get(0))
-            .unwrap_or(0);
+            .unwrap_or(0.0);
 
         if qty_before == adj.counted_qty { continue; }
 
@@ -379,7 +397,7 @@ pub fn apply_inventory_count(
         ).map_err(err)?;
 
         // Sincronizar lotes: si el nuevo stock es 0, zerear lotes
-        if adj.counted_qty == 0 {
+        if adj.counted_qty == 0.0 {
             tx.execute(
                 "UPDATE product_lots SET qty=0 WHERE product_id=?1",
                 params![adj.product_id],
@@ -390,7 +408,7 @@ pub fn apply_inventory_count(
     }
 
     tx.commit().map_err(err)?;
-    log_action(&conn, None, "conteo_inventario", "stock", None,
+    log_action(&conn, user_id, "conteo_inventario", "stock", None,
         Some(&format!("{count} productos ajustados")));
     Ok(count)
 }

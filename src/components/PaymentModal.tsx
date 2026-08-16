@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useCart } from "@/stores/cart";
+import { useAuthStore } from "@/stores/auth";
 import { api } from "@/lib/api";
 import { centsToARS, arsStringToCents } from "@/lib/format";
 import { playError, playSuccess } from "@/lib/sound";
@@ -30,10 +31,11 @@ interface Props {
   sessionId: number | null;
   isRi: boolean;
   onClose: () => void;
-  onConfirmed: () => void;
+  onConfirmed: (sale: SaleWithItems) => void;
 }
 
 export default function PaymentModal({ totalCents, sessionId, isRi, onClose, onConfirmed }: Props) {
+  const userId = useAuthStore((s) => s.user?.id ?? null);
   const [splitMode, setSplitMode] = useState(false);
   const [method, setMethod] = useState<PaymentMethod>("efectivo");
   const [paidInput, setPaidInput] = useState("");
@@ -91,7 +93,7 @@ export default function PaymentModal({ totalCents, sessionId, isRi, onClose, onC
       if (completedSale && !showTicket) {
         // Pantalla de éxito: Enter = imprimir, Escape = sin ticket
         if (e.key === "Enter") { e.preventDefault(); setShowTicket(true); }
-        if (e.key === "Escape") { e.preventDefault(); onConfirmed(); }
+        if (e.key === "Escape") { e.preventDefault(); onConfirmed(completedSale); }
         return;
       }
       if (e.key === "Escape" && !completedSale) { e.preventDefault(); onClose(); }
@@ -142,7 +144,7 @@ export default function PaymentModal({ totalCents, sessionId, isRi, onClose, onC
         paid_cents: finalPaid,
         discount_cents: cart.discount_cents,
         client_id: cart.client_id,
-        user_id: null,
+        user_id: userId,
         notes,
         payments: activeSplitsForSave && activeSplitsForSave.length > 1
           ? activeSplitsForSave.map((s) => ({ method: s.method, amount_cents: arsStringToCents(s.inputStr) }))
@@ -171,7 +173,7 @@ export default function PaymentModal({ totalCents, sessionId, isRi, onClose, onC
         businessAddress={businessAddress}
         ticketFooter={ticketFooter}
         isRi={isRi}
-        onClose={() => { setShowTicket(false); onConfirmed(); }}
+        onClose={() => { setShowTicket(false); onConfirmed(completedSale); }}
       />
     );
   }
@@ -203,7 +205,7 @@ export default function PaymentModal({ totalCents, sessionId, isRi, onClose, onC
             </div>
           )}
           <div className="flex gap-2 mt-5">
-            <button onClick={onConfirmed} className="btn btn-secondary flex-1">Sin ticket</button>
+            <button onClick={() => onConfirmed(sw)} className="btn btn-secondary flex-1">Sin ticket</button>
             <button onClick={() => setShowTicket(true)} className="btn btn-primary flex-1">Imprimir ticket</button>
           </div>
         </div>

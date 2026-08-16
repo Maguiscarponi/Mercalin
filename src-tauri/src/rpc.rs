@@ -42,23 +42,33 @@ pub fn dispatch(app: &AppHandle, command: &str, body: Value) -> RpcResult {
     rpc_dispatch!(app, command, body, {
         // Productos
         "find_product_by_barcode" => crate::commands::products::find_product_by_barcode[barcode: String],
+        "create_weighed_label" => crate::commands::weighed_labels::create_weighed_label[input: crate::models::NewWeighedLabel, user_id: Option<i64>],
+        "find_weighed_label" => crate::commands::weighed_labels::find_weighed_label[barcode: String],
         "list_products" => crate::commands::products::list_products[query: String, include_ghosts: bool],
-        "create_product" => crate::commands::products::create_product[product: crate::models::NewProduct],
-        "update_product" => crate::commands::products::update_product[product: crate::models::Product],
-        "delete_product" => crate::commands::products::delete_product[id: i64],
+        "create_product" => crate::commands::products::create_product[product: crate::models::NewProduct, user_id: Option<i64>],
+        "update_product" => crate::commands::products::update_product[product: crate::models::Product, user_id: Option<i64>],
+        "delete_product" => crate::commands::products::delete_product[id: i64, user_id: Option<i64>],
+        "list_inactive_products" => crate::commands::products::list_inactive_products[],
+        "reactivate_product" => crate::commands::products::reactivate_product[id: i64, user_id: Option<i64>],
+        "bulk_set_category" => crate::commands::products::bulk_set_category[ids: Vec<i64>, category: Option<String>, user_id: Option<i64>],
+        "bulk_set_brand" => crate::commands::products::bulk_set_brand[ids: Vec<i64>, brand: Option<String>, user_id: Option<i64>],
+        "bulk_set_supplier" => crate::commands::products::bulk_set_supplier[ids: Vec<i64>, supplier_id: Option<i64>, user_id: Option<i64>],
         "get_product" => crate::commands::products::get_product[id: i64],
         "list_expiring_products" => crate::commands::products::list_expiring_products[days: i64],
         "list_categories" => crate::commands::products::list_categories[],
+        "list_brands" => crate::commands::products::list_brands[],
         "create_category" => crate::commands::products::create_category[name: String],
         "list_product_velocities" => crate::commands::products::list_product_velocities[],
         "get_price_desync" => crate::commands::products::get_price_desync[],
         "rename_category" => crate::commands::products::rename_category[old_name: String, new_name: String],
         "delete_category" => crate::commands::products::delete_category[name: String],
+        "rename_brand" => crate::commands::products::rename_brand[old_name: String, new_name: String],
+        "delete_brand" => crate::commands::products::delete_brand[name: String],
         "preview_bulk_update_prices" => crate::commands::products::preview_bulk_update_prices[input: crate::models::BulkPriceInput],
-        "apply_bulk_update_prices" => crate::commands::products::apply_bulk_update_prices[input: crate::models::BulkPriceInput],
-        "import_products_csv" => crate::commands::products::import_products_csv[rows: Vec<crate::models::CsvProductRow>],
+        "apply_bulk_update_prices" => crate::commands::products::apply_bulk_update_prices[input: crate::models::BulkPriceInput, user_id: Option<i64>],
+        "import_products_csv" => crate::commands::products::import_products_csv[rows: Vec<crate::models::CsvProductRow>, user_id: Option<i64>],
         "get_min_stock_suggestions" => crate::commands::products::get_min_stock_suggestions[],
-        "apply_min_stock_suggestions" => crate::commands::products::apply_min_stock_suggestions[suggestions: Vec<crate::models::MinStockSuggestion>],
+        "apply_min_stock_suggestions" => crate::commands::products::apply_min_stock_suggestions[suggestions: Vec<crate::models::MinStockSuggestion>, user_id: Option<i64>],
         "get_price_impact_projections" => crate::commands::products::get_price_impact_projections[],
 
         // Ventas
@@ -82,7 +92,7 @@ pub fn dispatch(app: &AppHandle, command: &str, body: Value) -> RpcResult {
         "list_cash_movements" => crate::commands::caja::list_cash_movements[session_id: i64],
 
         // Stock
-        "adjust_stock" => crate::commands::stock::adjust_stock[input: crate::models::StockAdjustInput],
+        "adjust_stock" => crate::commands::stock::adjust_stock[input: crate::models::StockAdjustInput, user_id: Option<i64>],
         "list_low_stock" => crate::commands::stock::list_low_stock[],
         "list_stock_movements" => crate::commands::stock::list_stock_movements[product_id: i64, limit: i64],
         "top_products" => crate::commands::stock::top_products[date_from: String, date_to: String, limit: i64],
@@ -91,17 +101,18 @@ pub fn dispatch(app: &AppHandle, command: &str, body: Value) -> RpcResult {
         "reorder_by_supplier" => crate::commands::stock::reorder_by_supplier[],
         "get_dead_stock" => crate::commands::stock::get_dead_stock[days: i64],
         "list_inventory_count" => crate::commands::stock::list_inventory_count[],
-        "apply_inventory_count" => crate::commands::stock::apply_inventory_count[adjustments: Vec<crate::models::CountAdjustment>],
+        "apply_inventory_count" => crate::commands::stock::apply_inventory_count[adjustments: Vec<crate::models::CountAdjustment>, user_id: Option<i64>],
 
         // Lotes / vencimientos
         "list_product_lots" => crate::commands::lots::list_product_lots[product_id: i64],
         "list_expiring_lots" => crate::commands::lots::list_expiring_lots[days: i64],
-        "add_product_lot" => crate::commands::lots::add_product_lot[input: crate::models::NewProductLot],
-        "retire_lot" => crate::commands::lots::retire_lot[lot_id: i64],
+        "add_product_lot" => crate::commands::lots::add_product_lot[input: crate::models::NewProductLot, user_id: Option<i64>],
+        "retire_lot" => crate::commands::lots::retire_lot[lot_id: i64, user_id: Option<i64>],
         "update_lot_expiry" => crate::commands::lots::update_lot_expiry[lot_id: i64, expires_at: Option<String>],
 
         // Combos
         "list_combos" => crate::commands::combos::list_combos[],
+        "list_combos_for_product" => crate::commands::combos::list_combos_for_product[product_id: i64],
         "list_active_combos" => crate::commands::combos::list_active_combos[],
         "find_combo_by_barcode" => crate::commands::combos::find_combo_by_barcode[barcode: String],
         "create_combo" => crate::commands::combos::create_combo[input: crate::models::NewCombo],
@@ -120,6 +131,7 @@ pub fn dispatch(app: &AppHandle, command: &str, body: Value) -> RpcResult {
         "list_quotes" => crate::commands::quotes::list_quotes[],
         "get_quote_with_items" => crate::commands::quotes::get_quote_with_items[id: i64],
         "create_quote" => crate::commands::quotes::create_quote[quote: crate::models::NewQuote],
+        "update_quote" => crate::commands::quotes::update_quote[id: i64, quote: crate::models::NewQuote],
         "update_quote_status" => crate::commands::quotes::update_quote_status[id: i64, status: String],
         "delete_quote" => crate::commands::quotes::delete_quote[id: i64],
 
@@ -134,6 +146,8 @@ pub fn dispatch(app: &AppHandle, command: &str, body: Value) -> RpcResult {
         "create_client" => crate::commands::clients::create_client[client: crate::models::NewClient],
         "update_client" => crate::commands::clients::update_client[client: crate::models::Client],
         "delete_client" => crate::commands::clients::delete_client[id: i64],
+        "list_inactive_clients" => crate::commands::clients::list_inactive_clients[],
+        "reactivate_client" => crate::commands::clients::reactivate_client[id: i64],
         "client_account_history" => crate::commands::clients::client_account_history[client_id: i64],
         "register_client_payment" => crate::commands::clients::register_client_payment[input: crate::models::ClientPaymentInput],
         "get_clients_rfm" => crate::commands::clients::get_clients_rfm[],
@@ -156,10 +170,10 @@ pub fn dispatch(app: &AppHandle, command: &str, body: Value) -> RpcResult {
 
         // Usuarios
         "list_users" => crate::commands::users::list_users[],
-        "create_user" => crate::commands::users::create_user[user: crate::models::NewUser],
-        "update_user" => crate::commands::users::update_user[user: crate::models::User],
-        "change_password" => crate::commands::users::change_password[user_id: i64, new_password: String],
-        "delete_user" => crate::commands::users::delete_user[id: i64],
+        "create_user" => crate::commands::users::create_user[user: crate::models::NewUser, actor_id: Option<i64>],
+        "update_user" => crate::commands::users::update_user[user: crate::models::User, actor_id: Option<i64>],
+        "change_password" => crate::commands::users::change_password[user_id: i64, new_password: String, actor_id: Option<i64>],
+        "delete_user" => crate::commands::users::delete_user[id: i64, actor_id: Option<i64>],
         "login" => crate::commands::users::login[username: String, password: String],
 
         // Config

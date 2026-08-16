@@ -8,9 +8,10 @@ CREATE TABLE IF NOT EXISTS products (
     name            TEXT NOT NULL,
     price_cents     INTEGER NOT NULL DEFAULT 0,
     cost_cents      INTEGER NOT NULL DEFAULT 0,
-    stock           INTEGER NOT NULL DEFAULT 0,
-    min_stock       INTEGER NOT NULL DEFAULT 0,
+    stock           REAL NOT NULL DEFAULT 0,
+    min_stock       REAL NOT NULL DEFAULT 0,
     category        TEXT,
+    brand           TEXT,
     is_weighable    INTEGER NOT NULL DEFAULT 0,
     active          INTEGER NOT NULL DEFAULT 1,
     supplier_id     INTEGER,
@@ -46,13 +47,15 @@ CREATE TABLE IF NOT EXISTS sale_items (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
     sale_id             INTEGER NOT NULL,
     product_id          INTEGER,
+    combo_id            INTEGER,
     barcode             TEXT,
     name                TEXT NOT NULL,
     unit_price_cents    INTEGER NOT NULL,
     discount_pct        REAL NOT NULL DEFAULT 0,
     qty                 REAL NOT NULL,
     FOREIGN KEY (sale_id) REFERENCES sales(id) ON DELETE CASCADE,
-    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL
+    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL,
+    FOREIGN KEY (combo_id) REFERENCES combos(id) ON DELETE SET NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_sale_items_sale    ON sale_items(sale_id);
@@ -120,7 +123,7 @@ CREATE TABLE IF NOT EXISTS purchase_items (
     product_id          INTEGER,
     name                TEXT NOT NULL,
     unit_cost_cents     INTEGER NOT NULL,
-    qty                 INTEGER NOT NULL,
+    qty                 REAL NOT NULL,
     FOREIGN KEY (order_id) REFERENCES purchase_orders(id) ON DELETE CASCADE,
     FOREIGN KEY (product_id) REFERENCES products(id)
 );
@@ -162,9 +165,9 @@ CREATE TABLE IF NOT EXISTS stock_movements (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     product_id      INTEGER NOT NULL,
     movement_type   TEXT NOT NULL CHECK(movement_type IN ('ajuste', 'ingreso', 'venta', 'compra')),
-    qty_change      INTEGER NOT NULL,
-    qty_before      INTEGER NOT NULL,
-    qty_after       INTEGER NOT NULL,
+    qty_change      REAL NOT NULL,
+    qty_before      REAL NOT NULL,
+    qty_after       REAL NOT NULL,
     notes           TEXT,
     created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (product_id) REFERENCES products(id)
@@ -226,6 +229,11 @@ fn open_and_migrate_inner(path: &Path) -> Result<Connection> {
     );
     let _ = conn.execute_batch("ALTER TABLE products ADD COLUMN price2_cents INTEGER NOT NULL DEFAULT 0;");
     let _ = conn.execute_batch("ALTER TABLE products ADD COLUMN price3_cents INTEGER NOT NULL DEFAULT 0;");
+    let _ = conn.execute_batch("ALTER TABLE products ADD COLUMN brand TEXT;");
+    let _ = conn.execute_batch("CREATE INDEX IF NOT EXISTS idx_products_brand ON products(brand);");
+    // Para poder atribuir márgen/costo real a los combos vendidos en Reportes — antes un
+    // ítem de venta de combo no dejaba rastro de qué combo era, solo product_id=NULL.
+    let _ = conn.execute_batch("ALTER TABLE sale_items ADD COLUMN combo_id INTEGER REFERENCES combos(id);");
     // Productos "fantasma": precargados (ej. desde Open Food Facts) pero todavía sin precio.
     // No cuentan como parte del catálogo del negocio hasta que alguien les pone un precio —
     // por eso van con active=0 (no aparecen en listados/alertas) pero is_ghost=1 los distingue
@@ -286,7 +294,7 @@ fn open_and_migrate_inner(path: &Path) -> Result<Connection> {
         CREATE TABLE IF NOT EXISTS product_lots (
             id              INTEGER PRIMARY KEY AUTOINCREMENT,
             product_id      INTEGER NOT NULL,
-            qty             INTEGER NOT NULL DEFAULT 0,
+            qty             REAL NOT NULL DEFAULT 0,
             cost_cents      INTEGER NOT NULL DEFAULT 0,
             expires_at      TEXT,
             order_id        INTEGER,
@@ -403,6 +411,26 @@ fn open_and_migrate_inner(path: &Path) -> Result<Connection> {
         CREATE INDEX IF NOT EXISTS idx_einvoices_date   ON electronic_invoices(created_at);
     ");
 
+    // Etiquetas de paquete pesado: al imprimir la etiqueta de un producto pesable
+    // con un peso puntual cargado (ej. una bolsa de queso rallado de 560g), se
+    // genera un código de barras único para ESE paquete, con el peso y el precio
+    // ya congelados — así escanearlo en Caja carga el precio correcto sin volver
+    // a pedir el peso, y si el precio del producto cambia después, las etiquetas
+    // viejas ya impresas siguen cobrando lo que dice el papel, no el precio nuevo.
+    let _ = conn.execute_batch("
+        CREATE TABLE IF NOT EXISTS weighed_labels (
+            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+            barcode             TEXT NOT NULL UNIQUE,
+            product_id          INTEGER NOT NULL,
+            weight_kg           REAL NOT NULL,
+            unit_price_cents    INTEGER NOT NULL,
+            total_price_cents   INTEGER NOT NULL,
+            created_at          TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_weighed_labels_barcode ON weighed_labels(barcode);
+    ");
+
     Ok(conn)
 }
 
@@ -449,7 +477,9 @@ fn seed_default_config(conn: &Connection) -> Result<()> {
         ("fixed_costs_monthly_cents", "0"),
         ("min_margin_pct", "10"),
         ("daily_goal_cents", "0"),
+        ("weekly_goal_cents", "0"),
         ("monthly_goal_cents", "0"),
+        ("yearly_goal_cents", "0"),
         // Fase 4 — Backup automático
         ("auto_backup_enabled", "0"),
         ("auto_backup_freq_hours", "24"),
@@ -465,6 +495,11 @@ fn seed_default_config(conn: &Connection) -> Result<()> {
         // Fase 4 — Modo tablet
         ("tablet_mode_enabled", "0"),
         ("tablet_port", "7979"),
+        // Seguimiento de stock (apagable para negocios que no cuentan stock)
+        ("stock_tracking_enabled", "1"),
+        // Descuento máximo (%) que un cajero puede aplicar en Caja sin que un
+        // supervisor/admin lo autorice con su usuario y contraseña.
+        ("max_discount_pct_no_pin", "20"),
     ];
     for (key, value) in configs {
         conn.execute(
@@ -473,6 +508,19 @@ fn seed_default_config(conn: &Connection) -> Result<()> {
         )?;
     }
     Ok(())
+}
+
+// Usado por todos los puntos que muestran o hacen cumplir avisos de stock bajo
+// (list_low_stock, create_sale, dashboard, insights, proveedores, modo tablet)
+// para que apagar el flag desde Configuración los apague a todos a la vez.
+pub fn stock_tracking_enabled(conn: &Connection) -> bool {
+    conn.query_row(
+        "SELECT value FROM config WHERE key='stock_tracking_enabled'",
+        [],
+        |r| r.get::<_, String>(0),
+    )
+    .map(|v| v != "0")
+    .unwrap_or(true)
 }
 
 // helper: inserta venta + items en un solo paso (solo usado por seed_dev_data)

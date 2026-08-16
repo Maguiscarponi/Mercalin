@@ -5,34 +5,39 @@ import type { AuditEntry } from "@/types";
 import clsx from "clsx";
 
 const ACTION_LABELS: Record<string, string> = {
-  crear:        "Crear",
-  editar:       "Editar",
-  eliminar:     "Eliminar",
-  venta:        "Venta",
-  anular:       "Anular venta",
-  ajuste_stock: "Ajuste stock",
-  abrir_caja:   "Abrir caja",
-  cerrar_caja:  "Cerrar caja",
+  crear:            "Crear",
+  editar:           "Editar",
+  eliminar:         "Eliminar",
+  venta:            "Venta",
+  anular:           "Anular venta",
+  ajuste_stock:     "Ajuste stock",
+  abrir_caja:       "Abrir caja",
+  cerrar_caja:      "Cerrar caja",
+  desactivar:       "Desactivar",
+  cambiar_password: "Cambiar contraseña",
 };
 
 const ENTITY_LABELS: Record<string, string> = {
   producto: "Producto",
   venta:    "Venta",
   caja:     "Caja",
+  usuario:  "Usuario",
 };
 
 const ACTION_COLORS: Record<string, string> = {
-  crear:        "bg-emerald-50 text-emerald-700",
-  editar:       "bg-blue-50 text-blue-700",
-  eliminar:     "bg-red-50 text-red-700",
-  venta:        "bg-stone-100 text-stone-600",
-  anular:       "bg-red-50 text-red-700",
-  ajuste_stock: "bg-amber-50 text-amber-700",
-  abrir_caja:   "bg-emerald-50 text-emerald-700",
-  cerrar_caja:  "bg-stone-100 text-stone-600",
+  crear:            "bg-emerald-50 text-emerald-700",
+  editar:           "bg-blue-50 text-blue-700",
+  eliminar:         "bg-red-50 text-red-700",
+  venta:            "bg-stone-100 text-stone-600",
+  anular:           "bg-red-50 text-red-700",
+  ajuste_stock:     "bg-amber-50 text-amber-700",
+  abrir_caja:       "bg-emerald-50 text-emerald-700",
+  cerrar_caja:      "bg-stone-100 text-stone-600",
+  desactivar:       "bg-red-50 text-red-700",
+  cambiar_password: "bg-blue-50 text-blue-700",
 };
 
-type EntityFilter = "todos" | "producto" | "venta" | "caja";
+type EntityFilter = "todos" | "producto" | "venta" | "caja" | "usuario";
 
 export default function Auditoria() {
   const [entries, setEntries] = useState<AuditEntry[]>([]);
@@ -93,7 +98,7 @@ export default function Auditoria() {
 
       {/* Filtro por entidad */}
       <div className="flex gap-1 border-b border-stone-200">
-        {(["todos", "producto", "venta", "caja"] as EntityFilter[]).map((t) => (
+        {(["todos", "producto", "venta", "caja", "usuario"] as EntityFilter[]).map((t) => (
           <button
             key={t}
             onClick={() => setEntity(t)}
@@ -128,6 +133,7 @@ export default function Auditoria() {
             <thead className="bg-stone-50 text-stone-600 text-xs uppercase sticky top-0">
               <tr>
                 <th className="text-left px-4 py-2.5 font-medium">Fecha y hora</th>
+                <th className="text-left px-4 py-2.5 font-medium">Usuario</th>
                 <th className="text-left px-4 py-2.5 font-medium">Acción</th>
                 <th className="text-left px-4 py-2.5 font-medium">Registro</th>
                 <th className="text-left px-4 py-2.5 font-medium">Detalle</th>
@@ -138,6 +144,9 @@ export default function Auditoria() {
                 <tr key={entry.id} className="border-t border-stone-100 hover:bg-stone-50">
                   <td className="px-4 py-2.5 text-xs text-stone-500 whitespace-nowrap">
                     {formatDateTime(entry.created_at)}
+                  </td>
+                  <td className="px-4 py-2.5 text-xs text-stone-600">
+                    {entry.user_name || <span className="text-stone-300">—</span>}
                   </td>
                   <td className="px-4 py-2.5">
                     <span className={clsx(

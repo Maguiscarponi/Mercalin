@@ -4,19 +4,20 @@ import { centsToARS, arsStringToCents } from "@/lib/format";
 import { confirmAction, showToast } from "@/stores/dialogs";
 import { useEscapeToClose } from "@/lib/useEscapeToClose";
 import ModalCloseButton from "@/components/ui/ModalCloseButton";
+import { useCombosEnabledStore } from "@/stores/combosEnabled";
 import type { Combo, ComboWithItems, NewCombo, NewComboItem, Product } from "@/types";
 import clsx from "clsx";
 
 export default function Combos() {
+  const enabled = useCombosEnabledStore((s) => s.enabled);
+  const enabledHydrated = useCombosEnabledStore((s) => s.hydrated);
   const [combos, setCombos] = useState<ComboWithItems[]>([]);
   const [editing, setEditing] = useState<ComboWithItems | null | "new">(null);
-  const [enabled, setEnabled] = useState<boolean | null>(null);
 
   async function load() {
     try {
       const list = await api.listCombos();
       setCombos(list);
-      setEnabled(true);
     } catch (e) {
       console.error(e);
     }
@@ -55,14 +56,20 @@ export default function Combos() {
     }
   }
 
-  if (enabled === false) {
+  if (enabledHydrated && !enabled) {
     return (
       <div className="h-full flex flex-col items-center justify-center p-8 text-center">
         <div className="text-4xl mb-4">🎁</div>
         <h2 className="text-lg font-semibold mb-2">Combos y packs deshabilitados</h2>
-        <p className="text-stone-500 text-sm max-w-sm">
-          Activá esta función en <strong>Configuración → Funciones opcionales → Combos y packs</strong> para empezar a crear combinaciones de productos.
+        <p className="text-stone-500 text-sm max-w-sm mb-4">
+          Armá combinaciones de productos a un precio fijo y vendelas desde Caja.
         </p>
+        <button
+          onClick={() => useCombosEnabledStore.getState().setEnabled(true)}
+          className="btn btn-primary"
+        >
+          Activar combos
+        </button>
       </div>
     );
   }
@@ -77,7 +84,15 @@ export default function Combos() {
           <h1 className="text-xl font-semibold">Combos y packs</h1>
           <p className="text-xs text-stone-500 mt-0.5">Al vender un combo, el stock se descuenta de cada componente</p>
         </div>
-        <button onClick={() => setEditing("new")} className="btn btn-primary">+ Nuevo combo</button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => useCombosEnabledStore.getState().setEnabled(false)}
+            className="text-xs text-stone-400 hover:text-red-600"
+          >
+            Desactivar combos
+          </button>
+          <button onClick={() => setEditing("new")} className="btn btn-primary">+ Nuevo combo</button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto space-y-4">
@@ -259,9 +274,15 @@ function ComboForm({ cw, onSave, onCancel }: {
     setItems(next);
   }
 
+  // Prefijo 20-29: reservado internacionalmente para uso interno de cada comercio,
+  // nunca se asigna a productos reales — así no choca con ningún código escaneado.
+  function generateBarcode() {
+    const digits = Array.from({ length: 10 }, () => Math.floor(Math.random() * 10)).join("");
+    setBarcode(`20${digits}`);
+  }
+
   function submit() {
     if (!name.trim()) { showToast({ message: "El nombre es obligatorio", tone: "danger" }); return; }
-    if (items.length === 0) { showToast({ message: "Agregá al menos un componente", tone: "danger" }); return; }
     const input: NewCombo = {
       name: name.trim(),
       barcode: barcode.trim() || null,
@@ -286,7 +307,10 @@ function ComboForm({ cw, onSave, onCancel }: {
             </label>
             <label className="block">
               <span className="text-xs font-medium text-stone-600 block mb-1">Código de barras (opcional)</span>
-              <input className="input font-mono text-sm" value={barcode} onChange={(e) => setBarcode(e.target.value)} placeholder="7790070000000" />
+              <div className="flex gap-1.5">
+                <input className="input font-mono text-sm flex-1" value={barcode} onChange={(e) => setBarcode(e.target.value)} placeholder="7790070000000" />
+                <button type="button" onClick={generateBarcode} title="Generar código al azar" className="btn btn-secondary text-sm px-2.5 shrink-0">🎲</button>
+              </div>
             </label>
           </div>
 
@@ -299,7 +323,11 @@ function ComboForm({ cw, onSave, onCancel }: {
           </label>
 
           <div>
-            <span className="text-xs font-medium text-stone-600 block mb-1">Componentes *</span>
+            <span className="text-xs font-medium text-stone-600 block mb-1">Componentes (opcional)</span>
+            <p className="text-xs text-stone-400 mb-1.5">
+              Si el combo se arma con productos que ya tenés cargados, agregalos acá — al venderlo se descuenta el stock de cada uno.
+              Si no, dejalo vacío y se vende como un ítem de precio fijo, sin tocar stock.
+            </p>
             <ProductSearch onSelect={addProduct} />
             {items.length > 0 && (
               <div className="mt-2 space-y-1.5">

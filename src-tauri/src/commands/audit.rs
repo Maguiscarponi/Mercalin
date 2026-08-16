@@ -23,9 +23,10 @@ pub fn list_audit_log(limit: i64, state: State<AppState>) -> CmdResult<Vec<Audit
     let conn = state.db.lock();
     let mut stmt = conn
         .prepare(
-            "SELECT id, user_id, action, entity, entity_id, detail, created_at
-             FROM audit_log
-             ORDER BY created_at DESC
+            "SELECT a.id, a.user_id, u.full_name as user_name, a.action, a.entity, a.entity_id, a.detail, a.created_at
+             FROM audit_log a
+             LEFT JOIN users u ON u.id = a.user_id
+             ORDER BY a.created_at DESC
              LIMIT ?1",
         )
         .map_err(err)?;
@@ -35,6 +36,7 @@ pub fn list_audit_log(limit: i64, state: State<AppState>) -> CmdResult<Vec<Audit
             Ok(AuditEntry {
                 id: row.get("id")?,
                 user_id: row.get("user_id")?,
+                user_name: row.get("user_name")?,
                 action: row.get("action")?,
                 entity: row.get("entity")?,
                 entity_id: row.get("entity_id")?,

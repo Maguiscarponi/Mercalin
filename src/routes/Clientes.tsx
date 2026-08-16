@@ -6,6 +6,7 @@ import Field from "@/components/ui/Field";
 import { useEscapeToClose } from "@/lib/useEscapeToClose";
 import ModalCloseButton from "@/components/ui/ModalCloseButton";
 import { exportStyledExcel, CURRENCY_FMT } from "@/lib/excelExport";
+import { printHtml } from "@/lib/printHtml";
 import { Loader2 } from "lucide-react";
 import type { Client, ClientAccountEntry, ClientRfm, ClientSegment, NewClient } from "@/types";
 import clsx from "clsx";
@@ -29,6 +30,8 @@ function SegmentBadge({ segment }: { segment: ClientSegment }) {
 
 export default function Clientes() {
   const [clients, setClients] = useState<Client[]>([]);
+  const [inactiveClients, setInactiveClients] = useState<Client[]>([]);
+  const [showInactive, setShowInactive] = useState(false);
   const [rfmMap, setRfmMap] = useState<Map<number, ClientRfm>>(new Map());
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
@@ -54,7 +57,27 @@ export default function Clientes() {
     }
   }
 
-  useEffect(() => { load(); }, []); // eslint-disable-line
+  async function loadInactive() {
+    try {
+      setInactiveClients(await api.listInactiveClients());
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  async function handleReactivate(c: Client) {
+    try {
+      await api.reactivateClient(c.id);
+      loadInactive();
+      load();
+      showToast({ message: `${c.name} reactivado`, tone: "success" });
+    } catch (e) {
+      console.error(e);
+      showToast({ message: "No se pudo reactivar el cliente", tone: "danger" });
+    }
+  }
+
+  useEffect(() => { load(); loadInactive(); }, []); // eslint-disable-line
   useEffect(() => {
     const t = setTimeout(load, 250);
     return () => clearTimeout(t);
@@ -80,18 +103,20 @@ export default function Clientes() {
       load();
     } catch (e) {
       console.error(e);
-      showToast({ message: "No se pudo guardar el cliente", tone: "danger" });
+      const message = typeof e === "string" ? e : e instanceof Error ? e.message : "No se pudo guardar el cliente";
+      showToast({ message, tone: "danger" });
     }
   }
 
   async function handleDelete(client: Client) {
     const msg = client.balance_cents > 0
-      ? `${client.name} tiene una deuda de ${centsToARS(client.balance_cents)}. Si lo eliminás, se pierde el registro de esa cuenta corriente.`
-      : `¿Eliminar a ${client.name}?`;
-    if (!(await confirmAction(msg, { title: "Eliminar cliente", danger: true, confirmLabel: "Eliminar" }))) return;
+      ? `${client.name} tiene una deuda de ${centsToARS(client.balance_cents)}. La cuenta corriente queda guardada — podés reactivarlo cuando quieras desde "Inactivos".`
+      : `No va a aparecer en la lista ni se le van a poder asignar ventas nuevas hasta que lo reactives.`;
+    if (!(await confirmAction(msg, { title: `¿Desactivar a ${client.name}?`, danger: true, confirmLabel: "Desactivar" }))) return;
     await api.deleteClient(client.id);
     load();
-    showToast({ message: `${client.name} eliminado` });
+    loadInactive();
+    showToast({ message: `${client.name} desactivado` });
   }
 
   async function exportCsv(rows: Client[]) {
@@ -285,7 +310,7 @@ export default function Clientes() {
                     <div className="flex items-center gap-1.5">
                       <button onClick={() => setViewing(c)} className="btn-table-success">Ver cuenta</button>
                       <button onClick={() => setEditing(c)} className="btn-table-neutral">Editar</button>
-                      <button onClick={() => handleDelete(c)} className="btn-table-danger">Borrar</button>
+                      <button onClick={() => handleDelete(c)} className="btn-table-danger">Desactivar</button>
                     </div>
                   </td>
                 </tr>
@@ -294,6 +319,33 @@ export default function Clientes() {
           </tbody>
         </table>
       </div>
+
+      {inactiveClients.length > 0 && (
+        <div className="card shrink-0">
+          <button
+            onClick={() => setShowInactive((v) => !v)}
+            className="w-full px-4 py-2.5 flex items-center justify-between text-sm text-stone-500 hover:bg-stone-50"
+          >
+            <span>{inactiveClients.length} cliente{inactiveClients.length !== 1 ? "s" : ""} desactivado{inactiveClients.length !== 1 ? "s" : ""}</span>
+            <span>{showInactive ? "▲" : "▼"}</span>
+          </button>
+          {showInactive && (
+            <table className="w-full text-sm border-t border-stone-100">
+              <tbody>
+                {inactiveClients.map((c) => (
+                  <tr key={c.id} className="border-t border-stone-100">
+                    <td className="px-4 py-2 text-stone-400 line-through">{c.name}</td>
+                    <td className="px-4 py-2 text-stone-400 text-xs">{c.phone || "—"}</td>
+                    <td className="px-4 py-2 text-right">
+                      <button onClick={() => handleReactivate(c)} className="btn-table-success">Reactivar</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
 
       {editing && (
         <ClientForm
@@ -333,6 +385,44 @@ function ClientAccountModal({ client, onClose }: { client: Client; onClose: () =
   }
 
   useEffect(() => { load(); }, []); // eslint-disable-line
+
+  function printStatement() {
+    const rows = [...history].reverse(); // más viejo primero, para que la columna de saldo tenga sentido
+    let running = 0;
+    const rowsHtml = rows.map((e) => {
+      running += e.movement_type === "cargo" ? e.amount_cents : -e.amount_cents;
+      return `<tr>
+        <td style="padding:4px 8px;border-bottom:1px solid #eee">${formatDateTime(e.created_at)}</td>
+        <td style="padding:4px 8px;border-bottom:1px solid #eee">${e.movement_type === "cargo" ? "Cargo" : "Pago"}</td>
+        <td style="padding:4px 8px;border-bottom:1px solid #eee">${e.concept}</td>
+        <td style="padding:4px 8px;border-bottom:1px solid #eee;text-align:right">${e.movement_type === "cargo" ? "+" : "−"}${centsToARS(e.amount_cents)}</td>
+        <td style="padding:4px 8px;border-bottom:1px solid #eee;text-align:right;font-weight:bold">${centsToARS(running)}</td>
+      </tr>`;
+    }).join("");
+
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+<style>
+  body { font-family: Arial, Helvetica, sans-serif; padding: 24px; color: #222; }
+  h1 { font-size: 18px; margin: 0 0 2px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 12px; }
+  th { text-align: left; padding: 4px 8px; border-bottom: 2px solid #333; font-size: 11px; text-transform: uppercase; color: #555; }
+  @page { margin: 15mm; }
+</style></head><body>
+<h1>Estado de cuenta — ${currentClient.name}</h1>
+<p style="color:#666;font-size:12px;margin:0">
+  ${currentClient.phone ? `Tel: ${currentClient.phone} · ` : ""}${currentClient.dni ? `DNI: ${currentClient.dni} · ` : ""}Emitido: ${formatDateTime(new Date().toISOString())}
+</p>
+<p style="font-size:16px;font-weight:bold;margin-top:12px">
+  Saldo actual: <span style="color:${currentClient.balance_cents > 0 ? "#dc2626" : "#059669"}">${centsToARS(currentClient.balance_cents)}</span>
+  ${currentClient.credit_limit_cents > 0 ? `<span style="font-weight:normal;color:#888;font-size:12px"> (límite: ${centsToARS(currentClient.credit_limit_cents)})</span>` : ""}
+</p>
+<table>
+  <thead><tr><th>Fecha</th><th>Tipo</th><th>Concepto</th><th style="text-align:right">Monto</th><th style="text-align:right">Saldo</th></tr></thead>
+  <tbody>${rowsHtml || `<tr><td colspan="5" style="padding:12px;text-align:center;color:#999">Sin movimientos</td></tr>`}</tbody>
+</table>
+</body></html>`;
+    printHtml(html);
+  }
 
   async function registerPayment() {
     const amount = arsStringToCents(payStr);
@@ -484,8 +574,9 @@ function ClientAccountModal({ client, onClose }: { client: Client; onClose: () =
           })()}
         </div>
 
-        <div className="p-4 border-t border-stone-200">
-          <button onClick={onClose} className="btn btn-secondary w-full">Cerrar</button>
+        <div className="p-4 border-t border-stone-200 flex gap-2">
+          <button onClick={printStatement} className="btn btn-secondary flex-1">🖨 Imprimir estado de cuenta</button>
+          <button onClick={onClose} className="btn btn-secondary flex-1">Cerrar</button>
         </div>
       </div>
     </div>

@@ -14,7 +14,7 @@ pub fn open_sync_queue(app_dir: &Path) -> rusqlite::Result<Connection> {
         r#"
         CREATE TABLE IF NOT EXISTS pending_sync_ops (
             id           INTEGER PRIMARY KEY AUTOINCREMENT,
-            created_at   TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+            created_at   TEXT NOT NULL DEFAULT (datetime('now')),
             command      TEXT NOT NULL,
             payload_json TEXT NOT NULL,
             status       TEXT NOT NULL DEFAULT 'pending'

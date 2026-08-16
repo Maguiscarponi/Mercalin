@@ -31,24 +31,43 @@ pub fn create_sale(input: SaleInput, state: State<AppState>) -> CmdResult<Sale> 
 
     // Validar stock disponible antes de tocar nada, para no descontar la mitad
     // de un carrito grande si un ítem del final no tiene stock suficiente.
-    for item in &input.items {
-        if let Some(cid) = item.combo_id {
-            let components: Vec<(i64, f64)> = {
-                let mut s = tx
-                    .prepare("SELECT product_id, qty FROM combo_items WHERE combo_id=?1")
-                    .map_err(err)?;
-                let rows: Vec<(i64, f64)> = s
-                    .query_map(params![cid], |r| {
-                        Ok((r.get::<_, i64>(0)?, r.get::<_, f64>(1)?))
-                    })
-                    .map_err(err)?
-                    .filter_map(|r| r.ok())
-                    .collect();
-                rows
-            };
-            for (pid, component_qty) in components {
-                let needed = (component_qty * item.qty) as i64;
-                let (stock, name): (i64, String) = tx
+    // Se salta por completo si el negocio apagó el seguimiento de stock (no
+    // tiene sentido bloquear una venta por un stock que nadie está cargando).
+    if crate::db::stock_tracking_enabled(&tx) {
+        for item in &input.items {
+            if let Some(cid) = item.combo_id {
+                let components: Vec<(i64, f64)> = {
+                    let mut s = tx
+                        .prepare("SELECT product_id, qty FROM combo_items WHERE combo_id=?1")
+                        .map_err(err)?;
+                    let rows: Vec<(i64, f64)> = s
+                        .query_map(params![cid], |r| {
+                            Ok((r.get::<_, i64>(0)?, r.get::<_, f64>(1)?))
+                        })
+                        .map_err(err)?
+                        .filter_map(|r| r.ok())
+                        .collect();
+                    rows
+                };
+                for (pid, component_qty) in components {
+                    let needed = component_qty * item.qty;
+                    let (stock, name): (f64, String) = tx
+                        .query_row(
+                            "SELECT stock, name FROM products WHERE id=?1",
+                            params![pid],
+                            |r| Ok((r.get(0)?, r.get(1)?)),
+                        )
+                        .map_err(err)?;
+                    if stock < needed {
+                        return Err(format!(
+                            "No hay stock suficiente de \"{}\" (quedan {}, se necesitan {})",
+                            name, stock, needed
+                        ));
+                    }
+                }
+            } else if let Some(pid) = item.product_id {
+                let needed = item.qty;
+                let (stock, name): (f64, String) = tx
                     .query_row(
                         "SELECT stock, name FROM products WHERE id=?1",
                         params![pid],
@@ -57,25 +76,10 @@ pub fn create_sale(input: SaleInput, state: State<AppState>) -> CmdResult<Sale> 
                     .map_err(err)?;
                 if stock < needed {
                     return Err(format!(
-                        "No hay stock suficiente de \"{}\" (quedan {}, se necesitan {})",
+                        "No hay stock suficiente de \"{}\" (quedan {}, se pidieron {})",
                         name, stock, needed
                     ));
                 }
-            }
-        } else if let Some(pid) = item.product_id {
-            let needed = item.qty as i64;
-            let (stock, name): (i64, String) = tx
-                .query_row(
-                    "SELECT stock, name FROM products WHERE id=?1",
-                    params![pid],
-                    |r| Ok((r.get(0)?, r.get(1)?)),
-                )
-                .map_err(err)?;
-            if stock < needed {
-                return Err(format!(
-                    "No hay stock suficiente de \"{}\" (quedan {}, se pidieron {})",
-                    name, stock, needed
-                ));
             }
         }
     }
@@ -99,6 +103,39 @@ pub fn create_sale(input: SaleInput, state: State<AppState>) -> CmdResult<Sale> 
         input.payment_method.clone()
     };
 
+    // Cuánto de esta venta va a cuenta corriente (fiado) — se calcula acá (antes de
+    // escribir nada) para poder validar el límite de crédito del cliente y, si se
+    // pasa, frenar la venta entera sin dejar nada a medio hacer.
+    let cc_amount: i64 = if let Some(ref payments) = input.payments {
+        payments.iter()
+            .filter(|p| p.method == "fiado" || p.method == "cuenta_corriente")
+            .map(|p| p.amount_cents)
+            .sum()
+    } else if actual_method == "fiado" || actual_method == "cuenta_corriente" {
+        total_cents
+    } else {
+        0
+    };
+
+    if cc_amount > 0 {
+        if let Some(cid) = input.client_id {
+            let (credit_limit, balance): (i64, i64) = tx.query_row(
+                "SELECT c.credit_limit_cents,
+                        COALESCE((SELECT SUM(CASE WHEN ca.movement_type='cargo' THEN ca.amount_cents ELSE -ca.amount_cents END)
+                                  FROM client_account ca WHERE ca.client_id = c.id), 0)
+                 FROM clients c WHERE c.id = ?1",
+                params![cid],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            ).map_err(err)?;
+            if credit_limit > 0 && balance + cc_amount > credit_limit {
+                return Err(format!(
+                    "Supera el límite de cuenta corriente del cliente (debe ${:.2}, límite ${:.2}, esta venta suma ${:.2})",
+                    balance as f64 / 100.0, credit_limit as f64 / 100.0, cc_amount as f64 / 100.0
+                ));
+            }
+        }
+    }
+
     // Vincular la venta a la sesión indicada, o a la más reciente si no se especifica
     let session_id: Option<i64> = if input.session_id.is_some() {
         input.session_id
@@ -111,8 +148,13 @@ pub fn create_sale(input: SaleInput, state: State<AppState>) -> CmdResult<Sale> 
     };
 
     tx.execute(
+        // created_at se guarda en UTC (datetime('now'), sin 'localtime') a propósito: todas las
+        // lecturas de fecha/hora en Reportes/Dashboard/Insights aplican 'localtime' para convertir
+        // a hora argentina -- si acá también se guardara ya convertido, esa conversión se aplicaría
+        // dos veces, corriendo cada hora 3hs (el huso de Argentina) y pudiendo atribuir ventas de
+        // la madrugada al día anterior.
         "INSERT INTO sales (total_cents, discount_cents, paid_cents, change_cents, payment_method, client_id, user_id, notes, session_id, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, datetime('now','localtime'))",
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, datetime('now'))",
         params![
             total_cents,
             input.discount_cents,
@@ -131,11 +173,12 @@ pub fn create_sale(input: SaleInput, state: State<AppState>) -> CmdResult<Sale> 
 
     for item in &input.items {
         tx.execute(
-            "INSERT INTO sale_items (sale_id, product_id, barcode, name, unit_price_cents, discount_pct, qty)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            "INSERT INTO sale_items (sale_id, product_id, combo_id, barcode, name, unit_price_cents, discount_pct, qty)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
                 sale_id,
                 item.product_id,
+                item.combo_id,
                 item.barcode,
                 item.name,
                 item.unit_price_cents,
@@ -158,27 +201,27 @@ pub fn create_sale(input: SaleInput, state: State<AppState>) -> CmdResult<Sale> 
                 x
             };
             for (pid, component_qty) in components {
-                let total_qty = (component_qty * item.qty) as i64;
-                let qty_before: i64 = tx.query_row(
+                let total_qty = component_qty * item.qty;
+                let qty_before: f64 = tx.query_row(
                     "SELECT stock FROM products WHERE id=?1", params![pid], |r| r.get(0)
-                ).unwrap_or(0);
+                ).unwrap_or(0.0);
                 tx.execute(
                     "UPDATE products SET stock=stock-?1, updated_at=CURRENT_TIMESTAMP WHERE id=?2",
                     params![total_qty, pid],
                 ).map_err(err)?;
-                let qty_after = (qty_before - total_qty).max(0);
+                let qty_after = (qty_before - total_qty).max(0.0);
                 tx.execute(
                     "INSERT INTO stock_movements (product_id, movement_type, qty_change, qty_before, qty_after, notes)
                      VALUES (?1, 'venta', ?2, ?3, ?4, ?5)",
                     params![pid, -total_qty, qty_before, qty_after, format!("Combo #{}", cid)],
                 ).map_err(err)?;
                 // FEFO sobre el componente
-                let lots: Vec<(i64, i64)> = {
+                let lots: Vec<(i64, f64)> = {
                     let mut s = tx.prepare(
                         "SELECT id, qty FROM product_lots WHERE product_id=?1 AND qty>0
                          ORDER BY CASE WHEN expires_at IS NULL THEN 1 ELSE 0 END, expires_at ASC",
                     ).map_err(err)?;
-                    let x: Vec<(i64, i64)> = s.query_map(params![pid], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)))
+                    let x: Vec<(i64, f64)> = s.query_map(params![pid], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, f64>(1)?)))
                         .map_err(err)?
                         .filter_map(|r| r.ok())
                         .collect();
@@ -186,49 +229,49 @@ pub fn create_sale(input: SaleInput, state: State<AppState>) -> CmdResult<Sale> 
                 };
                 let mut remaining = total_qty;
                 for (lot_id, lot_qty) in lots {
-                    if remaining <= 0 { break; }
+                    if remaining <= 0.0 { break; }
                     let deduct = remaining.min(lot_qty);
                     tx.execute("UPDATE product_lots SET qty=qty-?1 WHERE id=?2", params![deduct, lot_id]).map_err(err)?;
                     remaining -= deduct;
                 }
             }
         } else if let Some(pid) = item.product_id {
-            let qty_before: i64 = tx
+            let qty_before: f64 = tx
                 .query_row("SELECT stock FROM products WHERE id=?1", params![pid], |r| {
                     r.get(0)
                 })
-                .unwrap_or(0);
+                .unwrap_or(0.0);
 
             tx.execute(
                 "UPDATE products SET stock=stock-?1, updated_at=CURRENT_TIMESTAMP WHERE id=?2",
-                params![item.qty as i64, pid],
+                params![item.qty, pid],
             )
             .map_err(err)?;
 
-            let qty_after = (qty_before - item.qty as i64).max(0);
+            let qty_after = (qty_before - item.qty).max(0.0);
             tx.execute(
                 "INSERT INTO stock_movements (product_id, movement_type, qty_change, qty_before, qty_after)
                  VALUES (?1, 'venta', ?2, ?3, ?4)",
-                params![pid, -(item.qty as i64), qty_before, qty_after],
+                params![pid, -item.qty, qty_before, qty_after],
             )
             .map_err(err)?;
 
             // FEFO: descontar de lotes ordenados por vencimiento más próximo primero
-            let lots: Vec<(i64, i64)> = {
+            let lots: Vec<(i64, f64)> = {
                 let mut s = tx.prepare(
                     "SELECT id, qty FROM product_lots
                      WHERE product_id=?1 AND qty>0
                      ORDER BY CASE WHEN expires_at IS NULL THEN 1 ELSE 0 END, expires_at ASC",
                 ).map_err(err)?;
-                let x = s.query_map(params![pid], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)))
+                let x = s.query_map(params![pid], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, f64>(1)?)))
                     .map_err(err)?
                     .filter_map(|r| r.ok())
                     .collect();
                 x
             };
-            let mut remaining = item.qty as i64;
+            let mut remaining = item.qty;
             for (lot_id, lot_qty) in lots {
-                if remaining <= 0 { break; }
+                if remaining <= 0.0 { break; }
                 let deduct = remaining.min(lot_qty);
                 tx.execute(
                     "UPDATE product_lots SET qty = qty - ?1 WHERE id = ?2",
@@ -252,18 +295,9 @@ pub fn create_sale(input: SaleInput, state: State<AppState>) -> CmdResult<Sale> 
         }
     }
 
-    // Registrar en cuenta corriente del cliente si corresponde
+    // Registrar en cuenta corriente del cliente si corresponde (cc_amount ya
+    // calculado y validado contra el límite de crédito más arriba)
     if let Some(cid) = input.client_id {
-        let cc_amount: i64 = if let Some(ref payments) = input.payments {
-            payments.iter()
-                .filter(|p| p.method == "fiado" || p.method == "cuenta_corriente")
-                .map(|p| p.amount_cents)
-                .sum()
-        } else if actual_method == "fiado" || actual_method == "cuenta_corriente" {
-            total_cents
-        } else {
-            0
-        };
         if cc_amount > 0 {
             tx.execute(
                 "INSERT INTO client_account (client_id, amount_cents, movement_type, concept, sale_id)
@@ -422,13 +456,13 @@ pub fn cancel_sale(id: i64, state: State<AppState>) -> CmdResult<()> {
     let mut conn = state.db.lock();
     let tx = conn.transaction().map_err(err)?;
 
-    // Revertir stock
-    let items: Vec<(Option<i64>, f64)> = {
+    // Revertir stock (incluye componentes de combo, que antes no se revertían)
+    let items: Vec<(Option<i64>, Option<i64>, f64)> = {
         let mut stmt = tx
-            .prepare("SELECT product_id, qty FROM sale_items WHERE sale_id=?1")
+            .prepare("SELECT product_id, combo_id, qty FROM sale_items WHERE sale_id=?1")
             .map_err(err)?;
         let x = stmt.query_map(params![id], |r| {
-            Ok((r.get::<_, Option<i64>>(0)?, r.get::<_, f64>(1)?))
+            Ok((r.get::<_, Option<i64>>(0)?, r.get::<_, Option<i64>>(1)?, r.get::<_, f64>(2)?))
         })
         .map_err(err)?
         .filter_map(|r| r.ok())
@@ -436,24 +470,50 @@ pub fn cancel_sale(id: i64, state: State<AppState>) -> CmdResult<()> {
         x
     };
 
-    for (product_id, qty) in items {
-        if let Some(pid) = product_id {
-            let qty_before: i64 = tx
+    for (product_id, combo_id, qty) in items {
+        if let Some(cid) = combo_id {
+            let components: Vec<(i64, f64)> = {
+                let mut s = tx.prepare("SELECT product_id, qty FROM combo_items WHERE combo_id=?1").map_err(err)?;
+                let x: Vec<(i64, f64)> = s.query_map(params![cid], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, f64>(1)?)))
+                    .map_err(err)?
+                    .filter_map(|r| r.ok())
+                    .collect();
+                x
+            };
+            for (pid, component_qty) in components {
+                let total_qty = component_qty * qty;
+                let qty_before: f64 = tx
+                    .query_row("SELECT stock FROM products WHERE id=?1", params![pid], |r| r.get(0))
+                    .unwrap_or(0.0);
+                tx.execute(
+                    "UPDATE products SET stock=stock+?1, updated_at=CURRENT_TIMESTAMP WHERE id=?2",
+                    params![total_qty, pid],
+                )
+                .map_err(err)?;
+                tx.execute(
+                    "INSERT INTO stock_movements (product_id, movement_type, qty_change, qty_before, qty_after, notes)
+                     VALUES (?1, 'ajuste', ?2, ?3, ?4, 'Anulación de venta (combo)')",
+                    params![pid, total_qty, qty_before, qty_before + total_qty],
+                )
+                .map_err(err)?;
+            }
+        } else if let Some(pid) = product_id {
+            let qty_before: f64 = tx
                 .query_row("SELECT stock FROM products WHERE id=?1", params![pid], |r| {
                     r.get(0)
                 })
-                .unwrap_or(0);
+                .unwrap_or(0.0);
 
             tx.execute(
                 "UPDATE products SET stock=stock+?1, updated_at=CURRENT_TIMESTAMP WHERE id=?2",
-                params![qty as i64, pid],
+                params![qty, pid],
             )
             .map_err(err)?;
 
             tx.execute(
                 "INSERT INTO stock_movements (product_id, movement_type, qty_change, qty_before, qty_after, notes)
                  VALUES (?1, 'ajuste', ?2, ?3, ?4, 'Anulación de venta')",
-                params![pid, qty as i64, qty_before, qty_before + qty as i64],
+                params![pid, qty, qty_before, qty_before + qty],
             )
             .map_err(err)?;
         }

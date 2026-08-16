@@ -33,7 +33,7 @@ pub fn open_cash_session(
     let conn = state.db.lock();
 
     conn.execute(
-        "INSERT INTO cash_sessions (user_id, opening_cents, notes, opened_at) VALUES (?1, ?2, ?3, datetime('now','localtime'))",
+        "INSERT INTO cash_sessions (user_id, opening_cents, notes, opened_at) VALUES (?1, ?2, ?3, datetime('now'))",
         params![input.user_id, input.opening_cents, input.notes],
     )
     .map_err(err)?;

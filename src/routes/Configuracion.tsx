@@ -8,6 +8,8 @@ import { confirmAction, showToast } from "@/stores/dialogs";
 import { isSoundEnabled, playSuccess, setSoundEnabled } from "@/lib/sound";
 import { useCatalogImport } from "@/stores/catalogImport";
 import { useUpdaterStore } from "@/stores/updater";
+import { useStockTrackingStore } from "@/stores/stockTracking";
+import { useCombosEnabledStore } from "@/stores/combosEnabled";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { getVersion } from "@tauri-apps/api/app";
 import Field from "@/components/ui/Field";
@@ -45,6 +47,8 @@ export default function Configuracion() {
   const [soundOn, setSoundOn] = useState(isSoundEnabled());
   const [appVersion, setAppVersion] = useState("");
   const updater = useUpdaterStore();
+  const stockTrackingEnabled = useStockTrackingStore((s) => s.enabled);
+  const combosEnabled = useCombosEnabledStore((s) => s.enabled);
 
   useEffect(() => {
     getVersion().then(setAppVersion).catch(() => {});
@@ -248,6 +252,49 @@ export default function Configuracion() {
             </section>
 
             <section className="card p-5">
+              <h2 className="font-semibold text-sm mb-1">Funciones opcionales</h2>
+              <p className="text-xs text-stone-500 mb-4">
+                Se aplican al instante en todo el sistema, sin tener que guardar cambios.
+              </p>
+              <div className="space-y-4">
+                <div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium">Controlar stock en este sistema</span>
+                    <label className="relative inline-flex cursor-pointer">
+                      <input
+                        type="checkbox"
+                        className="sr-only peer"
+                        checked={stockTrackingEnabled}
+                        onChange={(e) => useStockTrackingStore.getState().setEnabled(e.target.checked)}
+                      />
+                      <div className="w-9 h-5 bg-stone-200 peer-checked:bg-sky-500 rounded-full transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:w-4 after:h-4 after:transition-all peer-checked:after:translate-x-4" />
+                    </label>
+                  </div>
+                  <p className="text-xs text-stone-400 mt-1">
+                    Si no cargás ni contás stock, apagalo — desaparecen los avisos de stock bajo y deja de bloquear una venta por falta de stock.
+                  </p>
+                </div>
+                <div className="border-t border-stone-100 pt-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium">Combos y packs</span>
+                    <label className="relative inline-flex cursor-pointer">
+                      <input
+                        type="checkbox"
+                        className="sr-only peer"
+                        checked={combosEnabled}
+                        onChange={(e) => useCombosEnabledStore.getState().setEnabled(e.target.checked)}
+                      />
+                      <div className="w-9 h-5 bg-stone-200 peer-checked:bg-sky-500 rounded-full transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:w-4 after:h-4 after:transition-all peer-checked:after:translate-x-4" />
+                    </label>
+                  </div>
+                  <p className="text-xs text-stone-400 mt-1">
+                    Armá combinaciones de productos a un precio fijo (ej: "Pack asado") y vendelas desde Caja escaneando su código o buscándolas.
+                  </p>
+                </div>
+              </div>
+            </section>
+
+            <section className="card p-5">
               <h2 className="font-semibold text-sm mb-4">Ticket de venta</h2>
               <Field label="Mensaje al pie del ticket">
                 <input className="input" value={config.ticket_footer || ""} onChange={(e) => setField("ticket_footer", e.target.value)} placeholder="¡Gracias por su compra!" />
@@ -295,11 +342,23 @@ export default function Configuracion() {
                     onChange={(e) => setField("daily_goal_cents", String(arsStringToCents(e.target.value)))}
                     placeholder="50000" />
                 </Field>
+                <Field label="Meta de venta semanal ($)">
+                  <input className="input tabular" inputMode="numeric"
+                    value={config.weekly_goal_cents ? (Number(config.weekly_goal_cents) / 100).toString() : ""}
+                    onChange={(e) => setField("weekly_goal_cents", String(arsStringToCents(e.target.value)))}
+                    placeholder="300000" />
+                </Field>
                 <Field label="Meta de venta mensual ($)">
                   <input className="input tabular" inputMode="numeric"
                     value={config.monthly_goal_cents ? (Number(config.monthly_goal_cents) / 100).toString() : ""}
                     onChange={(e) => setField("monthly_goal_cents", String(arsStringToCents(e.target.value)))}
                     placeholder="1200000" />
+                </Field>
+                <Field label="Meta de venta anual ($)">
+                  <input className="input tabular" inputMode="numeric"
+                    value={config.yearly_goal_cents ? (Number(config.yearly_goal_cents) / 100).toString() : ""}
+                    onChange={(e) => setField("yearly_goal_cents", String(arsStringToCents(e.target.value)))}
+                    placeholder="14000000" />
                 </Field>
               </div>
             </section>
@@ -332,6 +391,19 @@ export default function Configuracion() {
                   </div>
                 )}
               </div>
+            </section>
+
+            <section className="card p-5">
+              <h2 className="font-semibold text-sm mb-1">Control de descuentos en Caja</h2>
+              <p className="text-xs text-stone-500 mb-4">
+                Si un cajero carga un descuento por encima de este porcentaje, Caja le va a pedir el usuario
+                y contraseña de un supervisor o admin antes de poder cobrar.
+              </p>
+              <Field label="Descuento máximo sin autorización (%)">
+                <input className="input tabular w-32" type="number" min="0" max="100"
+                  value={config.max_discount_pct_no_pin || "20"}
+                  onChange={(e) => setField("max_discount_pct_no_pin", e.target.value)} />
+              </Field>
             </section>
 
             <section className="card p-5">

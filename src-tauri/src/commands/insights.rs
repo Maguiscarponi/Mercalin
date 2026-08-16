@@ -273,7 +273,8 @@ pub fn get_insights(state: State<AppState>) -> CmdResult<Vec<Insight>> {
     }
 
     // ── 8. Sugerencia de stock mínimo desactualizado ─────────────────────────
-    {
+    // (nada si el negocio apagó el seguimiento de stock)
+    if crate::db::stock_tracking_enabled(&conn) {
         let mut stmt = conn.prepare(
             "SELECT p.name, p.min_stock,
                     CAST(COALESCE(SUM(si.qty), 0) / 30.0 AS REAL) as vel
@@ -560,8 +561,8 @@ pub fn get_insights(state: State<AppState>) -> CmdResult<Vec<Insight>> {
 
     // ── A. Co-ventas: producto top de hoy + compañeros con stock bajo ─────────
     // Si hoy se vende mucho X, y Y siempre acompaña a X en las compras,
-    // y Y tiene stock bajo → alertar.
-    {
+    // y Y tiene stock bajo → alertar. (nada si se apagó el seguimiento de stock)
+    if crate::db::stock_tracking_enabled(&conn) {
         // Paso 1: producto más vendido hoy
         let top_today = conn.query_row(
             "SELECT si.product_id, si.name FROM sale_items si
@@ -673,6 +674,66 @@ pub fn get_insights(state: State<AppState>) -> CmdResult<Vec<Insight>> {
                         None, None
                     );
                 }
+            }
+        }
+    }
+
+    // ── F. Patrón de producto por día + hora ──────────────────────────────────
+    // A diferencia de "pre_pico" (que mira el pico de TODAS las ventas juntas),
+    // esto detecta, producto por producto, si su venta se concentra de forma
+    // desproporcionada en las próximas 1-3 horas de HOY, comparado contra ese
+    // mismo día de semana en los últimos 90 días. Es el caso concreto que pidió
+    // la dueña: "el sábado a las 20hs se vende más Coca-Cola 2.5L" — se avisa
+    // con horas de anticipación para poder reponer stock y, si es una bebida,
+    // tenerla fría.
+    {
+        let window_start = current_hour as i64 + 1;
+        let window_end = (current_hour as i64 + 3).min(23);
+        if window_start <= window_end {
+            let today_sqlite = (current_dow + 1) % 7;
+            let mut stmt = conn.prepare(
+                "SELECT si.name, p.category,
+                        SUM(CASE WHEN CAST(strftime('%H',s.created_at,'localtime') AS INTEGER) BETWEEN ?1 AND ?2
+                             THEN si.qty ELSE 0 END) as window_qty,
+                        SUM(si.qty) as day_total_qty
+                 FROM sale_items si
+                 JOIN sales s ON si.sale_id = s.id
+                 LEFT JOIN products p ON si.product_id = p.id
+                 WHERE CAST(strftime('%w',s.created_at,'localtime') AS INTEGER) = ?3
+                   AND date(s.created_at,'localtime') >= date('now','localtime','-90 days')
+                   AND date(s.created_at,'localtime') < date('now','localtime')
+                   AND (s.notes IS NULL OR s.notes NOT LIKE '%[ANULADA]%')
+                   AND si.product_id IS NOT NULL
+                 GROUP BY si.product_id, si.name, p.category
+                 HAVING day_total_qty >= 6 AND window_qty > 0
+                    AND window_qty >= day_total_qty * 0.45
+                 ORDER BY (window_qty * 1.0 / day_total_qty) DESC
+                 LIMIT 3",
+            ).map_err(err)?;
+            let rows: Vec<(String, Option<String>, f64, f64)> = stmt.query_map(
+                params![window_start, window_end, today_sqlite],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            ).map_err(err)?.filter_map(|r| r.ok()).collect();
+
+            if !rows.is_empty() {
+                let cold_keywords = ["bebida", "cerveza", "gaseosa", "agua", "jugo", "vino", "fernet"];
+                let names: Vec<String> = rows.iter().map(|(n, _, _, _)| n.clone()).collect();
+                let any_cold = rows.iter().any(|(_, cat, _, _)| {
+                    cat.as_deref().map(|c| {
+                        let lc = c.to_lowercase();
+                        cold_keywords.iter().any(|k| lc.contains(k))
+                    }).unwrap_or(false)
+                });
+                let dow_names = ["domingo","lunes","martes","miércoles","jueves","viernes","sábado"];
+                let day_name = dow_names.get(today_sqlite as usize).unwrap_or(&"hoy");
+                let extra = if any_cold { " Asegurate de que estén frías." } else { "" };
+                push!(out,
+                    "patron_producto_horario", "Ventas", "consejo",
+                    format!("Hoy {} entre las {:02}:00 y las {:02}:00 solés vender más: {}.{}",
+                        day_name, window_start, window_end, names.join(", "), extra),
+                    Some("Basado en tu historial de los últimos 90 días para este día de la semana — asegurate de tener stock".to_string()),
+                    Some("Ver Productos".to_string()), Some("/productos".to_string())
+                );
             }
         }
     }

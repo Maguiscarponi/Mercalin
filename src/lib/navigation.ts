@@ -21,6 +21,8 @@ export type NavLinkDef = {
   // Oculto/bloqueado para una caja en modo "cliente" — pensado para pantallas
   // donde administrar cuentas desde una caja cualquiera generaría confusión.
   serverOnly?: boolean;
+  // Oculto si la función opcional correspondiente está apagada en Configuración.
+  featureFlag?: "combos";
 };
 
 export const ROLE_LEVEL: Record<UserRole, number> = { cajero: 1, supervisor: 2, admin: 3 };
@@ -48,7 +50,7 @@ export const NAV_GROUPS: Array<{ label: string; links: NavLinkDef[] }> = [
       { to: "/vencimientos", label: "Vencimientos",     icon: Calendar,        key: "",                minRole: "supervisor" },
       { to: "/inventario",   label: "Inventario",       icon: ClipboardList,   key: "",                minRole: "supervisor" },
       { to: "/etiquetas",    label: "Etiquetas",        icon: Layers,          key: "",                minRole: "supervisor" },
-      { to: "/combos",       label: "Combos",           icon: Gift,            key: "",                minRole: "supervisor" },
+      { to: "/combos",       label: "Combos",           icon: Gift,            key: "",                minRole: "supervisor", featureFlag: "combos" },
     ],
   },
   {

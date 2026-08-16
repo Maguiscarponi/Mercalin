@@ -23,6 +23,7 @@ pub mod sales;
 pub mod stock;
 pub mod suppliers;
 pub mod users;
+pub mod weighed_labels;
 
 pub type CmdResult<T> = Result<T, String>;
 

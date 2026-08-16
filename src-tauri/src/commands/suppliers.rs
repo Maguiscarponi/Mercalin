@@ -113,7 +113,7 @@ pub fn create_purchase_order(
     let total_cents: i64 = order
         .items
         .iter()
-        .map(|i| i.unit_cost_cents * i.qty)
+        .map(|i| (i.unit_cost_cents as f64 * i.qty).round() as i64)
         .sum();
 
     tx.execute(
@@ -230,14 +230,14 @@ pub fn receive_purchase_order(
     .map_err(err)?;
 
     // Actualizar stock de los productos de la orden
-    let items: Vec<(Option<i64>, i64, i64)> = {
+    let items: Vec<(Option<i64>, f64, i64)> = {
         let mut stmt = tx
             .prepare(
                 "SELECT product_id, qty, unit_cost_cents FROM purchase_items WHERE order_id=?1",
             )
             .map_err(err)?;
         let x = stmt.query_map(params![order_id], |r| {
-            Ok((r.get::<_, Option<i64>>(0)?, r.get::<_, i64>(1)?, r.get::<_, i64>(2)?))
+            Ok((r.get::<_, Option<i64>>(0)?, r.get::<_, f64>(1)?, r.get::<_, i64>(2)?))
         })
         .map_err(err)?
         .filter_map(|r| r.ok())
@@ -247,11 +247,11 @@ pub fn receive_purchase_order(
 
     for (product_id, qty, cost) in items {
         if let Some(pid) = product_id {
-            let qty_before: i64 = tx
+            let qty_before: f64 = tx
                 .query_row("SELECT stock FROM products WHERE id=?1", params![pid], |r| {
                     r.get(0)
                 })
-                .unwrap_or(0);
+                .unwrap_or(0.0);
 
             tx.execute(
                 "UPDATE products SET stock=stock+?1, cost_cents=?2, updated_at=CURRENT_TIMESTAMP WHERE id=?3",
@@ -346,6 +346,9 @@ pub fn cancel_purchase_order(order_id: i64, state: State<AppState>) -> CmdResult
 #[tauri::command]
 pub fn generate_auto_orders(state: State<AppState>) -> CmdResult<Vec<PurchaseOrder>> {
     let conn = state.db.lock();
+    if !crate::db::stock_tracking_enabled(&conn) {
+        return Ok(vec![]);
+    }
 
     let mut stmt = conn.prepare(
         "SELECT id, name, supplier_id, stock, min_stock, cost_cents
@@ -354,13 +357,13 @@ pub fn generate_auto_orders(state: State<AppState>) -> CmdResult<Vec<PurchaseOrd
          ORDER BY supplier_id, name",
     ).map_err(err)?;
 
-    let products: Vec<(i64, String, i64, i64, i64, i64)> = stmt.query_map([], |row| {
+    let products: Vec<(i64, String, i64, f64, f64, i64)> = stmt.query_map([], |row| {
         Ok((
             row.get::<_, i64>(0)?,
             row.get::<_, String>(1)?,
             row.get::<_, i64>(2)?,
-            row.get::<_, i64>(3)?,
-            row.get::<_, i64>(4)?,
+            row.get::<_, f64>(3)?,
+            row.get::<_, f64>(4)?,
             row.get::<_, i64>(5)?,
         ))
     }).map_err(err)?
@@ -375,7 +378,7 @@ pub fn generate_auto_orders(state: State<AppState>) -> CmdResult<Vec<PurchaseOrd
         std::collections::HashMap::new();
 
     for (pid, name, supplier_id, stock, min_stock, cost_cents) in &products {
-        let reorder_qty = (min_stock * 2 - stock).max(1);
+        let reorder_qty = (min_stock * 2.0 - stock).max(1.0);
         by_supplier.entry(*supplier_id).or_default().push(NewPurchaseOrderItem {
             product_id: Some(*pid),
             name: name.clone(),
@@ -387,7 +390,7 @@ pub fn generate_auto_orders(state: State<AppState>) -> CmdResult<Vec<PurchaseOrd
     let mut created_orders: Vec<PurchaseOrder> = Vec::new();
 
     for (supplier_id, items) in by_supplier {
-        let total_cents: i64 = items.iter().map(|i| i.unit_cost_cents * i.qty).sum();
+        let total_cents: i64 = items.iter().map(|i| (i.unit_cost_cents as f64 * i.qty).round() as i64).sum();
 
         conn.execute(
             "INSERT INTO purchase_orders (supplier_id, total_cents, notes) VALUES (?1, ?2, ?3)",
@@ -463,6 +466,9 @@ pub fn get_supplier_lead_times(state: State<AppState>) -> CmdResult<Vec<Supplier
 #[tauri::command]
 pub fn get_purchase_projections(state: State<AppState>) -> CmdResult<Vec<PurchaseProjection>> {
     let conn = state.db.lock();
+    if !crate::db::stock_tracking_enabled(&conn) {
+        return Ok(vec![]);
+    }
     let mut stmt = conn.prepare(
         "SELECT p.id, p.name, p.category, p.stock, p.cost_cents, p.min_stock,
                 p.supplier_id, s.name as supplier_name,
@@ -482,11 +488,11 @@ pub fn get_purchase_projections(state: State<AppState>) -> CmdResult<Vec<Purchas
     ).map_err(err)?;
 
     let rows = stmt.query_map([], |row| {
-        let stock: i64 = row.get("stock")?;
+        let stock: f64 = row.get("stock")?;
         let velocity: f64 = row.get("daily_velocity").unwrap_or(0.0);
-        let days_rem = if velocity > 0.0 { stock as f64 / velocity } else { 999.0 };
-        let min_stock: i64 = row.get("min_stock")?;
-        let suggested = ((min_stock * 2) - stock).max(1);
+        let days_rem = if velocity > 0.0 { stock / velocity } else { 999.0 };
+        let min_stock: f64 = row.get("min_stock")?;
+        let suggested = ((min_stock * 2.0) - stock).max(1.0);
         Ok(PurchaseProjection {
             product_id: row.get("id")?,
             name: row.get("name")?,

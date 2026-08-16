@@ -97,10 +97,43 @@ pub fn create_quote(quote: NewQuote, state: State<AppState>) -> CmdResult<Quote>
 }
 
 #[tauri::command]
+pub fn update_quote(id: i64, quote: NewQuote, state: State<AppState>) -> CmdResult<Quote> {
+    let mut conn = state.db.lock();
+    let tx = conn.transaction().map_err(err)?;
+
+    let subtotal: i64 = quote.items.iter().map(|i| {
+        let line = (i.unit_price_cents as f64 * i.qty).round() as i64;
+        let disc = (line as f64 * i.discount_pct / 100.0).round() as i64;
+        line - disc
+    }).sum();
+    let total = (subtotal - quote.discount_cents).max(0);
+
+    tx.execute(
+        "UPDATE quotes SET client_id=?1, total_cents=?2, discount_cents=?3, notes=?4, valid_until=?5, updated_at=datetime('now') WHERE id=?6",
+        params![quote.client_id, total, quote.discount_cents, quote.notes, quote.valid_until, id],
+    ).map_err(err)?;
+
+    tx.execute("DELETE FROM quote_items WHERE quote_id=?1", params![id]).map_err(err)?;
+    for item in &quote.items {
+        tx.execute(
+            "INSERT INTO quote_items (quote_id,product_id,name,unit_price_cents,discount_pct,qty)
+             VALUES (?1,?2,?3,?4,?5,?6)",
+            params![id, item.product_id, item.name, item.unit_price_cents, item.discount_pct, item.qty],
+        ).map_err(err)?;
+    }
+    tx.commit().map_err(err)?;
+
+    let conn2 = state.db.lock();
+    let sql = "SELECT q.*, c.name as client_name FROM quotes q LEFT JOIN clients c ON q.client_id = c.id WHERE q.id = ?1";
+    let mut stmt = conn2.prepare(sql).map_err(err)?;
+    stmt.query_row(params![id], row_to_quote).map_err(err)
+}
+
+#[tauri::command]
 pub fn update_quote_status(id: i64, status: String, state: State<AppState>) -> CmdResult<Quote> {
     let conn = state.db.lock();
     conn.execute(
-        "UPDATE quotes SET status=?1, updated_at=datetime('now','localtime') WHERE id=?2",
+        "UPDATE quotes SET status=?1, updated_at=datetime('now') WHERE id=?2",
         params![status, id],
     ).map_err(err)?;
     let sql = "SELECT q.*, c.name as client_name FROM quotes q LEFT JOIN clients c ON q.client_id = c.id WHERE q.id = ?1";

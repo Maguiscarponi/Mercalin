@@ -153,43 +153,50 @@ pub fn get_dashboard(state: State<AppState>) -> CmdResult<DashboardData> {
 
     // ── Stock crítico: productos que se agotan en menos de 3 días ─────────────
     // Velocidad = unidades vendidas en últimos 30 días / 30
-    let mut critical_stmt = conn
-        .prepare(
-            "SELECT p.id, p.name, p.stock,
-                    COALESCE(SUM(si.qty), 0) / 30.0 as daily_velocity
-             FROM products p
-             LEFT JOIN sale_items si ON p.id = si.product_id
-             LEFT JOIN sales s ON si.sale_id = s.id
-                 AND date(s.created_at, 'localtime') >= date('now', 'localtime', '-30 days')
-                 AND (s.notes IS NULL OR s.notes NOT LIKE '%[ANULADA]%')
-             WHERE p.active = 1 AND p.stock > 0
-             GROUP BY p.id, p.name, p.stock
-             HAVING daily_velocity > 0.01
-                AND CAST(p.stock AS REAL) / daily_velocity < 3.0
-             ORDER BY CAST(p.stock AS REAL) / daily_velocity ASC
-             LIMIT 8",
-        )
-        .map_err(err)?;
+    // Se salta si el negocio apagó el seguimiento de stock — con stock sin
+    // cargar/desactualizado este cálculo no dice nada real.
+    let critical_stock: Vec<CriticalStockItem> = if !crate::db::stock_tracking_enabled(&conn) {
+        Vec::new()
+    } else {
+        let mut critical_stmt = conn
+            .prepare(
+                "SELECT p.id, p.name, p.stock,
+                        COALESCE(SUM(si.qty), 0) / 30.0 as daily_velocity
+                 FROM products p
+                 LEFT JOIN sale_items si ON p.id = si.product_id
+                 LEFT JOIN sales s ON si.sale_id = s.id
+                     AND date(s.created_at, 'localtime') >= date('now', 'localtime', '-30 days')
+                     AND (s.notes IS NULL OR s.notes NOT LIKE '%[ANULADA]%')
+                 WHERE p.active = 1 AND p.stock > 0
+                 GROUP BY p.id, p.name, p.stock
+                 HAVING daily_velocity > 0.01
+                    AND CAST(p.stock AS REAL) / daily_velocity < 3.0
+                 ORDER BY CAST(p.stock AS REAL) / daily_velocity ASC
+                 LIMIT 8",
+            )
+            .map_err(err)?;
 
-    let critical_stock: Vec<CriticalStockItem> = critical_stmt
-        .query_map([], |row| {
-            let stock: i64 = row.get("stock")?;
-            let velocity: f64 = row.get("daily_velocity")?;
-            Ok(CriticalStockItem {
-                product_id: row.get("id")?,
-                name: row.get("name")?,
-                stock,
-                daily_velocity: (velocity * 10.0).round() / 10.0,
-                days_remaining: if velocity > 0.0 {
-                    (stock as f64 / velocity * 10.0).round() / 10.0
-                } else {
-                    0.0
-                },
+        let items = critical_stmt
+            .query_map([], |row| {
+                let stock: f64 = row.get("stock")?;
+                let velocity: f64 = row.get("daily_velocity")?;
+                Ok(CriticalStockItem {
+                    product_id: row.get("id")?,
+                    name: row.get("name")?,
+                    stock,
+                    daily_velocity: (velocity * 10.0).round() / 10.0,
+                    days_remaining: if velocity > 0.0 {
+                        (stock / velocity * 10.0).round() / 10.0
+                    } else {
+                        0.0
+                    },
+                })
             })
-        })
-        .map_err(err)?
-        .filter_map(|r| r.ok())
-        .collect();
+            .map_err(err)?
+            .filter_map(|r| r.ok())
+            .collect();
+        items
+    };
 
     // ── Vencimientos próximos (≤ 7 días) ──────────────────────────────────────
     let mut exp_stmt = conn
@@ -282,6 +289,52 @@ pub fn get_dashboard(state: State<AppState>) -> CmdResult<DashboardData> {
         .and_then(|v| v.parse().ok())
         .unwrap_or(0);
 
+    let weekly_goal_cents: i64 = conn
+        .query_row(
+            "SELECT value FROM config WHERE key = 'weekly_goal_cents'",
+            [],
+            |r| r.get::<_, String>(0),
+        )
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
+
+    let yearly_goal_cents: i64 = conn
+        .query_row(
+            "SELECT value FROM config WHERE key = 'yearly_goal_cents'",
+            [],
+            |r| r.get::<_, String>(0),
+        )
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
+
+    // ── Ventas de la semana en curso (lunes a hoy) ────────────────────────────
+    // SQLite no tiene modifier 'start of week' -- "-6 days" seguido de
+    // "weekday 1" da el lunes de la semana actual sin importar qué día es hoy.
+    let week_so_far_cents: i64 = conn
+        .query_row(
+            "SELECT COALESCE(SUM(total_cents), 0)
+             FROM sales
+             WHERE date(created_at, 'localtime') >= date('now', 'localtime', '-6 days', 'weekday 1')
+               AND (notes IS NULL OR notes NOT LIKE '%[ANULADA]%')",
+            [],
+            |r| r.get(0),
+        )
+        .map_err(err)?;
+
+    // ── Ventas del año en curso ────────────────────────────────────────────────
+    let year_so_far_cents: i64 = conn
+        .query_row(
+            "SELECT COALESCE(SUM(total_cents), 0)
+             FROM sales
+             WHERE date(created_at, 'localtime') >= date('now', 'localtime', 'start of year')
+               AND (notes IS NULL OR notes NOT LIKE '%[ANULADA]%')",
+            [],
+            |r| r.get(0),
+        )
+        .map_err(err)?;
+
     // ── Ventas del mes en curso ───────────────────────────────────────────────
     let month_so_far_cents: i64 = conn
         .query_row(
@@ -330,5 +383,9 @@ pub fn get_dashboard(state: State<AppState>) -> CmdResult<DashboardData> {
         monthly_goal_cents,
         month_so_far_cents,
         month_projection_cents,
+        weekly_goal_cents,
+        week_so_far_cents,
+        yearly_goal_cents,
+        year_so_far_cents,
     })
 }

@@ -7,11 +7,16 @@
 
 use crate::commands::{err, CmdResult};
 use crate::AppState;
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine};
+use chrono::Utc;
+use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
+use sha2::Sha256;
 use std::io::Read;
 use std::path::Path;
 use tauri::State;
+
+type HmacSha256 = Hmac<Sha256>;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -115,14 +120,27 @@ pub fn disconnect_client(state: State<AppState>) -> CmdResult<()> {
 }
 
 // ─── Licencia de esta instalación ────────────────────────────────────────────
-// Esquema offline, sin backend ni internet: la clave es un hash del mail del
-// comprador firmado con un secreto que solo vive en el binario compilado. Vos
-// generás la clave con `node scripts/generate-license.mjs mail@cliente.com`
-// (usa exactamente el mismo algoritmo) y se la mandás por mail/WhatsApp.
+// Esquema offline, sin backend ni internet: la clave es un token autocontenido
+// y firmado — codifica tipo ("trial"/"full") y vencimiento, y se verifica
+// recalculando la firma con un secreto que solo vive en el binario compilado.
+// Vos generás la clave con `node scripts/generate-license.mjs mail@cliente.com`
+// (`--trial` para una de prueba de 7 días, `--minutes N` para una de prueba
+// corta de testeo) — usa exactamente el mismo algoritmo — y se la mandás por
+// mail/WhatsApp.
+//
+// Formato: base64url(payload) + "." + base64url(HMAC-SHA256(secreto, payload))
+// payload = "LICPAYLOAD1|{trial|full}|{mail normalizado}|{vencimiento epoch, 0 si no vence}"
+// Los 7 días de una clave de prueba se cuentan desde que se GENERA la clave
+// (no desde que se activa en la PC del cliente) — así el vencimiento queda
+// grabado en la clave misma, sin depender de un timestamp local en
+// device_config.json que se pueda resetear borrando el archivo y reactivando.
 //
 // Limitación conocida y aceptada para esta v1: no hay forma de detectar que la
-// misma clave se instaló en más de una PC (no hay servidor central). Eso queda
-// para cuando exista el backend de la venta automatizada (fase 2).
+// misma clave completa (paga) se activó en más de una PC (no hay servidor
+// central). Decisión consciente — dos negocios distintos no tienen motivo real
+// para compartir una licencia (sus catálogos/stock/ventas chocarían). Si hace
+// falta cerrar ese hueco, queda para cuando exista el backend de la venta
+// automatizada (fase 2).
 //
 // El secreto DEBE coincidir exactamente con LICENSE_SECRET en
 // scripts/generate-license.mjs. Cambiarlo invalida todas las claves ya entregadas.
@@ -133,13 +151,57 @@ pub fn disconnect_client(state: State<AppState>) -> CmdResult<()> {
 // usuario en Windows, y el secret LICENSE_SECRET en GitHub Actions para CI.
 const LICENSE_SECRET: &str = env!("LICENSE_SECRET", "Definí la variable de entorno LICENSE_SECRET antes de compilar");
 
-fn compute_license_key(email: &str) -> String {
-    let normalized = email.trim().to_lowercase();
-    let input = format!("{LICENSE_SECRET}:{normalized}");
-    let hash = Sha256::digest(input.as_bytes());
-    let hex_str = hex::encode(hash).to_uppercase();
-    let code = &hex_str[0..16];
-    format!("{}-{}-{}-{}", &code[0..4], &code[4..8], &code[8..12], &code[12..16])
+struct LicenseInfo {
+    kind: String,             // "trial" | "full"
+    email: String,
+    expires_at: Option<i64>,  // epoch segundos; None == full, no vence
+}
+
+fn build_payload(kind: &str, email: &str, expires_at: i64) -> String {
+    format!("LICPAYLOAD1|{kind}|{email}|{expires_at}")
+}
+
+fn hmac_sign(payload: &[u8]) -> Vec<u8> {
+    let mut mac = HmacSha256::new_from_slice(LICENSE_SECRET.as_bytes()).expect("HMAC acepta clave de cualquier largo");
+    mac.update(payload);
+    mac.finalize().into_bytes().to_vec()
+}
+
+fn hmac_verify(payload: &[u8], sig: &[u8]) -> Result<(), ()> {
+    let mut mac = HmacSha256::new_from_slice(LICENSE_SECRET.as_bytes()).expect("HMAC acepta clave de cualquier largo");
+    mac.update(payload);
+    mac.verify_slice(sig).map_err(|_| ())
+}
+
+#[allow(dead_code)]
+fn make_license_key(kind: &str, email: &str, expires_at: i64) -> String {
+    let payload = build_payload(kind, email, expires_at);
+    let sig = hmac_sign(payload.as_bytes());
+    format!("{}.{}", B64.encode(payload.as_bytes()), B64.encode(sig))
+}
+
+fn parse_and_verify_license_key(raw_key: &str) -> Result<LicenseInfo, String> {
+    // Quita espacios/saltos de línea que se cuelan al copiar/pegar una clave
+    // larga desde un mail (algunos clientes de correo la parten en dos líneas).
+    let cleaned: String = raw_key.chars().filter(|c| !c.is_whitespace()).collect();
+    let (payload_b64, sig_b64) = cleaned.split_once('.').ok_or("Formato de clave inválido.")?;
+    let payload_bytes = B64.decode(payload_b64).map_err(|_| "Formato de clave inválido.")?;
+    let sig_bytes = B64.decode(sig_b64).map_err(|_| "Formato de clave inválido.")?;
+    hmac_verify(&payload_bytes, &sig_bytes).map_err(|_| "La clave no es válida.".to_string())?;
+
+    let payload_str = String::from_utf8(payload_bytes).map_err(|_| "Formato de clave inválido.")?;
+    let parts: Vec<&str> = payload_str.split('|').collect();
+    if parts.len() != 4 || parts[0] != "LICPAYLOAD1" {
+        return Err("Formato de clave inválido.".to_string());
+    }
+    let kind = parts[1].to_string();
+    if kind != "trial" && kind != "full" {
+        return Err("Formato de clave inválido.".to_string());
+    }
+    let email = parts[2].to_string();
+    let expires_at: i64 = parts[3].parse().map_err(|_| "Formato de clave inválido.")?;
+
+    Ok(LicenseInfo { kind, email, expires_at: if expires_at > 0 { Some(expires_at) } else { None } })
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -147,38 +209,56 @@ fn compute_license_key(email: &str) -> String {
 pub struct LicenseStatus {
     pub activated: bool,
     pub email: Option<String>,
+    pub kind: Option<String>,      // "trial" | "full"
+    pub expires_at: Option<i64>,   // epoch segundos; None si es full o no está activada
+    pub expired: bool,
+}
+
+impl LicenseStatus {
+    fn none() -> Self {
+        LicenseStatus { activated: false, email: None, kind: None, expires_at: None, expired: false }
+    }
+
+    fn from_info(info: LicenseInfo) -> Self {
+        let now = Utc::now().timestamp();
+        let expired = matches!(info.expires_at, Some(exp) if now >= exp);
+        LicenseStatus { activated: true, email: Some(info.email), kind: Some(info.kind), expires_at: info.expires_at, expired }
+    }
 }
 
 #[tauri::command]
 pub fn get_license_status(state: State<AppState>) -> CmdResult<LicenseStatus> {
     let cfg = read_device_config(&app_dir_of(&state)?);
-    let activated = match (&cfg.license_email, &cfg.license_key) {
-        (Some(email), Some(key)) => compute_license_key(email) == *key,
-        _ => false,
+    let key = match &cfg.license_key {
+        Some(k) => k,
+        None => return Ok(LicenseStatus::none()),
     };
-    Ok(LicenseStatus {
-        activated,
-        email: if activated { cfg.license_email } else { None },
-    })
+    match parse_and_verify_license_key(key) {
+        Ok(info) => Ok(LicenseStatus::from_info(info)),
+        Err(_) => Ok(LicenseStatus::none()),
+    }
 }
 
+// Sirve tanto para activar por primera vez como para pegar una clave completa
+// nueva y desbloquear una prueba vencida (ver TrialExpired.tsx) — en ambos
+// casos solo pisa email/clave en device_config.json, nunca toca SQLite.
 #[tauri::command]
 pub fn activate_license(email: String, key: String, state: State<AppState>) -> CmdResult<LicenseStatus> {
     let normalized_email = email.trim().to_lowercase();
     if normalized_email.is_empty() {
         return Err("Ingresá tu mail.".to_string());
     }
-    let normalized_key = key.trim().to_uppercase();
-    let expected = compute_license_key(&normalized_email);
-    if expected != normalized_key {
+    let info = parse_and_verify_license_key(&key).map_err(|_| "La clave no es válida.".to_string())?;
+    if info.email != normalized_email {
         return Err("La clave no es válida para ese mail. Revisá que estén bien escritos.".to_string());
     }
 
+    let cleaned_key: String = key.chars().filter(|c| !c.is_whitespace()).collect();
     let app_dir = app_dir_of(&state)?;
     let mut cfg = read_device_config(&app_dir);
-    cfg.license_email = Some(normalized_email.clone());
-    cfg.license_key = Some(normalized_key);
+    cfg.license_email = Some(normalized_email);
+    cfg.license_key = Some(cleaned_key);
     write_device_config(&app_dir, &cfg)?;
 
-    Ok(LicenseStatus { activated: true, email: Some(normalized_email) })
+    Ok(LicenseStatus::from_info(info))
 }

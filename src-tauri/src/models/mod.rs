@@ -11,9 +11,10 @@ pub struct Product {
     pub price2_cents: i64,
     pub price3_cents: i64,
     pub cost_cents: i64,
-    pub stock: i64,
-    pub min_stock: i64,
+    pub stock: f64,
+    pub min_stock: f64,
     pub category: Option<String>,
+    pub brand: Option<String>,
     pub is_weighable: bool,
     pub active: bool,
     /// Precargado (ej. import de catálogo público) pero todavía sin precio: no cuenta como
@@ -34,13 +35,16 @@ pub struct NewProduct {
     pub price2_cents: i64,
     pub price3_cents: i64,
     pub cost_cents: i64,
-    pub stock: i64,
-    pub min_stock: i64,
+    pub stock: f64,
+    pub min_stock: f64,
     pub category: Option<String>,
+    pub brand: Option<String>,
     pub is_weighable: bool,
     pub active: bool,
     pub supplier_id: Option<i64>,
     pub expires_at: Option<String>,
+    #[serde(default)]
+    pub image_path: Option<String>,
 }
 
 // ─── Carrito y Ventas ─────────────────────────────────────────────────────────
@@ -177,9 +181,9 @@ pub struct StockMovement {
     pub product_id: i64,
     pub product_name: String,
     pub movement_type: String,
-    pub qty_change: i64,
-    pub qty_before: i64,
-    pub qty_after: i64,
+    pub qty_change: f64,
+    pub qty_before: f64,
+    pub qty_after: f64,
     pub notes: Option<String>,
     pub created_at: String,
 }
@@ -187,7 +191,7 @@ pub struct StockMovement {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StockAdjustInput {
     pub product_id: i64,
-    pub new_stock: i64,
+    pub new_stock: f64,
     pub notes: Option<String>,
 }
 
@@ -196,8 +200,8 @@ pub struct LowStockProduct {
     pub id: i64,
     pub barcode: Option<String>,
     pub name: String,
-    pub stock: i64,
-    pub min_stock: i64,
+    pub stock: f64,
+    pub min_stock: f64,
     pub category: Option<String>,
 }
 
@@ -206,7 +210,7 @@ pub struct ExpiringProduct {
     pub id: i64,
     pub barcode: Option<String>,
     pub name: String,
-    pub stock: i64,
+    pub stock: f64,
     pub expires_at: String,
     pub days_left: i64,
 }
@@ -218,7 +222,7 @@ pub struct ProductLot {
     pub id: i64,
     pub product_id: i64,
     pub product_name: String,
-    pub qty: i64,
+    pub qty: f64,
     pub cost_cents: i64,
     pub expires_at: Option<String>,
     pub order_id: Option<i64>,
@@ -229,10 +233,31 @@ pub struct ProductLot {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NewProductLot {
     pub product_id: i64,
-    pub qty: i64,
+    pub qty: f64,
     pub cost_cents: i64,
     pub expires_at: Option<String>,
     pub notes: Option<String>,
+}
+
+// ─── Etiquetas de paquete pesado ────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WeighedLabel {
+    pub id: i64,
+    pub barcode: String,
+    pub product_id: i64,
+    pub product_name: String,
+    pub weight_kg: f64,
+    pub unit_price_cents: i64,
+    pub total_price_cents: i64,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NewWeighedLabel {
+    pub product_id: i64,
+    pub weight_kg: f64,
+    pub unit_price_cents: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -241,7 +266,7 @@ pub struct ExpiringLot {
     pub product_id: i64,
     pub product_name: String,
     pub barcode: Option<String>,
-    pub qty: i64,
+    pub qty: f64,
     pub expires_at: String,
     pub days_left: i64,
 }
@@ -342,7 +367,7 @@ pub struct PurchaseOrderItem {
     pub product_id: Option<i64>,
     pub name: String,
     pub unit_cost_cents: i64,
-    pub qty: i64,
+    pub qty: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -357,7 +382,7 @@ pub struct NewPurchaseOrderItem {
     pub product_id: Option<i64>,
     pub name: String,
     pub unit_cost_cents: i64,
-    pub qty: i64,
+    pub qty: f64,
 }
 
 // ─── Configuración ───────────────────────────────────────────────────────────
@@ -482,6 +507,7 @@ pub struct NewUser {
 pub struct AuditEntry {
     pub id: i64,
     pub user_id: Option<i64>,
+    pub user_name: Option<String>,
     pub action: String,
     pub entity: String,
     pub entity_id: Option<i64>,
@@ -655,7 +681,7 @@ pub struct DeadStockItem {
     pub product_id: i64,
     pub name: String,
     pub category: Option<String>,
-    pub stock: i64,
+    pub stock: f64,
     pub cost_cents: i64,
     pub capital_cents: i64,
     pub days_without_sales: i64,
@@ -695,13 +721,17 @@ pub struct DashboardData {
     pub monthly_goal_cents: i64,
     pub month_so_far_cents: i64,
     pub month_projection_cents: i64,
+    pub weekly_goal_cents: i64,
+    pub week_so_far_cents: i64,
+    pub yearly_goal_cents: i64,
+    pub year_so_far_cents: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CriticalStockItem {
     pub product_id: i64,
     pub name: String,
-    pub stock: i64,
+    pub stock: f64,
     pub daily_velocity: f64,
     pub days_remaining: f64,
 }
@@ -710,7 +740,7 @@ pub struct CriticalStockItem {
 pub struct ExpiringAlertItem {
     pub product_id: i64,
     pub name: String,
-    pub stock: i64,
+    pub stock: f64,
     pub expires_at: String,
     pub days_left: i64,
 }
@@ -744,9 +774,9 @@ pub struct ReorderItem {
     pub id: i64,
     pub barcode: Option<String>,
     pub name: String,
-    pub stock: i64,
-    pub min_stock: i64,
-    pub need_qty: i64,
+    pub stock: f64,
+    pub min_stock: f64,
+    pub need_qty: f64,
     pub category: Option<String>,
     pub cost_cents: i64,
     pub supplier_id: Option<i64>,
@@ -793,11 +823,22 @@ pub struct CsvProductRow {
     pub barcode: Option<String>,
     pub name: String,
     pub price_cents: i64,
+    #[serde(default)]
+    pub price2_cents: i64,
+    #[serde(default)]
+    pub price3_cents: i64,
     pub cost_cents: i64,
-    pub stock: i64,
-    pub min_stock: i64,
+    pub stock: f64,
+    pub min_stock: f64,
     pub category: Option<String>,
+    pub brand: Option<String>,
     pub supplier_id: Option<i64>,
+    // Alternativa a supplier_id para quien no conoce los IDs internos -- se resuelve
+    // por nombre (case-insensitive) contra suppliers existentes al importar.
+    #[serde(default)]
+    pub supplier_name: Option<String>,
+    #[serde(default)]
+    pub is_weighable: bool,
     pub expires_at: Option<String>,
 }
 
@@ -816,10 +857,10 @@ pub struct PurchaseProjection {
     pub product_id: i64,
     pub name: String,
     pub category: Option<String>,
-    pub stock: i64,
+    pub stock: f64,
     pub daily_velocity: f64,
     pub days_remaining: f64,
-    pub suggested_qty: i64,
+    pub suggested_qty: f64,
     pub cost_cents: i64,
     pub supplier_id: Option<i64>,
     pub supplier_name: Option<String>,
@@ -862,6 +903,9 @@ pub struct IvaReportItem {
     pub neto_cents: i64,
     pub iva_cents: i64,
     pub client_name: Option<String>,
+    /// true si neto/iva vienen de una factura electrónica autorizada por AFIP (dato real);
+    /// false si son estimados dividiendo el total por (1 + tasa de IVA configurada).
+    pub is_invoiced: bool,
 }
 
 // ─── Fase 3: Conteo de inventario ────────────────────────────────────────────
@@ -872,13 +916,13 @@ pub struct InventoryCountItem {
     pub name: String,
     pub barcode: Option<String>,
     pub category: Option<String>,
-    pub system_stock: i64,
+    pub system_stock: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CountAdjustment {
     pub product_id: i64,
-    pub counted_qty: i64,
+    pub counted_qty: f64,
 }
 
 // ─── Margen / Rentabilidad ────────────────────────────────────────────────────
@@ -911,8 +955,8 @@ pub struct MinStockSuggestion {
     pub product_id: i64,
     pub name: String,
     pub category: Option<String>,
-    pub current_min_stock: i64,
-    pub suggested_min_stock: i64,
+    pub current_min_stock: f64,
+    pub suggested_min_stock: f64,
     pub daily_velocity: f64,
     pub lead_time_days: f64,
     pub supplier_id: Option<i64>,

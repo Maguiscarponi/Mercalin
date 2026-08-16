@@ -4,6 +4,15 @@ use crate::AppState;
 use rusqlite::{params, Row};
 use tauri::State;
 
+fn friendly_dni_error<E: std::fmt::Display>(e: E) -> String {
+    let s = err(e);
+    if s.contains("UNIQUE constraint failed") && s.contains("dni") {
+        "Ya existe un cliente con ese DNI/CUIT.".to_string()
+    } else {
+        s
+    }
+}
+
 fn row_to_client(row: &Row) -> rusqlite::Result<Client> {
     Ok(Client {
         id: row.get("id")?,
@@ -63,6 +72,33 @@ pub fn list_clients(query: String, state: State<AppState>) -> CmdResult<Vec<Clie
     Ok(out)
 }
 
+// Para la sección "Inactivos" de Clientes — separado de list_clients a propósito,
+// para que el buscador rápido de Caja (que sí usa list_clients) nunca sugiera
+// asignar una venta a un cliente desactivado.
+#[tauri::command]
+pub fn list_inactive_clients(state: State<AppState>) -> CmdResult<Vec<Client>> {
+    let conn = state.db.lock();
+    let sql = format!("{} WHERE c.active = 0 ORDER BY c.name", CLIENT_SELECT);
+    let mut stmt = conn.prepare(&sql).map_err(err)?;
+    let rows = stmt.query_map([], row_to_client).map_err(err)?;
+    let mut out = Vec::new();
+    for r in rows {
+        out.push(r.map_err(err)?);
+    }
+    Ok(out)
+}
+
+#[tauri::command]
+pub fn reactivate_client(id: i64, state: State<AppState>) -> CmdResult<()> {
+    let conn = state.db.lock();
+    conn.execute(
+        "UPDATE clients SET active=1, updated_at=CURRENT_TIMESTAMP WHERE id=?1",
+        params![id],
+    )
+    .map_err(err)?;
+    Ok(())
+}
+
 #[tauri::command]
 pub fn get_client(id: i64, state: State<AppState>) -> CmdResult<Client> {
     let conn = state.db.lock();
@@ -88,7 +124,7 @@ pub fn create_client(client: NewClient, state: State<AppState>) -> CmdResult<Cli
             client.is_ri as i64,
         ],
     )
-    .map_err(err)?;
+    .map_err(friendly_dni_error)?;
 
     let id = conn.last_insert_rowid();
     let sql = format!("{} WHERE c.id = ?1", CLIENT_SELECT);
@@ -115,7 +151,7 @@ pub fn update_client(client: Client, state: State<AppState>) -> CmdResult<Client
             client.id,
         ],
     )
-    .map_err(err)?;
+    .map_err(friendly_dni_error)?;
 
     let sql = format!("{} WHERE c.id = ?1", CLIENT_SELECT);
     let mut stmt = conn.prepare(&sql).map_err(err)?;
@@ -141,7 +177,7 @@ pub fn client_account_history(
     let conn = state.db.lock();
     let mut stmt = conn
         .prepare(
-            "SELECT * FROM client_account WHERE client_id = ?1 ORDER BY created_at DESC LIMIT 100",
+            "SELECT * FROM client_account WHERE client_id = ?1 ORDER BY created_at DESC",
         )
         .map_err(err)?;
 

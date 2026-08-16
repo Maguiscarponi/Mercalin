@@ -1,8 +1,35 @@
 use crate::commands::{audit::log_action, err, CmdResult};
 use crate::models::{BulkPriceInput, BulkPricePreviewItem, CategoryStat, CsvProductRow, ExpiringProduct, ImportResult, MinStockSuggestion, NewProduct, PriceImpactItem, Product, ProductVelocity, PriceSyncAlert};
 use crate::AppState;
-use rusqlite::{params, Row};
+use rusqlite::{params, Connection, Row};
 use tauri::State;
+
+// Un código de barras es UNIQUE en toda la tabla, incluidos los productos desactivados
+// (soft-delete) -- sin este mensaje, reusar un código años después de borrar el producto
+// original (o borrarlo por error) da un error de SQL crudo sin ninguna pista de qué pasó.
+fn friendly_barcode_error(conn: &Connection, barcode: &Option<String>, e: rusqlite::Error) -> String {
+    let s = err(e);
+    if s.contains("UNIQUE constraint failed") && s.contains("barcode") {
+        if let Some(bc) = barcode {
+            if let Ok((name, active)) = conn.query_row(
+                "SELECT name, active FROM products WHERE barcode=?1",
+                params![bc],
+                |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)? != 0)),
+            ) {
+                return if active {
+                    format!("Ese código de barras ya pertenece a \"{}\".", name)
+                } else {
+                    format!(
+                        "Ese código de barras pertenece a \"{}\", un producto desactivado. Reactivalo desde la pestaña \"Inactivos\" en vez de crear uno nuevo.",
+                        name
+                    )
+                };
+            }
+        }
+        return "Ya existe un producto con ese código de barras.".to_string();
+    }
+    s
+}
 
 fn row_to_product(row: &Row) -> rusqlite::Result<Product> {
     Ok(Product {
@@ -16,6 +43,7 @@ fn row_to_product(row: &Row) -> rusqlite::Result<Product> {
         stock: row.get("stock")?,
         min_stock: row.get("min_stock")?,
         category: row.get("category")?,
+        brand: row.get("brand")?,
         is_weighable: row.get::<_, i64>("is_weighable")? != 0,
         active: row.get::<_, i64>("active")? != 0,
         is_ghost: row.get::<_, i64>("is_ghost")? != 0,
@@ -48,7 +76,10 @@ pub fn list_products(query: String, include_ghosts: bool, state: State<AppState>
     // Catálogo real (Productos → "Todos", Caja al no pedir fantasmas): solo active=1.
     // Con include_ghosts=true (pantalla "Agregar producto", búsqueda/escaneo en Caja) también
     // aparecen los precargados sin precio — nunca un producto borrado de verdad (active=0, is_ghost=0).
-    let visibility = if include_ghosts { "(active = 1 OR is_ghost = 1)" } else { "active = 1" };
+    // Calificado como products.active: la búsqueda multi-token más abajo hace LEFT JOIN a
+    // suppliers, que también tiene una columna "active" — sin calificar, SQLite tira
+    // "ambiguous column name" y la búsqueda entera falla en cuanto hay texto que buscar.
+    let visibility = if include_ghosts { "(products.active = 1 OR products.is_ghost = 1)" } else { "products.active = 1" };
 
     if q.is_empty() {
         let sql = format!("SELECT * FROM products WHERE {} ORDER BY name LIMIT 20000", visibility);
@@ -59,18 +90,25 @@ pub fn list_products(query: String, include_ghosts: bool, state: State<AppState>
         return Ok(out);
     }
 
-    // Multi-token: cada palabra debe aparecer en nombre o en el barcode completo
+    // Multi-token: cada palabra debe aparecer en nombre, barcode, marca, categoría o
+    // proveedor -- antes solo miraba nombre/barcode, así que buscar "coca-cola" (la
+    // marca) sin que la palabra estuviera en el nombre no encontraba nada.
     let tokens: Vec<String> = q.split_whitespace().map(|t| format!("%{}%", t)).collect();
 
-    // Construir condiciones dinámicas para cada token
+    // Construir condiciones dinámicas para cada token. products.* (calificado) evita
+    // que las columnas de suppliers (id, name, created_at...) choquen con las de
+    // products al mapear la fila por nombre de columna.
     let conditions: Vec<String> = tokens
         .iter()
         .enumerate()
-        .map(|(i, _)| format!("(lower(name) LIKE ?{i} OR barcode LIKE ?{i})", i = i + 1))
+        .map(|(i, _)| format!(
+            "(lower(products.name) LIKE ?{i} OR products.barcode LIKE ?{i} OR lower(products.brand) LIKE ?{i} OR lower(products.category) LIKE ?{i} OR lower(s.name) LIKE ?{i})",
+            i = i + 1
+        ))
         .collect();
     let where_clause = conditions.join(" AND ");
     let sql = format!(
-        "SELECT * FROM products WHERE {} AND ({}) ORDER BY name LIMIT 20000",
+        "SELECT products.* FROM products LEFT JOIN suppliers s ON products.supplier_id = s.id WHERE {} AND ({}) ORDER BY products.name LIMIT 20000",
         visibility, where_clause
     );
 
@@ -85,12 +123,12 @@ pub fn list_products(query: String, include_ghosts: bool, state: State<AppState>
 }
 
 #[tauri::command]
-pub fn create_product(product: NewProduct, state: State<AppState>) -> CmdResult<Product> {
+pub fn create_product(product: NewProduct, user_id: Option<i64>, state: State<AppState>) -> CmdResult<Product> {
     let conn = state.db.lock();
     conn.execute(
         "INSERT INTO products
-            (barcode, name, price_cents, price2_cents, price3_cents, cost_cents, stock, min_stock, category, is_weighable, active, is_ghost, supplier_id, expires_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 0, ?12, ?13)",
+            (barcode, name, price_cents, price2_cents, price3_cents, cost_cents, stock, min_stock, category, brand, is_weighable, active, is_ghost, supplier_id, expires_at, image_path)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, 0, ?13, ?14, ?15)",
         params![
             product.barcode,
             product.name,
@@ -101,22 +139,24 @@ pub fn create_product(product: NewProduct, state: State<AppState>) -> CmdResult<
             product.stock,
             product.min_stock,
             product.category,
+            product.brand,
             product.is_weighable as i64,
             product.active as i64,
             product.supplier_id,
             product.expires_at,
+            product.image_path,
         ],
     )
-    .map_err(err)?;
+    .map_err(|e| friendly_barcode_error(&conn, &product.barcode, e))?;
 
     let id = conn.last_insert_rowid();
-    log_action(&conn, None, "crear", "producto", Some(id), Some(&product.name));
+    log_action(&conn, user_id, "crear", "producto", Some(id), Some(&product.name));
     let mut stmt = conn.prepare("SELECT * FROM products WHERE id = ?1").map_err(err)?;
     stmt.query_row(params![id], row_to_product).map_err(err)
 }
 
 #[tauri::command]
-pub fn update_product(product: Product, state: State<AppState>) -> CmdResult<Product> {
+pub fn update_product(product: Product, user_id: Option<i64>, state: State<AppState>) -> CmdResult<Product> {
     let conn = state.db.lock();
     // Un fantasma se "activa" solo con cargarle un precio de venta — no hace falta que
     // nadie marque un checkbox aparte. Una vez activado no vuelve a ser fantasma.
@@ -126,10 +166,10 @@ pub fn update_product(product: Product, state: State<AppState>) -> CmdResult<Pro
     conn.execute(
         "UPDATE products SET
             barcode=?1, name=?2, price_cents=?3, price2_cents=?4, price3_cents=?5,
-            cost_cents=?6, stock=?7, min_stock=?8, category=?9, is_weighable=?10,
-            active=?11, is_ghost=?12, supplier_id=?13, expires_at=?14,
+            cost_cents=?6, stock=?7, min_stock=?8, category=?9, brand=?10, is_weighable=?11,
+            active=?12, is_ghost=?13, supplier_id=?14, expires_at=?15, image_path=?16,
             updated_at=CURRENT_TIMESTAMP
-         WHERE id = ?15",
+         WHERE id = ?17",
         params![
             product.barcode,
             product.name,
@@ -140,30 +180,58 @@ pub fn update_product(product: Product, state: State<AppState>) -> CmdResult<Pro
             product.stock,
             product.min_stock,
             product.category,
+            product.brand,
             product.is_weighable as i64,
             active as i64,
             is_ghost as i64,
             product.supplier_id,
             product.expires_at,
+            product.image_path,
             product.id,
         ],
     )
-    .map_err(err)?;
+    .map_err(|e| friendly_barcode_error(&conn, &product.barcode, e))?;
 
-    log_action(&conn, None, "editar", "producto", Some(product.id), Some(&product.name));
+    log_action(&conn, user_id, "editar", "producto", Some(product.id), Some(&product.name));
     let mut stmt = conn.prepare("SELECT * FROM products WHERE id = ?1").map_err(err)?;
     stmt.query_row(params![product.id], row_to_product).map_err(err)
 }
 
 #[tauri::command]
-pub fn delete_product(id: i64, state: State<AppState>) -> CmdResult<()> {
+pub fn delete_product(id: i64, user_id: Option<i64>, state: State<AppState>) -> CmdResult<()> {
     let conn = state.db.lock();
     conn.execute(
         "UPDATE products SET active=0, updated_at=CURRENT_TIMESTAMP WHERE id=?1",
         params![id],
     )
     .map_err(err)?;
-    log_action(&conn, None, "eliminar", "producto", Some(id), None);
+    log_action(&conn, user_id, "eliminar", "producto", Some(id), None);
+    Ok(())
+}
+
+// Para la sección "Inactivos" de Productos -- separado de list_products a propósito,
+// para que ni la búsqueda de Caja ni "Todos" sugieran vender/mostrar un producto borrado.
+#[tauri::command]
+pub fn list_inactive_products(state: State<AppState>) -> CmdResult<Vec<Product>> {
+    let conn = state.db.lock();
+    let mut stmt = conn
+        .prepare("SELECT * FROM products WHERE active = 0 AND is_ghost = 0 ORDER BY name")
+        .map_err(err)?;
+    let rows = stmt.query_map([], row_to_product).map_err(err)?;
+    let mut out = Vec::new();
+    for r in rows { out.push(r.map_err(err)?); }
+    Ok(out)
+}
+
+#[tauri::command]
+pub fn reactivate_product(id: i64, user_id: Option<i64>, state: State<AppState>) -> CmdResult<()> {
+    let conn = state.db.lock();
+    conn.execute(
+        "UPDATE products SET active=1, updated_at=CURRENT_TIMESTAMP WHERE id=?1",
+        params![id],
+    )
+    .map_err(err)?;
+    log_action(&conn, user_id, "reactivar", "producto", Some(id), None);
     Ok(())
 }
 
@@ -205,6 +273,78 @@ pub fn list_expiring_products(days: i64, state: State<AppState>) -> CmdResult<Ve
     for r in rows {
         out.push(r.map_err(err)?);
     }
+    Ok(out)
+}
+
+// Edición masiva: solo hasta ahora existía para precio (preview_bulk_update_prices /
+// apply_bulk_update_prices). Estos tres cubren categoría/marca/proveedor -- separados
+// en vez de un solo comando genérico para que el frontend solo llame al que el usuario
+// realmente completó en el modal de edición masiva, sin pisar los demás campos.
+#[tauri::command]
+pub fn bulk_set_category(ids: Vec<i64>, category: Option<String>, user_id: Option<i64>, state: State<AppState>) -> CmdResult<i64> {
+    let conn = state.db.lock();
+    if ids.is_empty() { return Ok(0); }
+    let placeholders: Vec<String> = (1..=ids.len()).map(|i| format!("?{}", i + 1)).collect();
+    let sql = format!("UPDATE products SET category=?1, updated_at=CURRENT_TIMESTAMP WHERE id IN ({})", placeholders.join(","));
+    let mut p: Vec<&dyn rusqlite::ToSql> = vec![&category];
+    for id in &ids { p.push(id); }
+    let n = conn.execute(&sql, p.as_slice()).map_err(err)?;
+    log_action(&conn, user_id, "actualizacion_masiva_categoria", "productos", None,
+        Some(&format!("{} productos -> categoría {}", n, category.as_deref().unwrap_or("(sin categoría)"))));
+    Ok(n as i64)
+}
+
+#[tauri::command]
+pub fn bulk_set_brand(ids: Vec<i64>, brand: Option<String>, user_id: Option<i64>, state: State<AppState>) -> CmdResult<i64> {
+    let conn = state.db.lock();
+    if ids.is_empty() { return Ok(0); }
+    let placeholders: Vec<String> = (1..=ids.len()).map(|i| format!("?{}", i + 1)).collect();
+    let sql = format!("UPDATE products SET brand=?1, updated_at=CURRENT_TIMESTAMP WHERE id IN ({})", placeholders.join(","));
+    let mut p: Vec<&dyn rusqlite::ToSql> = vec![&brand];
+    for id in &ids { p.push(id); }
+    let n = conn.execute(&sql, p.as_slice()).map_err(err)?;
+    log_action(&conn, user_id, "actualizacion_masiva_marca", "productos", None,
+        Some(&format!("{} productos -> marca {}", n, brand.as_deref().unwrap_or("(sin marca)"))));
+    Ok(n as i64)
+}
+
+#[tauri::command]
+pub fn bulk_set_supplier(ids: Vec<i64>, supplier_id: Option<i64>, user_id: Option<i64>, state: State<AppState>) -> CmdResult<i64> {
+    let conn = state.db.lock();
+    if ids.is_empty() { return Ok(0); }
+    let placeholders: Vec<String> = (1..=ids.len()).map(|i| format!("?{}", i + 1)).collect();
+    let sql = format!("UPDATE products SET supplier_id=?1, updated_at=CURRENT_TIMESTAMP WHERE id IN ({})", placeholders.join(","));
+    let mut p: Vec<&dyn rusqlite::ToSql> = vec![&supplier_id];
+    for id in &ids { p.push(id); }
+    let n = conn.execute(&sql, p.as_slice()).map_err(err)?;
+    log_action(&conn, user_id, "actualizacion_masiva_proveedor", "productos", None,
+        Some(&format!("{} productos -> proveedor #{:?}", n, supplier_id)));
+    Ok(n as i64)
+}
+
+// Lista de marcas en uso, para el autocompletar del formulario y el filtro de
+// Productos. A diferencia de categorías no tiene tabla propia ni "marca vacía"
+// precreada -- alcanza con derivarla de los productos existentes.
+#[tauri::command]
+pub fn list_brands(state: State<AppState>) -> CmdResult<Vec<CategoryStat>> {
+    let conn = state.db.lock();
+    let mut stmt = conn
+        .prepare(
+            "SELECT brand as name, COUNT(*) as product_count
+             FROM products WHERE active=1 AND brand IS NOT NULL AND brand != ''
+             GROUP BY brand ORDER BY brand",
+        )
+        .map_err(err)?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok(CategoryStat {
+                name: row.get("name")?,
+                product_count: row.get("product_count")?,
+            })
+        })
+        .map_err(err)?;
+    let mut out = Vec::new();
+    for r in rows { out.push(r.map_err(err)?); }
     Ok(out)
 }
 
@@ -286,11 +426,11 @@ pub fn list_product_velocities(state: State<AppState>) -> CmdResult<Vec<ProductV
 
     let rows = stmt
         .query_map([], |row| {
-            let stock: i64 = row.get("stock")?;
+            let stock: f64 = row.get("stock")?;
             let velocity: f64 = row.get("daily_velocity")?;
             let velocity_rounded = (velocity * 10.0).round() / 10.0;
             let days_remaining = if velocity_rounded > 0.01 {
-                (stock as f64 / velocity_rounded * 10.0).round() / 10.0
+                (stock / velocity_rounded * 10.0).round() / 10.0
             } else {
                 -1.0  // -1 indica sin ventas en 30 días
             };
@@ -322,8 +462,7 @@ pub fn get_price_desync(state: State<AppState>) -> CmdResult<Vec<PriceSyncAlert>
            AND po.received_at >= date('now', '-60 days')
            AND pi.unit_cost_cents > p.cost_cents
          GROUP BY p.id, p.name, p.category, p.cost_cents, p.price_cents
-         ORDER BY (MAX(pi.unit_cost_cents) - p.cost_cents) DESC
-         LIMIT 20",
+         ORDER BY (MAX(pi.unit_cost_cents) - p.cost_cents) DESC",
     ).map_err(err)?;
 
     let rows: Vec<PriceSyncAlert> = stmt.query_map([], |row| {
@@ -351,7 +490,7 @@ pub fn get_price_desync(state: State<AppState>) -> CmdResult<Vec<PriceSyncAlert>
 pub fn rename_category(old_name: String, new_name: String, state: State<AppState>) -> CmdResult<i64> {
     let conn = state.db.lock();
     let n = conn.execute(
-        "UPDATE products SET category=?1, updated_at=datetime('now','localtime') WHERE category=?2",
+        "UPDATE products SET category=?1, updated_at=datetime('now') WHERE category=?2",
         params![new_name, old_name],
     ).map_err(err)?;
     // Si la categoría vieja/nueva vive en la tabla de categorías vacías, la
@@ -365,10 +504,34 @@ pub fn rename_category(old_name: String, new_name: String, state: State<AppState
 pub fn delete_category(name: String, state: State<AppState>) -> CmdResult<i64> {
     let conn = state.db.lock();
     let n = conn.execute(
-        "UPDATE products SET category=NULL, updated_at=datetime('now','localtime') WHERE category=?1",
+        "UPDATE products SET category=NULL, updated_at=datetime('now') WHERE category=?1",
         params![name],
     ).map_err(err)?;
     conn.execute("DELETE FROM categories WHERE name=?1", params![name]).map_err(err)?;
+    Ok(n as i64)
+}
+
+// Marca no tiene tabla propia como categoría (no hace falta "precrear" una marca
+// vacía) -- renombrar/eliminar alcanza con tocar products.brand directamente. Esto
+// es lo que permite consolidar duplicados por mayúsculas/espacios que antes no había
+// forma de corregir una vez creados.
+#[tauri::command]
+pub fn rename_brand(old_name: String, new_name: String, state: State<AppState>) -> CmdResult<i64> {
+    let conn = state.db.lock();
+    let n = conn.execute(
+        "UPDATE products SET brand=?1, updated_at=datetime('now') WHERE brand=?2",
+        params![new_name, old_name],
+    ).map_err(err)?;
+    Ok(n as i64)
+}
+
+#[tauri::command]
+pub fn delete_brand(name: String, state: State<AppState>) -> CmdResult<i64> {
+    let conn = state.db.lock();
+    let n = conn.execute(
+        "UPDATE products SET brand=NULL, updated_at=datetime('now') WHERE brand=?1",
+        params![name],
+    ).map_err(err)?;
     Ok(n as i64)
 }
 
@@ -382,6 +545,7 @@ pub fn preview_bulk_update_prices(
 
     let sql = match input.filter_type.as_str() {
         "category" => "SELECT id, name, category, price_cents, cost_cents FROM products WHERE active=1 AND category=?1 ORDER BY name",
+        "brand"    => "SELECT id, name, category, price_cents, cost_cents FROM products WHERE active=1 AND brand=?1 ORDER BY name",
         "supplier" => "SELECT id, name, category, price_cents, cost_cents FROM products WHERE active=1 AND supplier_id=?1 ORDER BY name",
         _          => "SELECT id, name, category, price_cents, cost_cents FROM products WHERE active=1 ORDER BY name",
     };
@@ -422,6 +586,7 @@ pub fn preview_bulk_update_prices(
 #[tauri::command]
 pub fn apply_bulk_update_prices(
     input: BulkPriceInput,
+    user_id: Option<i64>,
     state: State<AppState>,
 ) -> CmdResult<i64> {
     let conn = state.db.lock();
@@ -429,6 +594,7 @@ pub fn apply_bulk_update_prices(
     // Obtener productos a actualizar
     let sql = match input.filter_type.as_str() {
         "category" => "SELECT id, price_cents, cost_cents FROM products WHERE active=1 AND category=?1",
+        "brand"    => "SELECT id, price_cents, cost_cents FROM products WHERE active=1 AND brand=?1",
         "supplier" => "SELECT id, price_cents, cost_cents FROM products WHERE active=1 AND supplier_id=?1",
         _          => "SELECT id, price_cents, cost_cents FROM products WHERE active=1",
     };
@@ -462,7 +628,7 @@ pub fn apply_bulk_update_prices(
     }
 
     let detail = format!("Actualizacion masiva: {}% precio | filtro: {}", input.price_pct, input.filter_type);
-    log_action(&conn, None, "actualizacion_masiva", "productos", None, Some(&detail));
+    log_action(&conn, user_id, "actualizacion_masiva", "productos", None, Some(&detail));
     Ok(count)
 }
 
@@ -470,6 +636,7 @@ pub fn apply_bulk_update_prices(
 #[tauri::command]
 pub fn import_products_csv(
     rows: Vec<CsvProductRow>,
+    user_id: Option<i64>,
     state: State<AppState>,
 ) -> CmdResult<ImportResult> {
     let conn = state.db.lock();
@@ -502,20 +669,35 @@ pub fn import_products_csv(
             None
         };
 
+        // supplier_id explícito gana; si no vino, resolver por nombre (para quien no
+        // conoce los IDs internos de sus proveedores) -- si no matchea ninguno, sigue
+        // sin proveedor en vez de fallar la fila entera.
+        let supplier_id: Option<i64> = if row.supplier_id.is_some() {
+            row.supplier_id
+        } else if let Some(ref sname) = row.supplier_name {
+            conn.query_row(
+                "SELECT id FROM suppliers WHERE lower(trim(name))=lower(trim(?1)) LIMIT 1",
+                params![sname],
+                |r| r.get(0),
+            ).ok()
+        } else {
+            None
+        };
+
         let result = if let Some(id) = existing_id {
             conn.execute(
-                "UPDATE products SET name=?1, price_cents=?2, cost_cents=?3, stock=?4,
-                 min_stock=?5, category=?6, supplier_id=?7, expires_at=?8,
-                 updated_at=CURRENT_TIMESTAMP WHERE id=?9",
-                params![row.name, row.price_cents, row.cost_cents, row.stock,
-                        row.min_stock, row.category, row.supplier_id, row.expires_at, id],
+                "UPDATE products SET name=?1, price_cents=?2, price2_cents=?3, price3_cents=?4, cost_cents=?5, stock=?6,
+                 min_stock=?7, category=?8, brand=?9, supplier_id=?10, is_weighable=?11, expires_at=?12,
+                 updated_at=CURRENT_TIMESTAMP WHERE id=?13",
+                params![row.name, row.price_cents, row.price2_cents, row.price3_cents, row.cost_cents, row.stock,
+                        row.min_stock, row.category, row.brand, supplier_id, row.is_weighable as i64, row.expires_at, id],
             )
         } else {
             conn.execute(
-                "INSERT INTO products (barcode,name,price_cents,cost_cents,stock,min_stock,category,supplier_id,expires_at,active)
-                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,1)",
-                params![row.barcode, row.name, row.price_cents, row.cost_cents, row.stock,
-                        row.min_stock, row.category, row.supplier_id, row.expires_at],
+                "INSERT INTO products (barcode,name,price_cents,price2_cents,price3_cents,cost_cents,stock,min_stock,category,brand,supplier_id,is_weighable,expires_at,active)
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,1)",
+                params![row.barcode, row.name, row.price_cents, row.price2_cents, row.price3_cents, row.cost_cents, row.stock,
+                        row.min_stock, row.category, row.brand, supplier_id, row.is_weighable as i64, row.expires_at],
             )
         };
 
@@ -530,7 +712,7 @@ pub fn import_products_csv(
         }
     }
 
-    log_action(&conn, None, "importacion_csv", "productos", None,
+    log_action(&conn, user_id, "importacion_csv", "productos", None,
         Some(&format!("Creados: {created}, actualizados: {updated}, omitidos: {skipped}")));
 
     Ok(ImportResult { created, updated, skipped, errors })
@@ -540,6 +722,9 @@ pub fn import_products_csv(
 #[tauri::command]
 pub fn get_min_stock_suggestions(state: State<AppState>) -> CmdResult<Vec<MinStockSuggestion>> {
     let conn = state.db.lock();
+    if !crate::db::stock_tracking_enabled(&conn) {
+        return Ok(Vec::new());
+    }
     let mut stmt = conn.prepare(
         "SELECT
             p.id, p.name, p.category, p.min_stock, p.supplier_id,
@@ -569,8 +754,9 @@ pub fn get_min_stock_suggestions(state: State<AppState>) -> CmdResult<Vec<MinSto
     let rows = stmt.query_map([], |row| {
         let velocity: f64 = row.get("daily_velocity")?;
         let lead_time: f64 = row.get("lead_time_days")?;
-        let current_min: i64 = row.get("min_stock")?;
-        let suggested = ((velocity * lead_time * 1.3).ceil() as i64).max(1);
+        let current_min: f64 = row.get("min_stock")?;
+        let suggested = ((velocity * lead_time * 1.3) * 100.0).round() / 100.0;
+        let suggested = suggested.max(1.0);
         Ok((row.get::<_, i64>("id")?, row.get::<_, String>("name")?,
             row.get::<_, Option<String>>("category")?, current_min, suggested,
             velocity, lead_time,
@@ -580,8 +766,8 @@ pub fn get_min_stock_suggestions(state: State<AppState>) -> CmdResult<Vec<MinSto
 
     // Solo incluir cuando la sugerencia difiere significativamente (>20% o diferencia absoluta >2)
     let suggestions = rows.into_iter().filter_map(|(id, name, cat, cur, sug, vel, lt, sid, sname)| {
-        let pct_diff = ((sug - cur).abs() as f64) / (cur.max(1) as f64);
-        if pct_diff >= 0.2 || (sug - cur).abs() >= 2 {
+        let pct_diff = (sug - cur).abs() / cur.max(1.0);
+        if pct_diff >= 0.2 || (sug - cur).abs() >= 2.0 {
             Some(MinStockSuggestion {
                 product_id: id, name, category: cat,
                 current_min_stock: cur, suggested_min_stock: sug,
@@ -599,6 +785,7 @@ pub fn get_min_stock_suggestions(state: State<AppState>) -> CmdResult<Vec<MinSto
 #[tauri::command]
 pub fn apply_min_stock_suggestions(
     suggestions: Vec<crate::models::MinStockSuggestion>,
+    user_id: Option<i64>,
     state: State<AppState>,
 ) -> CmdResult<i64> {
     let conn = state.db.lock();
@@ -610,7 +797,7 @@ pub fn apply_min_stock_suggestions(
         ).map_err(err)?;
         count += 1;
     }
-    log_action(&conn, None, "actualizar_min_stock", "productos", None,
+    log_action(&conn, user_id, "actualizar_min_stock", "productos", None,
         Some(&format!("{count} stocks mínimos actualizados por IA")));
     Ok(count)
 }

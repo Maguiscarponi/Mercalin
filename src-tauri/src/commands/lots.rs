@@ -1,4 +1,4 @@
-use crate::commands::{err, CmdResult};
+use crate::commands::{audit::log_action, err, CmdResult};
 use crate::models::{ExpiringLot, NewProductLot, ProductLot};
 use crate::AppState;
 use rusqlite::params;
@@ -79,7 +79,7 @@ pub fn list_expiring_lots(days: i64, state: State<AppState>) -> CmdResult<Vec<Ex
 }
 
 #[tauri::command]
-pub fn add_product_lot(input: NewProductLot, state: State<AppState>) -> CmdResult<ProductLot> {
+pub fn add_product_lot(input: NewProductLot, user_id: Option<i64>, state: State<AppState>) -> CmdResult<ProductLot> {
     let mut conn = state.db.lock();
     let tx = conn.transaction().map_err(err)?;
 
@@ -112,6 +112,8 @@ pub fn add_product_lot(input: NewProductLot, state: State<AppState>) -> CmdResul
     .map_err(err)?;
 
     tx.commit().map_err(err)?;
+    log_action(&conn, user_id, "ingreso_stock", "producto", Some(input.product_id),
+        Some(&format!("+{} ({})", input.qty, input.notes.as_deref().unwrap_or("Ingreso manual de lote"))));
 
     let mut stmt = conn
         .prepare(
@@ -126,11 +128,11 @@ pub fn add_product_lot(input: NewProductLot, state: State<AppState>) -> CmdResul
 }
 
 #[tauri::command]
-pub fn retire_lot(lot_id: i64, state: State<AppState>) -> CmdResult<()> {
+pub fn retire_lot(lot_id: i64, user_id: Option<i64>, state: State<AppState>) -> CmdResult<()> {
     let mut conn = state.db.lock();
     let tx = conn.transaction().map_err(err)?;
 
-    let (product_id, lot_qty): (i64, i64) = tx
+    let (product_id, lot_qty): (i64, f64) = tx
         .query_row(
             "SELECT product_id, qty FROM product_lots WHERE id = ?1",
             params![lot_id],
@@ -144,11 +146,11 @@ pub fn retire_lot(lot_id: i64, state: State<AppState>) -> CmdResult<()> {
     )
     .map_err(err)?;
 
-    let qty_before: i64 = tx
+    let qty_before: f64 = tx
         .query_row("SELECT stock FROM products WHERE id = ?1", params![product_id], |r| r.get(0))
-        .unwrap_or(0);
+        .unwrap_or(0.0);
 
-    let qty_after = (qty_before - lot_qty).max(0);
+    let qty_after = (qty_before - lot_qty).max(0.0);
 
     tx.execute(
         "UPDATE products SET stock = ?1, updated_at = CURRENT_TIMESTAMP WHERE id = ?2",
@@ -163,7 +165,9 @@ pub fn retire_lot(lot_id: i64, state: State<AppState>) -> CmdResult<()> {
     )
     .map_err(err)?;
 
-    tx.commit().map_err(err)
+    tx.commit().map_err(err)?;
+    log_action(&conn, user_id, "retirar_lote", "producto", Some(product_id), Some("Lote vencido retirado"));
+    Ok(())
 }
 
 #[tauri::command]

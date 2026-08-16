@@ -78,6 +78,26 @@ pub fn list_combos(state: State<AppState>) -> CmdResult<Vec<ComboWithItems>> {
         .collect()
 }
 
+// Reverse-lookup: en qué combos participa un producto -- para avisar antes de
+// borrarlo/desactivarlo (un combo activo con un componente inactivo sigue
+// vendiéndose en Caja sin que nadie se entere) y para mostrarlo en su ficha.
+#[tauri::command]
+pub fn list_combos_for_product(product_id: i64, state: State<AppState>) -> CmdResult<Vec<Combo>> {
+    let conn = state.db.lock();
+    let mut stmt = conn
+        .prepare(
+            "SELECT DISTINCT c.* FROM combos c
+             JOIN combo_items ci ON ci.combo_id = c.id
+             WHERE ci.product_id = ?1
+             ORDER BY c.active DESC, c.name ASC",
+        )
+        .map_err(err)?;
+    let rows = stmt.query_map(params![product_id], row_to_combo).map_err(err)?;
+    let mut out = Vec::new();
+    for r in rows { out.push(r.map_err(err)?); }
+    Ok(out)
+}
+
 #[tauri::command]
 pub fn list_active_combos(state: State<AppState>) -> CmdResult<Vec<ComboWithItems>> {
     let conn = state.db.lock();
@@ -113,9 +133,6 @@ pub fn create_combo(input: NewCombo, state: State<AppState>) -> CmdResult<ComboW
     if input.name.trim().is_empty() {
         return Err("El nombre del combo es obligatorio".into());
     }
-    if input.items.is_empty() {
-        return Err("El combo debe tener al menos un componente".into());
-    }
     let mut conn = state.db.lock();
     let tx = conn.transaction().map_err(err)?;
     tx.execute(
@@ -140,9 +157,6 @@ pub fn create_combo(input: NewCombo, state: State<AppState>) -> CmdResult<ComboW
 pub fn update_combo(id: i64, input: NewCombo, state: State<AppState>) -> CmdResult<ComboWithItems> {
     if input.name.trim().is_empty() {
         return Err("El nombre del combo es obligatorio".into());
-    }
-    if input.items.is_empty() {
-        return Err("El combo debe tener al menos un componente".into());
     }
     let mut conn = state.db.lock();
     let tx = conn.transaction().map_err(err)?;

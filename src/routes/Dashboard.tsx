@@ -1,10 +1,33 @@
 import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import clsx from "clsx";
+import {
+  Sun, Moon, Sunset, RefreshCw, ShoppingCart, TrendingUp, TrendingDown, Minus,
+  Trophy, Target, CalendarDays, CalendarRange, AlertTriangle, Clock, CreditCard,
+  CheckCircle2, Sparkles, Package, Wallet, ArrowRight,
+} from "lucide-react";
 import { api } from "@/lib/api";
 import { centsToARS, dateToLocalISO } from "@/lib/format";
+import { useEscapeToClose } from "@/lib/useEscapeToClose";
 import OnboardingChecklist from "@/components/OnboardingChecklist";
-import type { DashboardData, Insight } from "@/types";
+import { AllInsightsModal, InsightRow, LEVEL_LABEL } from "@/components/InsightsPanel";
+import { useInsightsStore } from "@/stores/insights";
+import type { DashboardData, Insight, CriticalStockItem, ExpiringAlertItem, OverdueAccountItem } from "@/types";
+
+type AlertEntry =
+  | { kind: "stock"; item: CriticalStockItem }
+  | { kind: "exp"; item: ExpiringAlertItem }
+  | { kind: "cc"; item: OverdueAccountItem };
+
+function alertRoute(entry: AlertEntry): string {
+  return entry.kind === "stock" ? "/proveedores" : entry.kind === "exp" ? "/vencimientos" : "/clientes";
+}
+
+function alertKey(entry: AlertEntry): string {
+  return entry.kind === "stock" ? `stock-${entry.item.product_id}`
+       : entry.kind === "exp" ? `exp-${entry.item.product_id}`
+       : `cc-${entry.item.client_id}`;
+}
 
 const METHOD_LABELS: Record<string, string> = {
   efectivo: "Efectivo",
@@ -30,6 +53,43 @@ function dayLabel(isoDate: string): string {
   return DAY_NAMES[d.getDay()];
 }
 
+// Área + línea SVG hecha a mano (sin librería de gráficos) — viewBox fijo estirado
+// al 100% del ancho del contenedor vía preserveAspectRatio="none". Los labels de
+// día van en HTML aparte (no en el SVG) para que nunca se deformen con el estirado.
+function TrendChart({ days, trendMax }: { days: Array<{ date: string; total_cents: number }>; trendMax: number }) {
+  const W = 700, H = 130, padX = 14, padY = 14;
+  const n = days.length;
+  const stepX = n > 1 ? (W - padX * 2) / (n - 1) : 0;
+  const points = days.map((d, i) => ({
+    x: padX + i * stepX,
+    y: H - padY - (trendMax > 0 ? (d.total_cents / trendMax) * (H - padY * 2) : 0),
+    d,
+  }));
+  const linePath = points.map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
+  const areaPath = `${linePath} L${points[points.length - 1].x.toFixed(1)},${H - padY} L${points[0].x.toFixed(1)},${H - padY} Z`;
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="w-full h-28">
+      <defs>
+        <linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#6366f1" stopOpacity="0.35" />
+          <stop offset="100%" stopColor="#6366f1" stopOpacity="0.02" />
+        </linearGradient>
+      </defs>
+      <path d={areaPath} fill="url(#trendFill)" />
+      <path d={linePath} fill="none" stroke="#6366f1" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+      {points.map((p, i) => {
+        const isToday = i === n - 1;
+        return (
+          <circle key={p.d.date} cx={p.x} cy={p.y} r={isToday ? 5 : 3.2} fill={isToday ? "#4f46e5" : "#fff"} stroke="#6366f1" strokeWidth="2" vectorEffect="non-scaling-stroke">
+            <title>{dayLabel(p.d.date)}: {centsToARS(p.d.total_cents)}</title>
+          </circle>
+        );
+      })}
+    </svg>
+  );
+}
+
 function todayDayName(): string {
   return DAY_NAMES_FULL[new Date().getDay()];
 }
@@ -39,6 +99,13 @@ function greetingTime(): string {
   if (h < 13) return "Buenos días";
   if (h < 20) return "Buenas tardes";
   return "Buenas noches";
+}
+
+function GreetingIcon({ className }: { className?: string }) {
+  const h = new Date().getHours();
+  if (h < 13) return <Sun className={className} />;
+  if (h < 20) return <Sunset className={className} />;
+  return <Moon className={className} />;
 }
 
 function pctColor(pct: number): string {
@@ -53,11 +120,6 @@ function pctBg(pct: number): string {
   return "bg-stone-100 text-stone-600";
 }
 
-function pctArrow(pct: number): string {
-  if (pct > 0) return "▲";
-  if (pct < 0) return "▼";
-  return "—";
-}
 
 // ─── Fallback de insights (mientras carga Rust) ────────────────────────────────
 
@@ -102,47 +164,83 @@ function buildInsights(d: DashboardData): Insight[] {
   return list.slice(0, 5);
 }
 
-const LEVEL_STYLE: Record<Insight["level"], string> = {
-  urgente:   "border-l-4 border-red-500 bg-red-50",
-  importante:"border-l-4 border-amber-400 bg-amber-50",
-  consejo:   "border-l-4 border-indigo-400 bg-indigo-50",
-  info:      "border-l-4 border-stone-300 bg-stone-50",
-};
+function AlertRow({ entry, onClick }: { entry: AlertEntry; onClick: () => void }) {
+  const { kind, item } = entry;
+  const Icon = kind === "stock" ? Package : kind === "exp" ? Clock : CreditCard;
+  const iconColor = kind === "stock" ? "text-red-500" : kind === "exp" ? "text-amber-500" : "text-stone-500";
+  const label = kind === "stock" ? "Stock crítico" : kind === "exp" ? "Vencimiento" : "CC vencida";
+  const labelColor = kind === "stock" ? "text-red-600" : kind === "exp" ? "text-amber-600" : "text-stone-500";
+  const detail =
+    kind === "stock" ? `${item.stock} un · ${item.days_remaining.toFixed(1)} días restantes` :
+    kind === "exp" ? `${item.stock} un · ${item.days_left} día${item.days_left !== 1 ? "s" : ""}` :
+    `${centsToARS(item.balance_cents)} · ${item.days_absent} días ausente`;
 
-const LEVEL_DOT: Record<Insight["level"], string> = {
-  urgente:   "bg-red-500",
-  importante:"bg-amber-400",
-  consejo:   "bg-indigo-500",
-  info:      "bg-stone-400",
-};
+  return (
+    <button
+      onClick={onClick}
+      className="w-full text-left rounded-lg bg-stone-50 border border-stone-200 px-3 py-2 hover:bg-stone-100 transition-colors flex gap-2"
+    >
+      <Icon className={clsx("w-3.5 h-3.5 shrink-0 mt-0.5", iconColor)} />
+      <div className="min-w-0">
+        <div className={clsx("text-[10px] font-bold uppercase tracking-wide", labelColor)}>{label}</div>
+        <div className="text-xs font-semibold text-stone-800 mt-0.5 truncate">{item.name}</div>
+        <div className="text-[10px] text-stone-500 mt-0.5">{detail}</div>
+      </div>
+    </button>
+  );
+}
 
-const LEVEL_LABEL: Record<Insight["level"], string> = {
-  urgente:   "URGENTE",
-  importante:"IMPORTANTE",
-  consejo:   "CONSEJO",
-  info:      "INFO",
-};
+function AllAlertsModal({
+  entries, totalAlerts, onClose, onNavigate,
+}: {
+  entries: AlertEntry[]; totalAlerts: number; onClose: () => void; onNavigate: (route: string) => void;
+}) {
+  useEscapeToClose(onClose);
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div
+        className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[80vh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-4 py-3 border-b border-stone-100 shrink-0">
+          <h2 className="text-sm font-semibold text-stone-800">Todas las alertas ({totalAlerts})</h2>
+          <button onClick={onClose} className="text-stone-400 hover:text-stone-600 text-xl leading-none">×</button>
+        </div>
+        <div className="overflow-y-auto p-4 space-y-1.5">
+          {entries.map((entry) => (
+            <AlertRow
+              key={alertKey(entry)}
+              entry={entry}
+              onClick={() => { onNavigate(alertRoute(entry)); onClose(); }}
+            />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
 export default function Dashboard() {
   const [data, setData] = useState<DashboardData | null>(null);
-  const [insights, setInsights] = useState<Insight[]>([]);
+  const insights = useInsightsStore((s) => s.insights);
   const [loading, setLoading] = useState(true);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [hasProducts, setHasProducts] = useState(false);
+  const [showAllAlerts, setShowAllAlerts] = useState(false);
+  const [showAllInsights, setShowAllInsights] = useState(false);
   const navigate = useNavigate();
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [d, ins, products] = await Promise.all([
+      const [d, , products] = await Promise.all([
         api.getDashboard(),
-        api.getInsights(),
+        useInsightsStore.getState().refresh(),
         api.listProducts(""),
       ]);
       setData(d);
-      setInsights(ins);
       setHasProducts(products.length > 0);
       setLastUpdate(new Date());
     } catch (e) {
@@ -177,15 +275,53 @@ export default function Dashboard() {
   const totalAlerts =
     data.critical_stock.length + data.expiring_soon.length + data.overdue_accounts.length;
 
+  // Con pocas alertas se muestran todas igual; el resumen/expandir solo entra en
+  // juego cuando hay demasiadas para que el Dashboard siga siendo un vistazo rápido.
+  const ALERTS_PREVIEW = 3;
+  const allAlertEntries: AlertEntry[] = [
+    ...data.critical_stock.map((item) => ({ kind: "stock" as const, item })),
+    ...data.expiring_soon.map((item) => ({ kind: "exp" as const, item })),
+    ...data.overdue_accounts.map((item) => ({ kind: "cc" as const, item })),
+  ];
+  const alertsPreview = allAlertEntries.slice(0, ALERTS_PREVIEW);
+
+  const INSIGHTS_PREVIEW = 5;
+  const insightsPreview = activeInsights.slice(0, INSIGHTS_PREVIEW);
+  const insightLevelCounts = activeInsights.reduce((acc, i) => {
+    acc[i.level] = (acc[i.level] ?? 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+
   const dailyGoalPct =
     data.daily_goal_cents > 0
       ? Math.min((data.today_total_cents / data.daily_goal_cents) * 100, 100)
+      : 0;
+
+  const weeklyGoalPct =
+    data.weekly_goal_cents > 0
+      ? Math.min((data.week_so_far_cents / data.weekly_goal_cents) * 100, 100)
       : 0;
 
   const monthlyGoalPct =
     data.monthly_goal_cents > 0
       ? Math.min((data.month_so_far_cents / data.monthly_goal_cents) * 100, 100)
       : 0;
+
+  const yearlyGoalPct =
+    data.yearly_goal_cents > 0
+      ? Math.min((data.year_so_far_cents / data.yearly_goal_cents) * 100, 100)
+      : 0;
+
+  const anyGoalConfigured =
+    data.daily_goal_cents > 0 || data.weekly_goal_cents > 0 ||
+    data.monthly_goal_cents > 0 || data.yearly_goal_cents > 0;
+
+  const goalRows: Array<{ key: string; icon: typeof Sun; label: string; pct: number; current: number; goal: number }> = [
+    { key: "daily", icon: Sun, label: "Meta diaria", pct: dailyGoalPct, current: data.today_total_cents, goal: data.daily_goal_cents },
+    { key: "weekly", icon: CalendarRange, label: "Meta semanal", pct: weeklyGoalPct, current: data.week_so_far_cents, goal: data.weekly_goal_cents },
+    { key: "monthly", icon: CalendarDays, label: "Meta mensual", pct: monthlyGoalPct, current: data.month_so_far_cents, goal: data.monthly_goal_cents },
+    { key: "yearly", icon: Trophy, label: "Meta anual", pct: yearlyGoalPct, current: data.year_so_far_cents, goal: data.yearly_goal_cents },
+  ].filter((g) => g.goal > 0);
 
   const trendMax = Math.max(...data.week_trend.map((t) => t.total_cents), 1);
 
@@ -200,35 +336,41 @@ export default function Dashboard() {
     <div className="h-full flex flex-col overflow-hidden bg-stone-100">
       {/* Header */}
       <div className="bg-white border-b border-stone-200 px-6 py-3 flex items-center justify-between shrink-0">
-        <div>
-          <div className="text-sm font-semibold text-stone-800">
-            {greetingTime()} · <span className="capitalize">{dateStr}</span>
-          </div>
-          {lastUpdate && (
-            <div className="text-[11px] text-stone-400 mt-0.5">
-              Actualizado{" "}
-              {lastUpdate.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })}
+        <div className="flex items-center gap-2.5">
+          <GreetingIcon className="w-4 h-4 text-stone-400" />
+          <div>
+            <div className="text-sm font-semibold text-stone-800">
+              {greetingTime()} · <span className="capitalize">{dateStr}</span>
             </div>
-          )}
+            {lastUpdate && (
+              <div className="text-[11px] text-stone-400 mt-0.5">
+                Actualizado{" "}
+                {lastUpdate.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })}
+              </div>
+            )}
+          </div>
         </div>
         <div className="flex items-center gap-2">
           {totalAlerts > 0 && (
-            <span className="bg-red-100 text-red-700 text-[11px] font-bold px-2 py-0.5 rounded-full">
+            <span className="flex items-center gap-1 bg-red-100 text-red-700 text-[11px] font-bold px-2 py-0.5 rounded-full">
+              <AlertTriangle className="w-3 h-3" />
               {totalAlerts} alerta{totalAlerts !== 1 ? "s" : ""}
             </span>
           )}
           <button
             onClick={load}
             disabled={loading}
-            className="text-xs text-stone-500 hover:text-indigo-600 bg-stone-100 hover:bg-indigo-50 px-3 py-1.5 rounded-md transition-colors disabled:opacity-50"
+            className="flex items-center gap-1.5 text-xs text-stone-500 hover:text-indigo-600 bg-stone-100 hover:bg-indigo-50 px-3 py-1.5 rounded-md transition-colors disabled:opacity-50"
           >
-            {loading ? "Actualizando…" : "↻ Actualizar"}
+            <RefreshCw className={clsx("w-3.5 h-3.5", loading && "animate-spin")} />
+            {loading ? "Actualizando…" : "Actualizar"}
           </button>
           <button
             onClick={() => navigate("/caja")}
-            className="text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-md transition-colors"
+            className="flex items-center gap-1.5 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-md transition-colors"
           >
-            Ir a Caja →
+            <ShoppingCart className="w-3.5 h-3.5" />
+            Ir a Caja
           </button>
         </div>
       </div>
@@ -244,7 +386,8 @@ export default function Dashboard() {
         <div className="grid grid-cols-4 gap-3">
           {/* Ventas hoy */}
           <div className="bg-white rounded-xl border border-stone-200 p-4 col-span-2">
-            <div className="text-[11px] font-semibold uppercase tracking-wide text-stone-400 mb-2">
+            <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-stone-400 mb-2">
+              <Wallet className="w-3.5 h-3.5 text-stone-400" />
               Ventas hoy
             </div>
             <div className="text-3xl font-extrabold text-stone-900 leading-none">
@@ -252,8 +395,8 @@ export default function Dashboard() {
             </div>
             <div className="flex items-center gap-3 mt-2">
               {data.last_week_same_day_cents > 0 && (
-                <span className={clsx("text-xs font-semibold px-2 py-0.5 rounded-full", pctBg(data.vs_last_week_pct))}>
-                  {pctArrow(data.vs_last_week_pct)}{" "}
+                <span className={clsx("flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full", pctBg(data.vs_last_week_pct))}>
+                  {data.vs_last_week_pct > 0 ? <TrendingUp className="w-3 h-3" /> : data.vs_last_week_pct < 0 ? <TrendingDown className="w-3 h-3" /> : <Minus className="w-3 h-3" />}
                   {Math.abs(data.vs_last_week_pct).toFixed(0)}% vs {todayDayName()} pasado
                 </span>
               )}
@@ -278,7 +421,8 @@ export default function Dashboard() {
 
           {/* Top productos hoy */}
           <div className="bg-white rounded-xl border border-stone-200 p-4">
-            <div className="text-[11px] font-semibold uppercase tracking-wide text-stone-400 mb-3">
+            <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-stone-400 mb-3">
+              <Package className="w-3.5 h-3.5 text-stone-400" />
               Top hoy
             </div>
             {data.top_today.length === 0 ? (
@@ -300,7 +444,10 @@ export default function Dashboard() {
             )}
             {data.dominant_payment && (
               <div className="mt-3 pt-3 border-t border-stone-100">
-                <div className="text-[10px] text-stone-400 uppercase tracking-wide">Pago dominante</div>
+                <div className="flex items-center gap-1 text-[10px] text-stone-400 uppercase tracking-wide">
+                  <CreditCard className="w-3 h-3" />
+                  Pago dominante
+                </div>
                 <div className="text-xs font-semibold text-stone-700 mt-0.5">
                   {METHOD_LABELS[data.dominant_payment] ?? data.dominant_payment}{" "}
                   <span className="text-stone-400 font-normal">
@@ -311,53 +458,39 @@ export default function Dashboard() {
             )}
           </div>
 
-          {/* Meta del día */}
+          {/* Metas */}
           <div className="bg-white rounded-xl border border-stone-200 p-4">
-            <div className="text-[11px] font-semibold uppercase tracking-wide text-stone-400 mb-3">
+            <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-stone-400 mb-3">
+              <Target className="w-3.5 h-3.5 text-stone-400" />
               Metas
             </div>
-            {data.daily_goal_cents > 0 ? (
-              <div className="space-y-3">
-                <div>
-                  <div className="flex justify-between text-[10px] text-stone-500 mb-1">
-                    <span>Meta diaria</span>
-                    <span className="font-semibold">{dailyGoalPct.toFixed(0)}%</span>
-                  </div>
-                  <div className="h-2 bg-stone-100 rounded-full overflow-hidden">
-                    <div
-                      className={clsx(
-                        "h-full rounded-full transition-all",
-                        dailyGoalPct >= 100 ? "bg-emerald-500" : "bg-indigo-500"
-                      )}
-                      style={{ width: `${dailyGoalPct}%` }}
-                    />
-                  </div>
-                  <div className="text-[10px] text-stone-400 mt-1">
-                    {centsToARS(data.today_total_cents)} / {centsToARS(data.daily_goal_cents)}
-                  </div>
-                </div>
-                {data.monthly_goal_cents > 0 && (
-                  <div>
-                    <div className="flex justify-between text-[10px] text-stone-500 mb-1">
-                      <span>Meta mensual</span>
-                      <span className="font-semibold">{monthlyGoalPct.toFixed(0)}%</span>
+            {anyGoalConfigured ? (
+              <div className="space-y-2.5">
+                {goalRows.map((g) => {
+                  const Icon = g.icon;
+                  return (
+                    <div key={g.key}>
+                      <div className="flex justify-between items-center text-[10px] text-stone-500 mb-1">
+                        <span className="flex items-center gap-1"><Icon className="w-3 h-3 text-stone-400" />{g.label}</span>
+                        <span className="font-semibold">{g.pct.toFixed(0)}%</span>
+                      </div>
+                      <div className="h-1.5 bg-stone-100 rounded-full overflow-hidden">
+                        <div
+                          className={clsx(
+                            "h-full rounded-full transition-all",
+                            g.pct >= 100 ? "bg-emerald-500" : "bg-indigo-500"
+                          )}
+                          style={{ width: `${g.pct}%` }}
+                        />
+                      </div>
+                      <div className="text-[10px] text-stone-400 mt-0.5">
+                        {centsToARS(g.current)} / {centsToARS(g.goal)}
+                      </div>
                     </div>
-                    <div className="h-2 bg-stone-100 rounded-full overflow-hidden">
-                      <div
-                        className={clsx(
-                          "h-full rounded-full transition-all",
-                          monthlyGoalPct >= 100 ? "bg-emerald-500" : "bg-indigo-400"
-                        )}
-                        style={{ width: `${monthlyGoalPct}%` }}
-                      />
-                    </div>
-                    <div className="text-[10px] text-stone-400 mt-1">
-                      {centsToARS(data.month_so_far_cents)} / {centsToARS(data.monthly_goal_cents)}
-                    </div>
-                  </div>
-                )}
-                {data.month_projection_cents > 0 && (
-                  <div className="pt-1 border-t border-stone-100">
+                  );
+                })}
+                {data.month_projection_cents > 0 && data.monthly_goal_cents > 0 && (
+                  <div className="pt-1.5 border-t border-stone-100">
                     <div className="text-[10px] text-stone-400">Proyección de mes</div>
                     <div className="text-sm font-bold text-stone-800 mt-0.5">
                       {centsToARS(data.month_projection_cents)}
@@ -369,7 +502,7 @@ export default function Dashboard() {
               <div className="text-center mt-4">
                 <div className="text-xs text-stone-400">No hay metas configuradas</div>
                 <button
-                  onClick={() => navigate("/configuracion")}
+                  onClick={() => navigate("/configuracion", { state: { tab: "finanzas" } })}
                   className="mt-2 text-[11px] text-indigo-600 hover:underline"
                 >
                   Configurar →
@@ -383,58 +516,47 @@ export default function Dashboard() {
         <div className="grid grid-cols-3 gap-3">
           {/* Tendencia 7 días */}
           <div className="bg-white rounded-xl border border-stone-200 p-4 col-span-2">
-            <div className="text-[11px] font-semibold uppercase tracking-wide text-stone-400 mb-4">
+            <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-stone-400 mb-2">
+              <TrendingUp className="w-3.5 h-3.5 text-stone-400" />
               Tendencia últimos 7 días
             </div>
             {data.week_trend.length === 0 ? (
               <div className="text-sm text-stone-400 text-center py-6">Sin datos suficientes</div>
             ) : (
-              <div className="flex items-end gap-2 h-24">
-                {/* Rellenar días sin datos */}
-                {(() => {
-                  const today = new Date();
-                  const days: Array<{ date: string; total_cents: number; sales_count: number }> = [];
-                  for (let i = 6; i >= 0; i--) {
-                    const d = new Date(today);
-                    d.setDate(today.getDate() - i);
-                    const iso = dateToLocalISO(d);
-                    const found = data.week_trend.find((t) => t.date === iso);
-                    days.push(found ?? { date: iso, total_cents: 0, sales_count: 0 });
-                  }
-                  return days.map((day, idx) => {
-                    const heightPct = trendMax > 0 ? (day.total_cents / trendMax) * 100 : 0;
-                    const isToday = idx === 6;
-                    return (
-                      <div key={day.date} className="flex-1 flex flex-col items-center gap-1 group">
-                        <div className="relative w-full flex flex-col justify-end" style={{ height: "80px" }}>
-                          <div
-                            className={clsx(
-                              "w-full rounded-t-sm transition-all",
-                              isToday ? "bg-indigo-500" : "bg-stone-200 group-hover:bg-stone-300"
-                            )}
-                            style={{ height: `${Math.max(heightPct, day.total_cents > 0 ? 4 : 2)}%` }}
-                          />
-                          {day.total_cents > 0 && (
-                            <div className="absolute -top-5 left-1/2 -translate-x-1/2 text-[9px] text-stone-500 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none bg-white border border-stone-200 rounded px-1 shadow-sm">
-                              {centsToARS(day.total_cents)}
-                            </div>
-                          )}
-                        </div>
-                        <div className={clsx("text-[10px]", isToday ? "text-indigo-600 font-bold" : "text-stone-400")}>
+              (() => {
+                const today = new Date();
+                const days: Array<{ date: string; total_cents: number; sales_count: number }> = [];
+                for (let i = 6; i >= 0; i--) {
+                  const d = new Date(today);
+                  d.setDate(today.getDate() - i);
+                  const iso = dateToLocalISO(d);
+                  const found = data.week_trend.find((t) => t.date === iso);
+                  days.push(found ?? { date: iso, total_cents: 0, sales_count: 0 });
+                }
+                return (
+                  <div>
+                    <TrendChart days={days} trendMax={trendMax} />
+                    <div className="flex justify-between mt-1 px-1">
+                      {days.map((day, idx) => (
+                        <span
+                          key={day.date}
+                          className={clsx("text-[10px]", idx === 6 ? "text-indigo-600 font-bold" : "text-stone-400")}
+                        >
                           {dayLabel(day.date)}
-                        </div>
-                      </div>
-                    );
-                  });
-                })()}
-              </div>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()
             )}
           </div>
 
           {/* Alertas urgentes */}
           <div className="bg-white rounded-xl border border-stone-200 p-4">
             <div className="flex items-center justify-between mb-3">
-              <div className="text-[11px] font-semibold uppercase tracking-wide text-stone-400">
+              <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-stone-400">
+                <AlertTriangle className="w-3.5 h-3.5 text-red-400" />
                 Alertas
               </div>
               {totalAlerts > 0 && (
@@ -446,56 +568,22 @@ export default function Dashboard() {
 
             {totalAlerts === 0 ? (
               <div className="text-center py-4">
-                <div className="text-xl mb-1">✅</div>
+                <CheckCircle2 className="w-7 h-7 text-emerald-400 mx-auto mb-1" />
                 <div className="text-xs text-stone-500">Todo en orden</div>
               </div>
             ) : (
-              <div className="space-y-2 max-h-48 overflow-y-auto">
-                {data.critical_stock.map((item) => (
-                  <button
-                    key={item.product_id}
-                    onClick={() => navigate("/proveedores")}
-                    className="w-full text-left rounded-lg bg-red-50 border border-red-100 px-3 py-2 hover:bg-red-100 transition-colors"
-                  >
-                    <div className="text-[10px] font-bold text-red-600 uppercase tracking-wide">
-                      Stock crítico
-                    </div>
-                    <div className="text-xs font-semibold text-red-900 mt-0.5 truncate">{item.name}</div>
-                    <div className="text-[10px] text-red-500 mt-0.5">
-                      {item.stock} un · {item.days_remaining.toFixed(1)} días restantes
-                    </div>
-                  </button>
+              <div className="space-y-2">
+                {alertsPreview.map((entry) => (
+                  <AlertRow key={alertKey(entry)} entry={entry} onClick={() => navigate(alertRoute(entry))} />
                 ))}
-                {data.expiring_soon.map((item) => (
+                {totalAlerts > ALERTS_PREVIEW && (
                   <button
-                    key={item.product_id}
-                    onClick={() => navigate("/vencimientos")}
-                    className="w-full text-left rounded-lg bg-red-50 border border-red-100 px-3 py-2 hover:bg-red-100 transition-colors"
+                    onClick={() => setShowAllAlerts(true)}
+                    className="w-full flex items-center justify-center gap-1 text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 py-1.5"
                   >
-                    <div className="text-[10px] font-bold text-red-600 uppercase tracking-wide">
-                      Vencimiento
-                    </div>
-                    <div className="text-xs font-semibold text-red-900 mt-0.5 truncate">{item.name}</div>
-                    <div className="text-[10px] text-red-500 mt-0.5">
-                      {item.stock} un · {item.days_left} día{item.days_left !== 1 ? "s" : ""}
-                    </div>
+                    Ver todas ({totalAlerts}) <ArrowRight className="w-3 h-3" />
                   </button>
-                ))}
-                {data.overdue_accounts.map((acc) => (
-                  <button
-                    key={acc.client_id}
-                    onClick={() => navigate("/clientes")}
-                    className="w-full text-left rounded-lg bg-red-50 border border-red-100 px-3 py-2 hover:bg-red-100 transition-colors"
-                  >
-                    <div className="text-[10px] font-bold text-red-600 uppercase tracking-wide">
-                      CC vencida
-                    </div>
-                    <div className="text-xs font-semibold text-red-900 mt-0.5 truncate">{acc.name}</div>
-                    <div className="text-[10px] text-red-500 mt-0.5">
-                      {centsToARS(acc.balance_cents)} · {acc.days_absent} días ausente
-                    </div>
-                  </button>
-                ))}
+                )}
               </div>
             )}
           </div>
@@ -503,54 +591,62 @@ export default function Dashboard() {
 
         {/* ── Consejo del Día (insights de Rust) ───────────────────────────── */}
         {activeInsights.length > 0 && (
-          <div className="bg-white rounded-xl border border-stone-200 p-4">
-            <div className="flex items-center justify-between mb-3">
-              <div className="text-[11px] font-semibold uppercase tracking-wide text-stone-400">
-                ☀️ Consejo del día
+          <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-stone-100">
+              <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-stone-400">
+                <Sparkles className="w-3.5 h-3.5 text-stone-400" />
+                Consejo del día
               </div>
-              <span className="text-[10px] text-stone-400">{activeInsights.length} alertas activas</span>
+              <div className="flex items-center gap-1.5">
+                {(["urgente", "importante", "consejo", "info"] as const).map((lvl) =>
+                  insightLevelCounts[lvl] ? (
+                    <span
+                      key={lvl}
+                      className={clsx(
+                        "text-[10px] font-bold px-2 py-0.5 rounded-full",
+                        lvl === "urgente" ? "bg-red-100 text-red-600" :
+                        lvl === "importante" ? "bg-amber-100 text-amber-600" :
+                        lvl === "consejo" ? "bg-indigo-100 text-indigo-600" : "bg-stone-100 text-stone-500"
+                      )}
+                    >
+                      {insightLevelCounts[lvl]} {LEVEL_LABEL[lvl].toLowerCase()}
+                    </span>
+                  ) : null
+                )}
+              </div>
             </div>
-            <div className="space-y-2">
-              {activeInsights.slice(0, 8).map((ins) => {
-                const msg = ins.message;
-                const det = ins.detail;
-                const act = ins.action;
-                const route = ins.route;
-                return (
-                  <div
-                    key={ins.id}
-                    className={clsx("rounded-lg px-3 py-2.5 flex items-start gap-3", LEVEL_STYLE[ins.level as keyof typeof LEVEL_STYLE])}
-                  >
-                    <div className="flex items-center gap-1.5 shrink-0 mt-0.5">
-                      <div className={clsx("w-2 h-2 rounded-full shrink-0", LEVEL_DOT[ins.level as keyof typeof LEVEL_DOT])} />
-                      <span className={clsx(
-                        "text-[9px] font-bold tracking-widest",
-                        ins.level === "urgente" ? "text-red-600" :
-                        ins.level === "importante" ? "text-amber-600" :
-                        ins.level === "consejo" ? "text-indigo-600" : "text-stone-500"
-                      )}>
-                        {LEVEL_LABEL[ins.level as keyof typeof LEVEL_LABEL]}
-                      </span>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-xs font-semibold text-stone-800">{msg}</div>
-                      {det && <div className="text-[10px] text-stone-500 mt-0.5">{det}</div>}
-                    </div>
-                    {route && act && (
-                      <button
-                        onClick={() => navigate(route)}
-                        className="text-[10px] font-semibold text-indigo-600 hover:text-indigo-800 shrink-0 mt-0.5"
-                      >
-                        {act} →
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
+            <div className="space-y-2 p-4">
+              {insightsPreview.map((ins) => (
+                <InsightRow key={ins.id} ins={ins} onNavigate={navigate} />
+              ))}
+              {activeInsights.length > INSIGHTS_PREVIEW && (
+                <button
+                  onClick={() => setShowAllInsights(true)}
+                  className="w-full flex items-center justify-center gap-1 text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 py-1.5"
+                >
+                  Ver los {activeInsights.length} consejos <ArrowRight className="w-3 h-3" />
+                </button>
+              )}
             </div>
           </div>
         )}
       </div>
+
+      {showAllAlerts && (
+        <AllAlertsModal
+          entries={allAlertEntries}
+          totalAlerts={totalAlerts}
+          onClose={() => setShowAllAlerts(false)}
+          onNavigate={navigate}
+        />
+      )}
+      {showAllInsights && (
+        <AllInsightsModal
+          insights={activeInsights}
+          onClose={() => setShowAllInsights(false)}
+          onNavigate={navigate}
+        />
+      )}
     </div>
   );
 }

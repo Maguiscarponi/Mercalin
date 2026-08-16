@@ -21,6 +21,7 @@ export interface Product {
   stock: number;
   min_stock: number;
   category: string | null;
+  brand: string | null;
   is_weighable: boolean;
   active: boolean;
   // Precargado (ej. import de catálogo público) pero sin precio todavía: no cuenta como
@@ -44,10 +45,12 @@ export interface NewProduct {
   stock: number;
   min_stock: number;
   category: string | null;
+  brand: string | null;
   is_weighable: boolean;
   active: boolean;
   supplier_id: Id | null;
   expires_at: string | null;
+  image_path?: string | null;
 }
 
 export interface ExpiringProduct {
@@ -77,6 +80,23 @@ export interface NewProductLot {
   cost_cents: number;
   expires_at: string | null;
   notes: string | null;
+}
+
+export interface WeighedLabel {
+  id: Id;
+  barcode: string;
+  product_id: Id;
+  product_name: string;
+  weight_kg: number;
+  unit_price_cents: number;
+  total_price_cents: number;
+  created_at: string;
+}
+
+export interface NewWeighedLabel {
+  product_id: Id;
+  weight_kg: number;
+  unit_price_cents: number;
 }
 
 export interface ExpiringLot {
@@ -514,6 +534,9 @@ export interface DeviceConfig {
 export interface LicenseStatus {
   activated: boolean;
   email: string | null;
+  kind: "trial" | "full" | null;
+  expiresAt: number | null; // epoch segundos
+  expired: boolean;
 }
 
 export interface PendingSyncOp {
@@ -531,6 +554,7 @@ export interface PendingSyncOp {
 export interface AuditEntry {
   id: Id;
   user_id: Id | null;
+  user_name: string | null;
   action: string;
   entity: string;
   entity_id: Id | null;
@@ -737,6 +761,10 @@ export interface DashboardData {
   monthly_goal_cents: number;
   month_so_far_cents: number;
   month_projection_cents: number;
+  weekly_goal_cents: number;
+  week_so_far_cents: number;
+  yearly_goal_cents: number;
+  year_so_far_cents: number;
 }
 
 // ─── Presupuestos ────────────────────────────────────────────────────────────
@@ -791,7 +819,7 @@ export interface NewQuote {
 
 // ─── Fase 3: Precios masivos ──────────────────────────────────────────────────
 export interface BulkPriceInput {
-  filter_type: 'all' | 'category' | 'supplier';
+  filter_type: 'all' | 'category' | 'brand' | 'supplier';
   filter_value: string | null;
   price_pct: number;
   cost_pct: number | null;
@@ -812,11 +840,16 @@ export interface CsvProductRow {
   barcode: string | null;
   name: string;
   price_cents: number;
+  price2_cents: number;
+  price3_cents: number;
   cost_cents: number;
   stock: number;
   min_stock: number;
   category: string | null;
+  brand: string | null;
   supplier_id: Id | null;
+  supplier_name: string | null;
+  is_weighable: boolean;
   expires_at: string | null;
 }
 
@@ -872,6 +905,7 @@ export interface IvaReportItem {
   neto_cents: number;
   iva_cents: number;
   client_name: string | null;
+  is_invoiced: boolean;
 }
 
 // ─── Fase 3: Conteo de inventario ────────────────────────────────────────────

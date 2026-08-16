@@ -241,21 +241,23 @@ fn handle_network_request(
             let body = {
                 let conn = db.lock();
                 let mut alerts: Vec<String> = Vec::new();
-                // Stock crítico
-                let mut stmt = conn.prepare(
-                    "SELECT p.name, p.stock,
-                     COALESCE((SELECT CAST(SUM(si.qty) AS REAL)/30 FROM sale_items si JOIN sales s ON s.id=si.sale_id WHERE si.product_id=p.id AND s.created_at>=datetime('now','-30 days')),0) as vel
-                     FROM products p WHERE p.active=1 AND p.stock>0 AND p.min_stock>0 AND p.stock<=p.min_stock
-                     ORDER BY p.stock ASC LIMIT 5"
-                ).unwrap();
-                if let Ok(rows) = stmt.query_map([], |r| {
-                    Ok((r.get::<_,String>(0)?, r.get::<_,i64>(1)?, r.get::<_,f64>(2)?))
-                }) {
-                    for row in rows.filter_map(|r| r.ok()) {
-                        let days = if row.2 > 0.0 { (row.1 as f64 / row.2).round() as i64 } else { 99 };
-                        alerts.push(format!(r#"{{"level":"urgente","message":"Stock bajo: {} ({} ud. — ~{} días)"}}"#,
-                            row.0.replace('"', "'"), row.1, days));
-                    }
+                // Stock crítico (nada si el negocio apagó el seguimiento de stock)
+                if crate::db::stock_tracking_enabled(&conn) {
+                    let mut stmt = conn.prepare(
+                        "SELECT p.name, p.stock,
+                         COALESCE((SELECT CAST(SUM(si.qty) AS REAL)/30 FROM sale_items si JOIN sales s ON s.id=si.sale_id WHERE si.product_id=p.id AND s.created_at>=datetime('now','-30 days')),0) as vel
+                         FROM products p WHERE p.active=1 AND p.stock>0 AND p.min_stock>0 AND p.stock<=p.min_stock
+                         ORDER BY p.stock ASC LIMIT 5"
+                    ).unwrap();
+                    if let Ok(rows) = stmt.query_map([], |r| {
+                        Ok((r.get::<_,String>(0)?, r.get::<_,i64>(1)?, r.get::<_,f64>(2)?))
+                    }) {
+                        for row in rows.filter_map(|r| r.ok()) {
+                            let days = if row.2 > 0.0 { (row.1 as f64 / row.2).round() as i64 } else { 99 };
+                            alerts.push(format!(r#"{{"level":"urgente","message":"Stock bajo: {} ({} ud. — ~{} días)"}}"#,
+                                row.0.replace('"', "'"), row.1, days));
+                        }
+                    };
                 }
                 // Vencimientos próximos
                 let mut stmt2 = conn.prepare(
@@ -348,6 +350,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let app_dir = app
                 .path()
@@ -463,16 +466,26 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             // Productos
             commands::products::find_product_by_barcode,
+            commands::weighed_labels::create_weighed_label,
+            commands::weighed_labels::find_weighed_label,
             commands::products::get_product,
             commands::products::list_products,
             commands::products::create_product,
             commands::products::update_product,
             commands::products::delete_product,
+            commands::products::list_inactive_products,
+            commands::products::reactivate_product,
+            commands::products::bulk_set_category,
+            commands::products::bulk_set_brand,
+            commands::products::bulk_set_supplier,
             commands::products::list_expiring_products,
             commands::products::list_categories,
+            commands::products::list_brands,
             commands::products::create_category,
             commands::products::rename_category,
             commands::products::delete_category,
+            commands::products::rename_brand,
+            commands::products::delete_brand,
             commands::products::list_product_velocities,
             // Ventas
             commands::sales::create_sale,
@@ -518,6 +531,8 @@ pub fn run() {
             commands::clients::create_client,
             commands::clients::update_client,
             commands::clients::delete_client,
+            commands::clients::list_inactive_clients,
+            commands::clients::reactivate_client,
             commands::clients::client_account_history,
             commands::clients::register_client_payment,
             // Proveedores
@@ -552,6 +567,7 @@ pub fn run() {
             commands::promotions::delete_promotion,
             // Combos y packs
             commands::combos::list_combos,
+            commands::combos::list_combos_for_product,
             commands::combos::list_active_combos,
             commands::combos::find_combo_by_barcode,
             commands::combos::create_combo,
@@ -562,6 +578,7 @@ pub fn run() {
             commands::quotes::list_quotes,
             commands::quotes::get_quote_with_items,
             commands::quotes::create_quote,
+            commands::quotes::update_quote,
             commands::quotes::update_quote_status,
             commands::quotes::delete_quote,
             // Backup

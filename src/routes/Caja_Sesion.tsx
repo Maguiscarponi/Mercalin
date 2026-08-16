@@ -3,6 +3,7 @@ import { api } from "@/lib/api";
 import { centsToARS, arsStringToCents, formatDateTime } from "@/lib/format";
 import type { CashSession, CashMovement } from "@/types";
 import { showToast } from "@/stores/dialogs";
+import { useAuthStore } from "@/stores/auth";
 import { useEscapeToClose } from "@/lib/useEscapeToClose";
 import ModalCloseButton from "@/components/ui/ModalCloseButton";
 import clsx from "clsx";
@@ -391,6 +392,7 @@ interface OpenFormProps {
 }
 
 export function OpenCashForm({ onCancel, onOpened }: OpenFormProps) {
+  const userId = useAuthStore((s) => s.user?.id ?? null);
   const [amountStr, setAmountStr] = useState("");
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
@@ -401,7 +403,7 @@ export function OpenCashForm({ onCancel, onOpened }: OpenFormProps) {
     try {
       const session = await api.openCashSession({
         opening_cents: arsStringToCents(amountStr),
-        user_id: null,
+        user_id: userId,
         notes: notes.trim() || null,
       });
       onOpened(session);

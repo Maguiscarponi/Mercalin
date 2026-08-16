@@ -5,9 +5,11 @@ import { confirmAction, showToast } from "@/stores/dialogs";
 import Field from "@/components/ui/Field";
 import { useEscapeToClose } from "@/lib/useEscapeToClose";
 import ModalCloseButton from "@/components/ui/ModalCloseButton";
+import { useStockTrackingStore } from "@/stores/stockTracking";
 import type { NewSupplier, Product, PurchaseOrder, PurchaseOrderItem, Supplier, PurchaseProjection, SupplierLeadTime, CostInflationItem, SupplierRiskScore } from "@/types";
 
 export default function Proveedores() {
+  const stockTrackingEnabled = useStockTrackingStore((s) => s.enabled);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [orders, setOrders] = useState<PurchaseOrder[]>([]);
   const [tab, setTab] = useState<"proveedores" | "ordenes" | "proyeccion" | "leadtimes" | "inflacion" | "riesgo">("proveedores");
@@ -836,6 +838,7 @@ function SupplierProductsModal({
   onClose: () => void;
   onNewOrder: () => void;
 }) {
+  const stockTrackingEnabled = useStockTrackingStore((s) => s.enabled);
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   useEscapeToClose(onClose);
@@ -847,7 +850,7 @@ function SupplierProductsModal({
   }, [supplier.id]);
 
   const totalStock = products.reduce((s, p) => s + p.stock, 0);
-  const lowStockCount = products.filter((p) => p.stock <= p.min_stock).length;
+  const lowStockCount = stockTrackingEnabled ? products.filter((p) => p.stock <= p.min_stock).length : 0;
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
@@ -904,7 +907,7 @@ function SupplierProductsModal({
               </thead>
               <tbody>
                 {products.map((p) => (
-                  <tr key={p.id} className={`border-t border-stone-100 ${p.stock <= p.min_stock ? "bg-red-50" : "hover:bg-stone-50"}`}>
+                  <tr key={p.id} className={`border-t border-stone-100 ${stockTrackingEnabled && p.stock <= p.min_stock ? "bg-red-50" : "hover:bg-stone-50"}`}>
                     <td className="px-4 py-2.5">
                       <div className="font-medium">{p.name}</div>
                       {p.barcode && <div className="text-[10px] text-stone-400 font-mono">{p.barcode}</div>}
@@ -912,9 +915,9 @@ function SupplierProductsModal({
                     <td className="px-4 py-2.5 text-stone-500 text-xs">{p.category || "—"}</td>
                     <td className="px-4 py-2.5 text-right tabular text-stone-500">{centsToARS(p.cost_cents)}</td>
                     <td className="px-4 py-2.5 text-right tabular font-medium">{centsToARS(p.price_cents)}</td>
-                    <td className={`px-4 py-2.5 text-right tabular font-bold ${p.stock <= p.min_stock ? "text-red-600" : ""}`}>
+                    <td className={`px-4 py-2.5 text-right tabular font-bold ${stockTrackingEnabled && p.stock <= p.min_stock ? "text-red-600" : ""}`}>
                       {p.stock}
-                      {p.stock <= p.min_stock && <span className="ml-1 text-xs">⚠</span>}
+                      {stockTrackingEnabled && p.stock <= p.min_stock && <span className="ml-1 text-xs">⚠</span>}
                     </td>
                     <td className="px-4 py-2.5 text-right tabular text-stone-400">{p.min_stock}</td>
                   </tr>
