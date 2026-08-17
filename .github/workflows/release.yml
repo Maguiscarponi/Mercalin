@@ -1,22 +1,20 @@
 name: Publicar actualización
 
-# Se dispara al subir un tag de versión (ej: git tag v1.0.1 && git push origin v1.0.1).
-# Compila el instalador de Windows y lo firma con la clave de actualizaciones (tauri-action).
-# La creación de la release y la subida de archivos las hace un paso aparte
-# (softprops/action-gh-release) -- tauri-action venía fallando en silencio al crear
-# la release él mismo: el job terminaba en verde pero la release nunca se creaba,
-# sin ningún mensaje de error en el log. Separar "compilar" de "publicar" y usar una
-# acción distinta y más probada para lo segundo evita ese fallo. También hace falta
-# el permiso "Read and write permissions" en Settings > Actions > General del repo
-# (el default de solo lectura hacía que cualquier escritura fallara en silencio) y
-# fetch-depth: 0 en el checkout, y target_commitish explícito en el paso de abajo --
-# el tag recién pusheado tarda unos segundos en ser "descubierto" por el backend de
-# Releases de GitHub, y sin decirle a qué commit apunta, cae en crear la release
-# como "untagged-xxxxx" en vez de con el tag real.
+# Se dispara al subir un tag "build-*" (ej: git tag build-1.1.8 && git push origin build-1.1.8).
+# Ese tag es solo el disparador -- el tag REAL de la release (v1.1.8) se lee de
+# src-tauri/tauri.conf.json y lo crea recién la propia acción de publicar, apuntando
+# al commit exacto (target_commitish). Es así a propósito: durante mucho debugging
+# se comprobó que si el tag "vX.Y.Z" ya existe en git ANTES de pedirle a GitHub que
+# cree la release, el backend de Releases (que es un sistema interno distinto al de
+# los refs de git) puede tardar en "descubrirlo" -- ni fetch-depth: 0, ni
+# target_commitish, ni 4 minutos de espera activa alcanzaron para evitar que la
+# release cayera en un fallback "untagged-xxxxx" en vez del tag real. La solución
+# de fondo es que el tag "vX.Y.Z" nunca exista de antemano: que lo cree la propia
+# llamada de creación de la release, como operación atómica, sin nada que descubrir.
 on:
   push:
     tags:
-      - "v*"
+      - "build-*"
 
 jobs:
   publish:
@@ -36,6 +34,13 @@ jobs:
 
       - run: npm ci
 
+      - name: Leer versión de tauri.conf.json
+        id: version
+        shell: pwsh
+        run: |
+          $conf = Get-Content "src-tauri/tauri.conf.json" -Raw | ConvertFrom-Json
+          "version=$($conf.version)" >> $env:GITHUB_OUTPUT
+
       # Solo compila y firma -- sin tagName/releaseName/releaseId no intenta crear
       # ni subir ninguna release, así que la firma no depende de esa parte.
       - uses: tauri-apps/tauri-action@v0
@@ -51,46 +56,30 @@ jobs:
       - name: Generar latest.json
         shell: pwsh
         run: |
-          $version = "${{ github.ref_name }}".TrimStart("v")
+          $version = "${{ steps.version.outputs.version }}"
           $exeSig = (Get-Content "src-tauri/target/release/bundle/nsis/Mercalin_${version}_x64-setup.exe.sig" -Raw).Trim()
           $pubDate = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
           $manifest = [ordered]@{
             version   = $version
-            notes     = "Mercalin ${{ github.ref_name }}"
+            notes     = "Mercalin v${version}"
             pub_date  = $pubDate
             platforms = [ordered]@{
               "windows-x86_64" = [ordered]@{
                 signature = $exeSig
-                url       = "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/Mercalin_${version}_x64-setup.exe"
+                url       = "https://github.com/${{ github.repository }}/releases/download/v${version}/Mercalin_${version}_x64-setup.exe"
               }
             }
           }
           $manifest | ConvertTo-Json -Depth 5 | Set-Content -Path "latest.json" -Encoding utf8
 
-      # El tag ya existe (es lo que disparó este workflow) pero el backend de
-      # Releases de GitHub a veces tarda en "verlo" -- softprops/action-gh-release
-      # reintenta solo 2 veces, casi sin pausa, e insuficiente. Acá esperamos de
-      # verdad, consultando la API hasta que confirme el tag antes de seguir.
-      - name: Esperar a que el tag sea visible para la API de Releases
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
-        run: |
-          for i in $(seq 1 24); do
-            if gh api "repos/${{ github.repository }}/git/refs/tags/${{ github.ref_name }}" >/dev/null 2>&1; then
-              echo "Tag visible tras intento $i."
-              exit 0
-            fi
-            echo "Intento $i: tag todavía no visible, esperando..."
-            sleep 10
-          done
-          echo "El tag no quedó visible tras 4 minutos -- seguimos igual."
-
+      # tag_name usa un tag que todavía NO existe en git -- lo crea esta misma
+      # llamada, apuntando a target_commitish. Sin tag preexistente, no hay nada
+      # que el backend de Releases tenga que "descubrir" de antemano.
       - uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
+          tag_name: v${{ steps.version.outputs.version }}
           target_commitish: ${{ github.sha }}
-          name: "Mercalin ${{ github.ref_name }}"
+          name: "Mercalin v${{ steps.version.outputs.version }}"
           draft: true
           prerelease: false
           files: |
