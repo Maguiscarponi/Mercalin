@@ -81,6 +81,9 @@ jobs:
           cp "src-tauri/target/release/bundle/msi/Mercalin_${version}_x64_en-US.msi" /tmp/dist-publish/
           cp "src-tauri/target/release/bundle/msi/Mercalin_${version}_x64_en-US.msi.sig" /tmp/dist-publish/
           cp "latest.json" /tmp/dist-publish/
+          # Nombre estable además del versionado -- así el link de descarga de la
+          # web (mercalinonline-web) no se rompe con cada release nueva.
+          cp "src-tauri/target/release/bundle/nsis/Mercalin_${version}_x64-setup.exe" /tmp/dist-publish/Mercalin-setup.exe
           cd /tmp/dist-publish
           git init -q
           git config user.name "github-actions[bot]"
