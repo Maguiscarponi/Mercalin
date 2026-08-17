@@ -28,11 +28,18 @@ pub struct DeviceConfig {
     // perderse cuando esta caja se conecta como cliente y su base se reemplaza.
     pub license_email: Option<String>,
     pub license_key: Option<String>,
+    // Última vez que license_key verificó OK (epoch, segundos). Ver get_license_status:
+    // si una verificación falla pero esta clave venía verificando bien hasta hace poco,
+    // no se bloquea el acceso -- evita que un problema nuestro (ej. un build publicado
+    // con el LICENSE_SECRET desincronizado, como pasó dos veces) le corte de golpe el
+    // sistema a alguien que ya estaba activado.
+    #[serde(default)]
+    pub last_verified_at: Option<i64>,
 }
 
 impl Default for DeviceConfig {
     fn default() -> Self {
-        DeviceConfig { mode: "standalone".to_string(), server_addr: None, license_email: None, license_key: None }
+        DeviceConfig { mode: "standalone".to_string(), server_addr: None, license_email: None, license_key: None, last_verified_at: None }
     }
 }
 
@@ -226,16 +233,35 @@ impl LicenseStatus {
     }
 }
 
+// Cuánto tiempo se sigue confiando en una clave que dejó de verificar, mientras
+// haya verificado OK dentro de esta ventana. No es una gracia para claves nuevas
+// ni le suma días a una prueba vencida (eso lo decide from_info con el vencimiento
+// que ya trae la clave, no esto) -- es solo un colchón contra fallos nuestros.
+const VERIFY_GRACE_SECS: i64 = 30 * 24 * 60 * 60;
+
 #[tauri::command]
 pub fn get_license_status(state: State<AppState>) -> CmdResult<LicenseStatus> {
-    let cfg = read_device_config(&app_dir_of(&state)?);
+    let app_dir = app_dir_of(&state)?;
+    let mut cfg = read_device_config(&app_dir);
     let key = match &cfg.license_key {
-        Some(k) => k,
+        Some(k) => k.clone(),
         None => return Ok(LicenseStatus::none()),
     };
-    match parse_and_verify_license_key(key) {
-        Ok(info) => Ok(LicenseStatus::from_info(info)),
-        Err(_) => Ok(LicenseStatus::none()),
+    match parse_and_verify_license_key(&key) {
+        Ok(info) => {
+            cfg.last_verified_at = Some(Utc::now().timestamp());
+            let _ = write_device_config(&app_dir, &cfg);
+            Ok(LicenseStatus::from_info(info))
+        }
+        Err(_) => {
+            let now = Utc::now().timestamp();
+            let in_grace = matches!(cfg.last_verified_at, Some(t) if now - t < VERIFY_GRACE_SECS);
+            if in_grace {
+                Ok(LicenseStatus { activated: true, email: cfg.license_email.clone(), kind: None, expires_at: None, expired: false })
+            } else {
+                Ok(LicenseStatus::none())
+            }
+        }
     }
 }
 
@@ -258,6 +284,7 @@ pub fn activate_license(email: String, key: String, state: State<AppState>) -> C
     let mut cfg = read_device_config(&app_dir);
     cfg.license_email = Some(normalized_email);
     cfg.license_key = Some(cleaned_key);
+    cfg.last_verified_at = Some(Utc::now().timestamp());
     write_device_config(&app_dir, &cfg)?;
 
     Ok(LicenseStatus::from_info(info))
