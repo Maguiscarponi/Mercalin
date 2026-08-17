@@ -1,20 +1,22 @@
 name: Publicar actualización
 
-# Se dispara al subir un tag "build-*" (ej: git tag build-1.1.8 && git push origin build-1.1.8).
-# Ese tag es solo el disparador -- el tag REAL de la release (v1.1.8) se lee de
-# src-tauri/tauri.conf.json y lo crea recién la propia acción de publicar, apuntando
-# al commit exacto (target_commitish). Es así a propósito: durante mucho debugging
-# se comprobó que si el tag "vX.Y.Z" ya existe en git ANTES de pedirle a GitHub que
-# cree la release, el backend de Releases (que es un sistema interno distinto al de
-# los refs de git) puede tardar en "descubrirlo" -- ni fetch-depth: 0, ni
-# target_commitish, ni 4 minutos de espera activa alcanzaron para evitar que la
-# release cayera en un fallback "untagged-xxxxx" en vez del tag real. La solución
-# de fondo es que el tag "vX.Y.Z" nunca exista de antemano: que lo cree la propia
-# llamada de creación de la release, como operación atómica, sin nada que descubrir.
+# Se dispara al pushear un tag de versión (ej: git tag v1.1.11 && git push origin v1.1.11).
+# Compila el instalador de Windows y lo firma (tauri-action).
+#
+# NO publica como GitHub Release: en este repo, crear una Release (con tauri-action,
+# con softprops/action-gh-release, y hasta con el propio `gh` CLI, con o sin el tag
+# pusheado de antemano, con o sin reglas de protección de tags -- se descartaron
+# todas esas causas) falla siempre igual, sin error visible: queda como
+# "untagged-xxxxx" o directamente no se crea. No se encontró la causa de fondo.
+#
+# En cambio, los archivos (instalador + latest.json) se publican pusheando --force
+# a la rama "dist" (sin guardar historial, siempre solo el último build), y el
+# updater de la app los lee directo de raw.githubusercontent.com. Un `git push` a
+# una rama es la única operación de este pipeline que nunca falló en ~10 intentos.
 on:
   push:
     tags:
-      - "build-*"
+      - "v*"
 
 jobs:
   publish:
@@ -23,8 +25,6 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -41,8 +41,6 @@ jobs:
           $conf = Get-Content "src-tauri/tauri.conf.json" -Raw | ConvertFrom-Json
           "version=$($conf.version)" >> $env:GITHUB_OUTPUT
 
-      # Solo compila y firma -- sin tagName/releaseName/releaseId no intenta crear
-      # ni subir ninguna release, así que la firma no depende de esa parte.
       - uses: tauri-apps/tauri-action@v0
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -52,7 +50,7 @@ jobs:
           projectPath: .
 
       # Arma a mano el manifiesto que el updater de la app consulta
-      # (ver src/stores/updater.ts) -- mismo formato que generaba tauri-action.
+      # (ver src/stores/updater.ts / tauri.conf.json > plugins.updater.endpoints).
       - name: Generar latest.json
         shell: pwsh
         run: |
@@ -66,43 +64,27 @@ jobs:
             platforms = [ordered]@{
               "windows-x86_64" = [ordered]@{
                 signature = $exeSig
-                url       = "https://github.com/${{ github.repository }}/releases/download/v${version}/Mercalin_${version}_x64-setup.exe"
+                url       = "https://raw.githubusercontent.com/${{ github.repository }}/dist/Mercalin_${version}_x64-setup.exe"
               }
             }
           }
           $manifest | ConvertTo-Json -Depth 5 | Set-Content -Path "latest.json" -Encoding utf8
 
-      # Ni tauri-action ni softprops/action-gh-release lograron crear la release
-      # de forma confiable (las dos veces cayeron en "untagged-xxxxx", sin importar
-      # si el tag ya existía o si lo creaba la propia llamada) -- se descartaron
-      # permisos de token y reglas de protección de tags como causa, así que el
-      # problema está en el reintento interno de esas acciones, que es demasiado
-      # corto. Acá se usa `gh` (CLI oficial de GitHub) directo, con reintentos
-      # propios bastante más pacientes y el error real a la vista si algo falla.
-      - name: Crear release y subir archivos
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publicar en la rama dist
         shell: bash
         run: |
           version="${{ steps.version.outputs.version }}"
-          tag="v${version}"
-          for i in $(seq 1 10); do
-            echo "--- Intento $i de crear la release $tag ---"
-            if gh release create "$tag" \
-                --repo "${{ github.repository }}" \
-                --target "${{ github.sha }}" \
-                --title "Mercalin $tag" \
-                --draft \
-                "src-tauri/target/release/bundle/nsis/Mercalin_${version}_x64-setup.exe" \
-                "src-tauri/target/release/bundle/nsis/Mercalin_${version}_x64-setup.exe.sig" \
-                "src-tauri/target/release/bundle/msi/Mercalin_${version}_x64_en-US.msi" \
-                "src-tauri/target/release/bundle/msi/Mercalin_${version}_x64_en-US.msi.sig" \
-                "latest.json"; then
-              echo "Release creada OK en el intento $i."
-              exit 0
-            fi
-            echo "Falló el intento $i, espero 20s antes de reintentar..."
-            sleep 20
-          done
-          echo "No se pudo crear la release tras 10 intentos (~3.5 min)."
-          exit 1
+          rm -rf /tmp/dist-publish
+          mkdir -p /tmp/dist-publish
+          cp "src-tauri/target/release/bundle/nsis/Mercalin_${version}_x64-setup.exe" /tmp/dist-publish/
+          cp "src-tauri/target/release/bundle/nsis/Mercalin_${version}_x64-setup.exe.sig" /tmp/dist-publish/
+          cp "src-tauri/target/release/bundle/msi/Mercalin_${version}_x64_en-US.msi" /tmp/dist-publish/
+          cp "src-tauri/target/release/bundle/msi/Mercalin_${version}_x64_en-US.msi.sig" /tmp/dist-publish/
+          cp "latest.json" /tmp/dist-publish/
+          cd /tmp/dist-publish
+          git init -q
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Mercalin v${version}"
+          git push --force "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" HEAD:dist
