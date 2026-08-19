@@ -1,0 +1,11 @@
+{
+  "version": "1.1.14",
+  "notes": "Mercalin v1.1.14",
+  "pub_date": "2026-08-19T15:01:24Z",
+  "platforms": {
+    "windows-x86_64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRaWhIVW5uSC9FZjlRM1BCNExtV1VUZ29oVHg5cWpsWUVXQUd3T1Z4WThFUEVtSTA4WUJJTFF2b2ZNNDVQUkxkb1VpeGI2SjBudi96TEsxMFNtb2plTjN1dWZyYmcrdVFVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg3MTUxNjg0CWZpbGU6TWVyY2FsaW5fMS4xLjE0X3g2NC1zZXR1cC5leGUKYXNZVlNGNnEyODMvV2pYQnFmUHZGemdPMEwwRVh4M3I1MmNRc21pZ3MxQ1o4SW9tbUM1V2gyQ0RvZ0paZDUzVW5CWDZ6aVJKRHJPUGN5N0Flb1ljREE9PQo=",
+      "url": "https://raw.githubusercontent.com/Maguiscarponi/Mercalin/dist/Mercalin_1.1.14_x64-setup.exe"
+    }
+  }
+}
