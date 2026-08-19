@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { api } from "@/lib/api";
-import type { BackupInfo, ConfigEntry, DeptButton, DeviceConfig, NetworkInfo, PendingSyncOp } from "@/types";
+import type { BackupInfo, ConfigEntry, DeptButton, DeviceConfig, LicenseStatus, NetworkInfo, PendingSyncOp } from "@/types";
 import { arsStringToCents, centsToARS } from "@/lib/format";
 import { usePosModeStore } from "@/stores/posMode";
 import { confirmAction, showToast } from "@/stores/dialogs";
@@ -50,9 +50,38 @@ export default function Configuracion() {
   const stockTrackingEnabled = useStockTrackingStore((s) => s.enabled);
   const combosEnabled = useCombosEnabledStore((s) => s.enabled);
 
+  const [licenseStatus, setLicenseStatus] = useState<LicenseStatus | null>(null);
+  const [licenseKeyInput, setLicenseKeyInput] = useState("");
+  const [licenseActivating, setLicenseActivating] = useState(false);
+  const [licenseMsg, setLicenseMsg] = useState<string | null>(null);
+  const [licenseMsgError, setLicenseMsgError] = useState(false);
+
   useEffect(() => {
     getVersion().then(setAppVersion).catch(() => {});
+    api.getLicenseStatus().then(setLicenseStatus).catch(() => {});
   }, []);
+
+  // El mail ya lo sabe la app (el mismo con el que se activó la prueba) --
+  // el cliente solo tiene que pegar el código nuevo, un solo campo, para que
+  // no le resulte complicado a alguien no muy técnico.
+  async function doActivateLicense() {
+    if (!licenseStatus?.email || !licenseKeyInput.trim()) return;
+    setLicenseActivating(true);
+    setLicenseMsg(null);
+    try {
+      const newStatus = await api.activateLicense(licenseStatus.email, licenseKeyInput.trim());
+      setLicenseStatus(newStatus);
+      setLicenseKeyInput("");
+      setLicenseMsgError(false);
+      setLicenseMsg(newStatus.kind === "full" ? "¡Listo! Ya tenés la licencia completa activada." : "Código actualizado.");
+      playSuccess();
+    } catch (err) {
+      setLicenseMsgError(true);
+      setLicenseMsg(String(err));
+    } finally {
+      setLicenseActivating(false);
+    }
+  }
 
   function toggleSound(v: boolean) {
     setSoundEnabled(v);
@@ -648,6 +677,55 @@ export default function Configuracion() {
                     <p className={clsx("text-xs mt-2", connectError ? "text-red-600" : "text-emerald-600")}>{connectMsg}</p>
                   )}
                 </div>
+              )}
+            </section>
+
+            <section className="card p-5">
+              <h2 className="font-semibold text-sm mb-3">Licencia</h2>
+              {licenseStatus && (
+                <>
+                  {licenseStatus.kind === "full" ? (
+                    <p className="text-sm text-emerald-700">Licencia completa activada. No vence.</p>
+                  ) : licenseStatus.kind === "trial" ? (
+                    <p className="text-sm text-stone-600">
+                      Período de prueba
+                      {licenseStatus.expiresAt && (
+                        <> — vence el {new Date(licenseStatus.expiresAt * 1000).toLocaleDateString("es-AR")}</>
+                      )}
+                      .
+                    </p>
+                  ) : null}
+
+                  {licenseStatus.kind === "trial" && (
+                    <div className="mt-3 pt-3 border-t border-stone-100">
+                      <p className="text-xs text-stone-500 mb-2">
+                        ¿Ya compraste? Pegá acá el código que te llegó por mail a{" "}
+                        <span className="font-medium">{licenseStatus.email}</span>.
+                        Si no lo encontrás, revisá la carpeta de spam.
+                      </p>
+                      <div className="flex gap-2">
+                        <input
+                          className="input font-mono text-xs flex-1"
+                          placeholder="Pegá acá tu código de activación"
+                          value={licenseKeyInput}
+                          onChange={(e) => setLicenseKeyInput(e.target.value)}
+                          disabled={licenseActivating}
+                        />
+                        <button
+                          onClick={doActivateLicense}
+                          disabled={licenseActivating || !licenseKeyInput.trim()}
+                          className="btn btn-primary text-sm shrink-0"
+                        >
+                          {licenseActivating ? "Activando…" : "Activar"}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {licenseMsg && (
+                    <p className={clsx("text-xs mt-2", licenseMsgError ? "text-red-600" : "text-emerald-600")}>{licenseMsg}</p>
+                  )}
+                </>
               )}
             </section>
 

@@ -4,7 +4,7 @@ import clsx from "clsx";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   LogOut, Maximize2, Minimize2, ChevronLeft, ChevronRight, ArrowLeft,
-  Store, Search, Bell, AlertTriangle,
+  Store, Search, Bell, AlertTriangle, KeyRound,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
@@ -21,7 +21,7 @@ import DialogHost from "@/components/DialogHost";
 import CommandPalette from "@/components/CommandPalette";
 import { AllInsightsModal, insightBadgeClass } from "@/components/InsightsPanel";
 import { useEscapeToClose } from "@/lib/useEscapeToClose";
-import type { UserRole } from "@/types";
+import type { LicenseStatus, UserRole } from "@/types";
 
 // Recordatorio, no bloqueo: si hay una caja abierta y la dueña cierra la app
 // con la X, se avisa antes de salir — pero si elige "Salir sin cerrar" se
@@ -82,6 +82,7 @@ export default function Layout() {
   const posModeMode = usePosModeStore((s) => s.mode);
   const syncStatus = usePosModeStore((s) => s.syncStatus);
   const availableUpdate = useUpdaterStore((s) => s.update);
+  const [licenseStatus, setLicenseStatus] = useState<LicenseStatus | null>(null);
   const combosEnabled = useCombosEnabledStore((s) => s.enabled);
   const insights = useInsightsStore((s) => s.insights);
   const isFocusMode = FOCUS_MODE_ROUTES.has(location.pathname);
@@ -94,6 +95,7 @@ export default function Layout() {
   useEffect(() => { ensureCatalogImportListeners(); }, []);
   useEffect(() => { usePosModeStore.getState().hydrate(); ensureSyncStatusListener(); }, []);
   useEffect(() => { useUpdaterStore.getState().checkNow(); }, []);
+  useEffect(() => { api.getLicenseStatus().then(setLicenseStatus).catch(() => {}); }, []);
   useEffect(() => { useStockTrackingStore.getState().hydrate(); }, []);
   useEffect(() => { useCombosEnabledStore.getState().hydrate(); }, []);
 
@@ -348,6 +350,24 @@ export default function Layout() {
             <Download size={13} className="shrink-0" />
             {sidebarOpen && (
               <span className="text-[11px] font-semibold">Actualizar a v{availableUpdate.version}</span>
+            )}
+          </button>
+        )}
+
+        {/* Prueba gratis activa: siempre visible, no escondido en Configuración
+            -- si ya compró, tiene que poder activar la licencia sin buscarla. */}
+        {licenseStatus?.kind === "trial" && !licenseStatus.expired && (
+          <button
+            onClick={() => navigate("/configuracion", { state: { tab: "sistema" } })}
+            title={sidebarOpen ? undefined : "¿Ya compraste? Activá tu licencia completa"}
+            className={clsx(
+              "border-t border-stone-100 flex items-center gap-1.5 bg-amber-50 hover:bg-amber-100 transition-colors text-amber-700",
+              sidebarOpen ? "px-3.5 py-2" : "py-2 justify-center"
+            )}
+          >
+            <KeyRound size={13} className="shrink-0" />
+            {sidebarOpen && (
+              <span className="text-[11px] font-semibold">¿Ya compraste? Activá tu licencia</span>
             )}
           </button>
         )}
