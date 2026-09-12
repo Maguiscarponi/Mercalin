@@ -475,8 +475,8 @@ export const api = {
   setDeviceConfig: (config: DeviceConfig) =>
     invoke<void>("set_device_config", { config }),
 
-  bootstrapFromServer: (serverAddr: string) =>
-    invoke<string>("bootstrap_from_server", { serverAddr }),
+  bootstrapFromServer: (serverAddr: string, token: string) =>
+    invoke<string>("bootstrap_from_server", { serverAddr, token }),
 
   disconnectClient: () =>
     invoke<void>("disconnect_client"),

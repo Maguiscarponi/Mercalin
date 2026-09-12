@@ -4,8 +4,21 @@ use crate::AppState;
 use rusqlite::params;
 use tauri::State;
 
+// Separada para poder testearla sin un tauri::State real.
+fn validate_new_stock(new_stock: f64) -> CmdResult<()> {
+    if !new_stock.is_finite() || new_stock < 0.0 {
+        return Err(format!("Stock inválido: {}", new_stock));
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub fn adjust_stock(input: StockAdjustInput, user_id: Option<i64>, state: State<AppState>) -> CmdResult<()> {
+    // Encontrado en la auditoría: input.new_stock se guardaba tal cual, sin
+    // chequear que sea un número real ni que sea >= 0 -- una corrección de
+    // inventario a "-50" o a NaN se aceptaba sin ningún error.
+    validate_new_stock(input.new_stock)?;
+
     let mut conn = state.db.lock();
     let tx = conn.transaction().map_err(err)?;
 
@@ -411,4 +424,26 @@ pub fn apply_inventory_count(
     log_action(&conn, user_id, "conteo_inventario", "stock", None,
         Some(&format!("{count} productos ajustados")));
     Ok(count)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_new_stock;
+
+    #[test]
+    fn rechaza_stock_negativo() {
+        assert!(validate_new_stock(-1.0).is_err());
+    }
+
+    #[test]
+    fn rechaza_nan_e_infinito() {
+        assert!(validate_new_stock(f64::NAN).is_err());
+        assert!(validate_new_stock(f64::INFINITY).is_err());
+    }
+
+    #[test]
+    fn acepta_cero_y_positivos() {
+        assert!(validate_new_stock(0.0).is_ok());
+        assert!(validate_new_stock(123.5).is_ok());
+    }
 }

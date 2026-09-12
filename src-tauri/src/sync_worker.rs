@@ -42,10 +42,11 @@ fn is_server_healthy(server_addr: &str) -> bool {
     ureq::get(&url).timeout(HEALTH_TIMEOUT).call().is_ok()
 }
 
-fn call_rpc(server_addr: &str, command: &str, body_json: &str) -> Result<Value, String> {
+fn call_rpc(server_addr: &str, token: &str, command: &str, body_json: &str) -> Result<Value, String> {
     let url = format!("http://{}/api/rpc/{}", server_addr, command);
     let response = ureq::post(&url)
         .set("Content-Type", "application/json")
+        .set("X-Kiosco-Token", token)
         .timeout(HTTP_TIMEOUT)
         .send_string(body_json)
         .map_err(|e| format!("{}", e))?;
@@ -58,7 +59,7 @@ fn call_rpc(server_addr: &str, command: &str, body_json: &str) -> Result<Value, 
 /// red (deja el resto en 'pending' para el próximo ciclo) pero sigue de
 /// largo si el servidor RECHAZA una operación puntual (queda 'failed', con
 /// el motivo, para que la dueña la revise — no bloquea a las demás).
-fn drain_queue(queue: &Arc<Mutex<Connection>>, server_addr: &str) {
+fn drain_queue(queue: &Arc<Mutex<Connection>>, server_addr: &str, token: &str) {
     let rows: Vec<(i64, String, String)> = {
         let conn = queue.lock();
         let mut stmt = match conn.prepare(
@@ -77,7 +78,7 @@ fn drain_queue(queue: &Arc<Mutex<Connection>>, server_addr: &str) {
     };
 
     for (id, command, payload_json) in rows {
-        match call_rpc(server_addr, &command, &payload_json) {
+        match call_rpc(server_addr, token, &command, &payload_json) {
             Ok(json) => {
                 let ok = json.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
                 let conn = queue.lock();
@@ -186,18 +187,18 @@ fn upsert_config(db: &Arc<Mutex<Connection>>, data: &Value) {
     }
 }
 
-fn resync_light(db: &Arc<Mutex<Connection>>, server_addr: &str) {
-    if let Ok(json) = call_rpc(server_addr, "list_products", r#"{"query":"","includeGhosts":true}"#) {
+fn resync_light(db: &Arc<Mutex<Connection>>, server_addr: &str, token: &str) {
+    if let Ok(json) = call_rpc(server_addr, token, "list_products", r#"{"query":"","includeGhosts":true}"#) {
         if let Some(data) = json.get("data") {
             upsert_products(db, data);
         }
     }
-    if let Ok(json) = call_rpc(server_addr, "list_clients", r#"{"query":""}"#) {
+    if let Ok(json) = call_rpc(server_addr, token, "list_clients", r#"{"query":""}"#) {
         if let Some(data) = json.get("data") {
             upsert_clients(db, data);
         }
     }
-    if let Ok(json) = call_rpc(server_addr, "get_all_config", "{}") {
+    if let Ok(json) = call_rpc(server_addr, token, "get_all_config", "{}") {
         if let Some(data) = json.get("data") {
             upsert_config(db, data);
         }
@@ -211,6 +212,7 @@ pub fn run_sync_worker(
     queue: Arc<Mutex<Connection>>,
     status: Arc<Mutex<String>>,
     server_addr: String,
+    token: String,
 ) {
     std::thread::spawn(move || loop {
         let was_offline = { status.lock().clone() } == "offline";
@@ -219,8 +221,8 @@ pub fn run_sync_worker(
         if healthy {
             if was_offline {
                 set_status(&app, &status, "syncing");
-                drain_queue(&queue, &server_addr);
-                resync_light(&db, &server_addr);
+                drain_queue(&queue, &server_addr, &token);
+                resync_light(&db, &server_addr, &token);
             }
             set_status(&app, &status, "online");
         } else {

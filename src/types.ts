@@ -520,6 +520,7 @@ export interface NetworkInfo {
   ip: string;
   port: string;
   enabled: boolean;
+  serverToken?: string | null;
 }
 
 export type PosMode = "standalone" | "server" | "client";
@@ -529,6 +530,7 @@ export interface DeviceConfig {
   serverAddr: string | null;
   licenseEmail: string | null;
   licenseKey: string | null;
+  networkToken?: string | null;
 }
 
 export interface LicenseStatus {

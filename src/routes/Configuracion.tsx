@@ -39,6 +39,7 @@ export default function Configuracion() {
   const [networkInfo, setNetworkInfo] = useState<NetworkInfo | null>(null);
   const [deviceConfig, setDeviceConfig] = useState<DeviceConfig | null>(null);
   const [serverAddrInput, setServerAddrInput] = useState("");
+  const [tokenInput, setTokenInput] = useState("");
   const [connecting, setConnecting] = useState(false);
   const [connectMsg, setConnectMsg] = useState<string | null>(null);
   const [connectError, setConnectError] = useState(false);
@@ -133,16 +134,18 @@ export default function Configuracion() {
 
   async function doConnectAsClient() {
     const addr = serverAddrInput.trim();
-    if (!addr) return;
+    const token = tokenInput.trim();
+    if (!addr || !token) return;
     setConnecting(true);
     setConnectMsg(null);
     setConnectError(false);
     try {
-      const msg = await api.bootstrapFromServer(addr);
+      const msg = await api.bootstrapFromServer(addr, token);
       setConnectMsg(msg);
       setDeviceConfig({
         mode: "client",
         serverAddr: addr,
+        networkToken: token,
         licenseEmail: deviceConfig?.licenseEmail ?? null,
         licenseKey: deviceConfig?.licenseKey ?? null,
       });
@@ -159,6 +162,7 @@ export default function Configuracion() {
     setDeviceConfig({
       mode: "standalone",
       serverAddr: null,
+      networkToken: null,
       licenseEmail: deviceConfig?.licenseEmail ?? null,
       licenseKey: deviceConfig?.licenseKey ?? null,
     });
@@ -619,7 +623,12 @@ export default function Configuracion() {
                 <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-lg mt-3">
                   <p className="text-xs font-semibold text-indigo-800 mb-1">Servidor multicaja activo</p>
                   <p className="font-mono text-sm text-indigo-700">{networkInfo.ip}:{networkInfo.port}</p>
-                  <p className="text-xs text-indigo-600 mt-1">Usá esa dirección en las cajas "cliente" para conectarlas.</p>
+                  {networkInfo.serverToken && (
+                    <p className="font-mono text-xs text-indigo-700 mt-1 break-all">Código: {networkInfo.serverToken}</p>
+                  )}
+                  <p className="text-xs text-indigo-600 mt-1">
+                    Usá esa dirección y ese código en las cajas "cliente" para conectarlas — sin el código no se pueden conectar.
+                  </p>
                 </div>
               )}
               {deviceConfig?.mode === "server" && !networkInfo?.enabled && (
@@ -668,7 +677,13 @@ export default function Configuracion() {
                         value={serverAddrInput}
                         onChange={(e) => setServerAddrInput(e.target.value)}
                       />
-                      <button onClick={doConnectAsClient} disabled={connecting || !serverAddrInput.trim()} className="btn btn-secondary shrink-0">
+                      <input
+                        className="input font-mono flex-1"
+                        placeholder="Código de la caja servidor"
+                        value={tokenInput}
+                        onChange={(e) => setTokenInput(e.target.value)}
+                      />
+                      <button onClick={doConnectAsClient} disabled={connecting || !serverAddrInput.trim() || !tokenInput.trim()} className="btn btn-secondary shrink-0">
                         {connecting ? "Conectando…" : "Conectar"}
                       </button>
                     </div>

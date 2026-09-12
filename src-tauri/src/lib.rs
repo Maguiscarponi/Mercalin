@@ -149,6 +149,42 @@ fn start_network_server(app: AppHandle, db: Arc<Mutex<Connection>>, port: u16) {
     }
 }
 
+// El token que espera este equipo para /api/rpc/* y /api/db_snapshot -- ver
+// DeviceConfig::network_token. None si esta caja no tiene modo servidor
+// configurado con un token (no debería pasar en la práctica: set_device_config
+// genera uno apenas se activa modo servidor).
+fn expected_network_token(app: &AppHandle) -> Option<String> {
+    let app_dir = app.path().app_data_dir().ok()?;
+    commands::device::read_device_config(&app_dir).network_token
+}
+
+// Función pura (sin AppHandle ni Request) para poder testearla directo.
+// Rechaza si no hay token configurado o si vino vacío -- un servidor sin
+// network_token (no debería pasar, ver ensure_network_token) no debe quedar
+// abierto a "cualquiera con el header vacío".
+fn tokens_match(expected: &Option<String>, provided: &Option<String>) -> bool {
+    match (expected, provided) {
+        (Some(e), Some(p)) if !e.is_empty() => e == p,
+        _ => false,
+    }
+}
+
+fn request_token(request: &tiny_http::Request) -> Option<String> {
+    request
+        .headers()
+        .iter()
+        .find(|h| h.field.equiv("X-Kiosco-Token"))
+        .map(|h| h.value.as_str().to_string())
+}
+
+fn unauthorized_response() -> tiny_http::ResponseBox {
+    tiny_http::Response::from_string(r#"{"ok":false,"error":"No autorizado"}"#)
+        .with_status_code(401)
+        .with_header(tiny_http::Header::from_bytes("Content-Type", "application/json").unwrap())
+        .with_header(tiny_http::Header::from_bytes("Access-Control-Allow-Origin", "*").unwrap())
+        .boxed()
+}
+
 fn handle_network_request(
     app: &AppHandle,
     db: &Arc<Mutex<Connection>>,
@@ -158,6 +194,22 @@ fn handle_network_request(
 ) {
     let url = request.url().to_string();
     let method = request.method().as_str().to_uppercase();
+
+    // Rutas sensibles (crean/borran datos, o descargan la base entera) --
+    // exigen el token de red compartido. El resto (dashboard de "modo tablet":
+    // /, /api/health, /api/today, /api/alerts, /api/orders) queda público a
+    // propósito, tal cual estaba diseñado: son datos agregados de solo lectura
+    // pensados para mostrarse sin login en una tablet de mostrador.
+    let needs_auth = url == "/api/db_snapshot" || url.starts_with("/api/rpc/");
+    if needs_auth {
+        let expected = expected_network_token(app);
+        let provided = request_token(&request);
+        let authorized = tokens_match(&expected, &provided);
+        if !authorized {
+            let _ = request.respond(unauthorized_response());
+            return;
+        }
+    }
 
     // Snapshot completo de la base, usado por una caja "cliente" nueva para
     // clonar los datos del servidor antes de arrancar en modo cliente. Se
@@ -312,10 +364,14 @@ fn handle_network_request(
 }
 
 #[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 struct NetworkInfo {
     ip: String,
     port: String,
     enabled: bool,
+    // Solo se completa si este equipo está en modo servidor -- es lo que hay
+    // que tipear en cada caja cliente al conectarla (ver network_token).
+    server_token: Option<String>,
 }
 
 #[tauri::command]
@@ -330,15 +386,19 @@ fn get_network_info(state: tauri::State<AppState>) -> NetworkInfo {
         ).unwrap_or_else(|_| "7979".to_string());
         (tablet_enabled, port)
     };
-    let device_mode = state
+    let device_cfg = state
         .db_path
         .parent()
-        .map(|dir| commands::device::read_device_config(dir).mode)
-        .unwrap_or_else(|| "standalone".to_string());
+        .map(commands::device::read_device_config);
+    let device_mode = device_cfg.as_ref().map(|c| c.mode.clone()).unwrap_or_else(|| "standalone".to_string());
+    let server_token = device_cfg
+        .filter(|c| c.mode == "server")
+        .and_then(|c| c.network_token);
     NetworkInfo {
         ip: get_local_ip(),
         port,
         enabled: tablet_enabled == "1" || device_mode == "server",
+        server_token,
     }
 }
 
@@ -448,7 +508,8 @@ pub fn run() {
                     let db_clone = Arc::clone(&db_arc);
                     let queue_clone = Arc::clone(&sync_queue_arc);
                     let status_clone = Arc::clone(&sync_status_arc);
-                    sync_worker::run_sync_worker(app_handle, db_clone, queue_clone, status_clone, server_addr);
+                    let token = device_config.network_token.clone().unwrap_or_default();
+                    sync_worker::run_sync_worker(app_handle, db_clone, queue_clone, status_clone, server_addr, token);
                 }
             }
 
@@ -648,4 +709,36 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error al correr la app Tauri");
+}
+
+#[cfg(test)]
+mod network_auth_tests {
+    use super::tokens_match;
+
+    #[test]
+    fn rechaza_sin_token_del_cliente() {
+        assert!(!tokens_match(&Some("secreto123".to_string()), &None));
+    }
+
+    #[test]
+    fn rechaza_token_incorrecto() {
+        assert!(!tokens_match(&Some("secreto123".to_string()), &Some("otro".to_string())));
+    }
+
+    #[test]
+    fn rechaza_servidor_sin_token_configurado() {
+        // No debería pasar en la práctica (ensure_network_token siempre genera
+        // uno), pero si pasara, no debe quedar abierto a cualquiera.
+        assert!(!tokens_match(&None, &Some("lo-que-sea".to_string())));
+    }
+
+    #[test]
+    fn rechaza_token_vacio_como_valido() {
+        assert!(!tokens_match(&Some("".to_string()), &Some("".to_string())));
+    }
+
+    #[test]
+    fn acepta_token_correcto() {
+        assert!(tokens_match(&Some("secreto123".to_string()), &Some("secreto123".to_string())));
+    }
 }

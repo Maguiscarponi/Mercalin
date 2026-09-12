@@ -39,7 +39,7 @@ async function runOffline<T>(command: string, args: Record<string, unknown>): Pr
 // conexión, cae a ejecutarlo local + encolarlo (solo si es de los de arriba
 // — si no, el error de conexión sube tal cual).
 export async function rpc<T>(command: string, args: Record<string, unknown> = {}): Promise<T> {
-  const { mode, serverAddr, syncStatus, setSyncStatus } = usePosModeStore.getState();
+  const { mode, serverAddr, networkToken, syncStatus, setSyncStatus } = usePosModeStore.getState();
 
   if (mode !== "client" || !serverAddr) {
     return invoke<T>(command, args);
@@ -53,7 +53,7 @@ export async function rpc<T>(command: string, args: Record<string, unknown> = {}
   try {
     res = await fetch(`http://${serverAddr}/api/rpc/${command}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "X-Kiosco-Token": networkToken ?? "" },
       body: JSON.stringify(args),
       signal: AbortSignal.timeout(8000),
     });

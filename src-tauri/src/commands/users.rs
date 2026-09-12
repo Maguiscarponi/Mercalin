@@ -1,5 +1,5 @@
 use crate::commands::audit::log_action;
-use crate::commands::{err, CmdResult};
+use crate::commands::{err, require_admin, CmdResult};
 use crate::models::{NewUser, User};
 use crate::AppState;
 use rusqlite::{params, Connection};
@@ -61,6 +61,7 @@ pub fn list_users(state: State<AppState>) -> CmdResult<Vec<User>> {
 #[tauri::command]
 pub fn create_user(user: NewUser, actor_id: Option<i64>, state: State<AppState>) -> CmdResult<User> {
     let conn = state.db.lock();
+    require_admin(&conn, actor_id)?;
     let hash = hash_password(&user.password);
     conn.execute(
         "INSERT INTO users (username,full_name,password_hash,role) VALUES (?1,?2,?3,?4)",
@@ -78,6 +79,7 @@ pub fn create_user(user: NewUser, actor_id: Option<i64>, state: State<AppState>)
 #[tauri::command]
 pub fn update_user(user: User, actor_id: Option<i64>, state: State<AppState>) -> CmdResult<User> {
     let conn = state.db.lock();
+    require_admin(&conn, actor_id)?;
 
     // Si esta persona es admin activo hoy y el cambio la degrada o desactiva,
     // no dejar que sea el último — se quedaría sin nadie que pueda entrar a
@@ -122,6 +124,13 @@ pub fn change_password(
         return Err("La contraseña debe tener al menos 4 caracteres".to_string());
     }
     let conn = state.db.lock();
+    // Encontrado en la auditoría: no había ningún chequeo acá -- cualquiera
+    // podía cambiarle la contraseña a CUALQUIER usuario (incluido un admin)
+    // con solo pasar otro user_id, tomando control total de la cuenta. Se
+    // permite cambiar la propia sin ser admin (caso normal de todos los días).
+    if actor_id != Some(user_id) {
+        require_admin(&conn, actor_id)?;
+    }
     let hash = hash_password(&new_password);
     conn.execute(
         "UPDATE users SET password_hash=?1 WHERE id=?2",
@@ -135,6 +144,7 @@ pub fn change_password(
 #[tauri::command]
 pub fn delete_user(id: i64, actor_id: Option<i64>, state: State<AppState>) -> CmdResult<()> {
     let conn = state.db.lock();
+    require_admin(&conn, actor_id)?;
 
     let current_role: Option<String> = conn
         .query_row("SELECT role FROM users WHERE id=?1 AND active=1", params![id], |r| r.get(0))

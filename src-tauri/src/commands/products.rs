@@ -31,6 +31,34 @@ fn friendly_barcode_error(conn: &Connection, barcode: &Option<String>, e: rusqli
     s
 }
 
+// Encontrado en la auditoría: no había ninguna validación acá -- precios
+// negativos, stock negativo o NaN, o nombre vacío se guardaban tal cual. No
+// se exige precio > 0 a propósito: los "fantasma" del catálogo importado
+// entran con price_cents=0 hasta que alguien les carga un precio real.
+fn validate_product_fields(
+    name: &str,
+    price_cents: i64,
+    price2_cents: i64,
+    price3_cents: i64,
+    cost_cents: i64,
+    stock: f64,
+    min_stock: f64,
+) -> CmdResult<()> {
+    if name.trim().is_empty() {
+        return Err("El nombre del producto no puede estar vacío".to_string());
+    }
+    if price_cents < 0 || price2_cents < 0 || price3_cents < 0 || cost_cents < 0 {
+        return Err("Los precios no pueden ser negativos".to_string());
+    }
+    if !stock.is_finite() || stock < 0.0 {
+        return Err(format!("Stock inválido: {}", stock));
+    }
+    if !min_stock.is_finite() || min_stock < 0.0 {
+        return Err(format!("Stock mínimo inválido: {}", min_stock));
+    }
+    Ok(())
+}
+
 fn row_to_product(row: &Row) -> rusqlite::Result<Product> {
     Ok(Product {
         id: row.get("id")?,
@@ -124,6 +152,10 @@ pub fn list_products(query: String, include_ghosts: bool, state: State<AppState>
 
 #[tauri::command]
 pub fn create_product(product: NewProduct, user_id: Option<i64>, state: State<AppState>) -> CmdResult<Product> {
+    validate_product_fields(
+        &product.name, product.price_cents, product.price2_cents, product.price3_cents,
+        product.cost_cents, product.stock, product.min_stock,
+    )?;
     let conn = state.db.lock();
     conn.execute(
         "INSERT INTO products
@@ -157,6 +189,10 @@ pub fn create_product(product: NewProduct, user_id: Option<i64>, state: State<Ap
 
 #[tauri::command]
 pub fn update_product(product: Product, user_id: Option<i64>, state: State<AppState>) -> CmdResult<Product> {
+    validate_product_fields(
+        &product.name, product.price_cents, product.price2_cents, product.price3_cents,
+        product.cost_cents, product.stock, product.min_stock,
+    )?;
     let conn = state.db.lock();
     // Un fantasma se "activa" solo con cargarle un precio de venta — no hace falta que
     // nadie marque un checkbox aparte. Una vez activado no vuelve a ser fantasma.
@@ -852,4 +888,44 @@ pub fn get_price_impact_projections(state: State<AppState>) -> CmdResult<Vec<Pri
     }).map_err(err)?.filter_map(|r| r.ok()).collect();
 
     Ok(rows)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_product_fields;
+
+    #[test]
+    fn rechaza_nombre_vacio() {
+        let r = validate_product_fields("   ", 100, 0, 0, 50, 10.0, 2.0);
+        assert!(r.is_err());
+    }
+
+    #[test]
+    fn rechaza_precio_negativo() {
+        let r = validate_product_fields("Coca", -100, 0, 0, 50, 10.0, 2.0);
+        assert!(r.is_err());
+        let r2 = validate_product_fields("Coca", 100, -1, 0, 50, 10.0, 2.0);
+        assert!(r2.is_err());
+    }
+
+    #[test]
+    fn rechaza_stock_negativo_o_nan() {
+        assert!(validate_product_fields("Coca", 100, 0, 0, 50, -5.0, 2.0).is_err());
+        assert!(validate_product_fields("Coca", 100, 0, 0, 50, f64::NAN, 2.0).is_err());
+        assert!(validate_product_fields("Coca", 100, 0, 0, 50, 10.0, f64::NAN).is_err());
+    }
+
+    #[test]
+    fn acepta_producto_fantasma_sin_precio() {
+        // Los "fantasma" importados entran con price_cents=0 hasta que alguien
+        // les carga un precio real -- no debe rechazarse ese caso.
+        let r = validate_product_fields("Producto sin precio", 0, 0, 0, 0, 0.0, 0.0);
+        assert!(r.is_ok());
+    }
+
+    #[test]
+    fn acepta_producto_valido() {
+        let r = validate_product_fields("Coca Cola 2.25L", 250000, 0, 0, 150000, 24.0, 5.0);
+        assert!(r.is_ok());
+    }
 }

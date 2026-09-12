@@ -3,8 +3,18 @@ use crate::models::{
     CashMovement, CashSession, CloseSessionInput, NewCashMovement, OpenSessionInput,
 };
 use crate::AppState;
-use rusqlite::params;
+use rusqlite::{params, Connection};
 use tauri::State;
+
+// Separada para poder testearla con una Connection en memoria (tauri::State
+// no se puede construir a mano fuera de una app real). Ver el comentario en
+// open_cash_session sobre por qué existe este chequeo.
+fn has_open_cash_session(conn: &Connection) -> CmdResult<bool> {
+    let count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM cash_sessions WHERE closed_at IS NULL", [], |r| r.get(0))
+        .map_err(err)?;
+    Ok(count > 0)
+}
 
 fn row_to_session(row: &rusqlite::Row) -> rusqlite::Result<CashSession> {
     let closed_at: Option<String> = row.get("closed_at")?;
@@ -31,6 +41,13 @@ pub fn open_cash_session(
     state: State<AppState>,
 ) -> CmdResult<CashSession> {
     let conn = state.db.lock();
+
+    // Encontrado en la auditoría: no había ningún chequeo acá, así que un
+    // doble click (o dos llamados concurrentes) abría dos sesiones de caja al
+    // mismo tiempo, con el lío de reconciliación de efectivo que eso implica.
+    if has_open_cash_session(&conn)? {
+        return Err("Ya hay una sesión de caja abierta en este equipo. Cerrala antes de abrir otra.".to_string());
+    }
 
     conn.execute(
         "INSERT INTO cash_sessions (user_id, opening_cents, notes, opened_at) VALUES (?1, ?2, ?3, datetime('now'))",
@@ -235,4 +252,36 @@ pub fn list_cash_movements(
         out.push(r.map_err(err)?);
     }
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::has_open_cash_session;
+    use std::path::Path;
+
+    #[test]
+    fn detecta_sesion_abierta() {
+        let conn = crate::db::open_and_migrate(Path::new(":memory:")).unwrap();
+        assert!(!has_open_cash_session(&conn).unwrap());
+
+        conn.execute(
+            "INSERT INTO cash_sessions (opening_cents, opened_at) VALUES (1000, datetime('now'))",
+            [],
+        ).unwrap();
+
+        // Este es el bug real: antes no había ningún chequeo, así que un doble
+        // click abría dos sesiones de caja al mismo tiempo.
+        assert!(has_open_cash_session(&conn).unwrap());
+    }
+
+    #[test]
+    fn no_cuenta_sesiones_ya_cerradas() {
+        let conn = crate::db::open_and_migrate(Path::new(":memory:")).unwrap();
+        conn.execute(
+            "INSERT INTO cash_sessions (opening_cents, opened_at, closed_at, closing_cents)
+             VALUES (1000, datetime('now'), datetime('now'), 1000)",
+            [],
+        ).unwrap();
+        assert!(!has_open_cash_session(&conn).unwrap());
+    }
 }

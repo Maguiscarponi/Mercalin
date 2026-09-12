@@ -8,6 +8,7 @@ export type SyncStatus = "online" | "offline" | "syncing";
 interface PosModeState {
   mode: PosMode;
   serverAddr: string | null;
+  networkToken: string | null;
   syncStatus: SyncStatus;
   hydrated: boolean;
   hydrate: () => Promise<void>;
@@ -26,6 +27,7 @@ interface PosModeState {
 export const usePosModeStore = create<PosModeState>((set) => ({
   mode: "standalone",
   serverAddr: null,
+  networkToken: null,
   syncStatus: "online",
   hydrated: false,
   hydrate: async () => {
@@ -34,13 +36,13 @@ export const usePosModeStore = create<PosModeState>((set) => ({
       const syncStatus = config.mode === "client"
         ? await invoke<SyncStatus>("get_sync_status").catch(() => "offline" as SyncStatus)
         : "online";
-      set({ mode: config.mode, serverAddr: config.serverAddr, syncStatus, hydrated: true });
+      set({ mode: config.mode, serverAddr: config.serverAddr, networkToken: config.networkToken ?? null, syncStatus, hydrated: true });
     } catch (e) {
       console.error("No se pudo leer el modo de este equipo:", e);
       set({ hydrated: true });
     }
   },
-  applyDeviceConfig: (config) => set({ mode: config.mode, serverAddr: config.serverAddr }),
+  applyDeviceConfig: (config) => set({ mode: config.mode, serverAddr: config.serverAddr, networkToken: config.networkToken ?? null }),
   setSyncStatus: (syncStatus) => set({ syncStatus }),
 }));
 

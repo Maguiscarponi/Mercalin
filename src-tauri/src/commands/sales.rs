@@ -1,8 +1,58 @@
 use crate::commands::{audit::log_action, err, CmdResult};
-use crate::models::{Sale, SaleInput, SaleItem, SaleWithItems};
+use crate::models::{CartItem, Sale, SaleInput, SaleItem, SaleWithItems};
 use crate::AppState;
-use rusqlite::params;
+use rusqlite::{params, Connection};
 use tauri::State;
+
+// Separada de create_sale (que necesita un tauri::State real, no construible
+// en un test unitario fuera de la app) para poder testearla sola. Ver el
+// comentario en create_sale sobre por qué existe cada chequeo.
+// Topes generosos (ninguna venta real de un kiosco se acerca a esto) que
+// solo existen para que una cantidad o precio absurdo no desborde el cálculo
+// de subtotal_cents (unit_price_cents as f64 * qty).round() as i64 -- en
+// Rust un cast float->i64 que se pasa de rango satura a i64::MAX en vez de
+// entrar en pánico, así que no crashea, pero deja un ítem con un precio
+// "infinito" en sale_items y le resta esa misma cantidad al stock real.
+const MAX_QTY: f64 = 1_000_000.0;
+const MAX_UNIT_PRICE_CENTS: i64 = 100_000_000_00; // $100.000.000
+
+fn validate_sale_items(items: &[CartItem]) -> CmdResult<()> {
+    for item in items {
+        if !item.qty.is_finite() || item.qty <= 0.0 || item.qty > MAX_QTY {
+            return Err(format!("Cantidad inválida para \"{}\": {}", item.name, item.qty));
+        }
+        if !(0..=MAX_UNIT_PRICE_CENTS).contains(&item.unit_price_cents) {
+            return Err(format!("Precio inválido para \"{}\"", item.name));
+        }
+        if !item.discount_pct.is_finite() || !(0.0..=100.0).contains(&item.discount_pct) {
+            return Err(format!("Descuento inválido para \"{}\": {}%", item.name, item.discount_pct));
+        }
+    }
+    Ok(())
+}
+
+// Encontrado en la auditoría: un pago individual negativo (ej. "efectivo":
+// -1000 junto con "fiado": +1000) no afectaba el total de la venta, pero sí
+// quedaba grabado tal cual en sale_payments -- un cajero deshonesto podía
+// hacer que el reporte de efectivo esperado en caja diera de menos, exactamente
+// lo que se roba, sin que la venta en sí se vea rara.
+fn validate_payments(payments: Option<&[crate::models::SalePaymentInput]>) -> CmdResult<()> {
+    if let Some(payments) = payments {
+        if payments.iter().any(|p| p.amount_cents < 0) {
+            return Err("Los montos de pago no pueden ser negativos".to_string());
+        }
+    }
+    Ok(())
+}
+
+// Ídem: separada para poder testearla con una Connection en memoria, sin
+// necesitar un tauri::State real.
+fn sale_already_cancelled(conn: &Connection, id: i64) -> CmdResult<bool> {
+    let notes: Option<String> = conn
+        .query_row("SELECT notes FROM sales WHERE id=?1", params![id], |r| r.get(0))
+        .map_err(err)?;
+    Ok(notes.as_deref().unwrap_or("").contains("[ANULADA]"))
+}
 
 fn row_to_sale(row: &rusqlite::Row) -> rusqlite::Result<Sale> {
     Ok(Sale {
@@ -25,6 +75,25 @@ pub fn create_sale(input: SaleInput, state: State<AppState>) -> CmdResult<Sale> 
     if input.items.is_empty() {
         return Err("La venta no tiene ítems".to_string());
     }
+
+    // Validación server-side de cada ítem -- encontrado en la auditoría de
+    // seguridad: antes esto se aceptaba tal cual llegara (unit_price_cents,
+    // discount_pct y qty los define quien llama, incluida una caja "cliente"
+    // remota o cualquiera que le pegue directo a la API). Una qty negativa
+    // "vendía" stock negativo, es decir lo fabricaba gratis; un descuento
+    // fuera de 0-100% podía inflar o vaciar el total de formas imposibles
+    // desde la interfaz normal. No se valida unit_price_cents contra el
+    // precio real del producto a propósito: la caja permite precio manual
+    // (ítems sin código de barras, mercadería dañada, etc.), así que solo se
+    // exige que no sea negativo, no que coincida con el catálogo.
+    validate_sale_items(&input.items)?;
+    if input.paid_cents < 0 {
+        return Err("El monto pagado no puede ser negativo".to_string());
+    }
+    if input.discount_cents < 0 {
+        return Err("El descuento de la venta no puede ser negativo".to_string());
+    }
+    validate_payments(input.payments.as_deref())?;
 
     let mut conn = state.db.lock();
     let tx = conn.transaction().map_err(err)?;
@@ -456,6 +525,15 @@ pub fn cancel_sale(id: i64, state: State<AppState>) -> CmdResult<()> {
     let mut conn = state.db.lock();
     let tx = conn.transaction().map_err(err)?;
 
+    // Encontrado en la auditoría: cancelar la misma venta dos veces (doble
+    // click, dos cajas sincronizando la misma orden encolada, un reintento
+    // manual) devolvía el stock de vuelta cada vez -- "fabricando" mercadería
+    // que nunca volvió físicamente. Al primer llamado ya queda marcada
+    // '[ANULADA]', así que un segundo llamado se frena acá.
+    if sale_already_cancelled(&tx, id)? {
+        return Err("Esta venta ya estaba anulada".to_string());
+    }
+
     // Revertir stock (incluye componentes de combo, que antes no se revertían)
     let items: Vec<(Option<i64>, Option<i64>, f64)> = {
         let mut stmt = tx
@@ -536,4 +614,99 @@ pub fn cancel_sale(id: i64, state: State<AppState>) -> CmdResult<()> {
     tx.commit().map_err(err)?;
     log_action(&conn, None, "anular", "venta", Some(id), None);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::CartItem;
+    use std::path::Path;
+
+    fn item(name: &str, price_cents: i64, discount_pct: f64, qty: f64) -> CartItem {
+        CartItem { product_id: Some(1), barcode: None, name: name.to_string(), unit_price_cents: price_cents, discount_pct, qty, combo_id: None }
+    }
+
+    #[test]
+    fn rechaza_qty_negativa_o_cero() {
+        // Este es el bug real: una qty negativa hacía que "vender" en realidad
+        // SUMARA stock (UPDATE products SET stock=stock-qty con qty negativa).
+        assert!(validate_sale_items(&[item("Coca", 100, 0.0, -1.0)]).is_err());
+        assert!(validate_sale_items(&[item("Coca", 100, 0.0, 0.0)]).is_err());
+        assert!(validate_sale_items(&[item("Coca", 100, 0.0, f64::NAN)]).is_err());
+    }
+
+    #[test]
+    fn rechaza_precio_negativo() {
+        assert!(validate_sale_items(&[item("Coca", -50, 0.0, 1.0)]).is_err());
+    }
+
+    #[test]
+    fn rechaza_descuento_fuera_de_rango() {
+        assert!(validate_sale_items(&[item("Coca", 100, -10.0, 1.0)]).is_err());
+        assert!(validate_sale_items(&[item("Coca", 100, 150.0, 1.0)]).is_err());
+    }
+
+    #[test]
+    fn acepta_venta_normal() {
+        assert!(validate_sale_items(&[item("Coca", 100, 10.0, 2.0)]).is_ok());
+    }
+
+    #[test]
+    fn acepta_precio_cero_manual() {
+        // Precio manual $0 (ej. producto de regalo/promo) es un caso legítimo.
+        assert!(validate_sale_items(&[item("Regalo", 0, 0.0, 1.0)]).is_ok());
+    }
+
+    #[test]
+    fn rechaza_qty_absurda_que_desbordaria_el_calculo() {
+        // Sin este tope, (unit_price_cents as f64 * qty).round() as i64 satura
+        // a i64::MAX en vez de fallar -- deja un ítem con precio "infinito" y
+        // le resta esa qty al stock real del producto.
+        assert!(validate_sale_items(&[item("Coca", 100, 0.0, 1e300)]).is_err());
+    }
+
+    #[test]
+    fn rechaza_precio_absurdo() {
+        assert!(validate_sale_items(&[item("Coca", i64::MAX, 0.0, 1.0)]).is_err());
+    }
+
+    #[test]
+    fn rechaza_pago_negativo() {
+        // Este es el bug real: un "efectivo" negativo compensado con un
+        // "fiado" positivo dejaba la caja física con menos de lo esperado sin
+        // que la venta en sí pareciera rara.
+        let payments = vec![
+            crate::models::SalePaymentInput { method: "efectivo".to_string(), amount_cents: -1000 },
+            crate::models::SalePaymentInput { method: "fiado".to_string(), amount_cents: 1000 },
+        ];
+        assert!(validate_payments(Some(&payments)).is_err());
+    }
+
+    #[test]
+    fn acepta_pagos_positivos_o_ausentes() {
+        assert!(validate_payments(None).is_ok());
+        let payments = vec![crate::models::SalePaymentInput { method: "efectivo".to_string(), amount_cents: 500 }];
+        assert!(validate_payments(Some(&payments)).is_ok());
+    }
+
+    #[test]
+    fn cancelar_dos_veces_la_misma_venta_falla_la_segunda_vez() {
+        let conn = crate::db::open_and_migrate(Path::new(":memory:")).unwrap();
+        conn.execute(
+            "INSERT INTO sales (total_cents, discount_cents, paid_cents, change_cents, payment_method, created_at)
+             VALUES (1000, 0, 1000, 0, 'efectivo', datetime('now'))",
+            [],
+        ).unwrap();
+        let id = conn.last_insert_rowid();
+
+        // Recién creada: no está anulada.
+        assert!(!sale_already_cancelled(&conn, id).unwrap());
+
+        // Simula lo que hace cancel_sale al marcarla.
+        conn.execute("UPDATE sales SET notes='[ANULADA]' WHERE id=?1", rusqlite::params![id]).unwrap();
+
+        // Este es el bug real: antes de la corrección, cancel_sale no chequeaba
+        // esto y revertía el stock de nuevo en una segunda llamada.
+        assert!(sale_already_cancelled(&conn, id).unwrap());
+    }
 }

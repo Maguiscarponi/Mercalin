@@ -35,12 +35,38 @@ pub struct DeviceConfig {
     // sistema a alguien que ya estaba activado.
     #[serde(default)]
     pub last_verified_at: Option<i64>,
+    // Token compartido para el servidor de red (multicaja). SIN esto, cualquier
+    // dispositivo en la misma red podía llamar /api/rpc/* (crear usuarios, borrar
+    // productos, etc.) y descargar /api/db_snapshot (la base entera, con hashes
+    // de contraseña incluidos) sin ningún tipo de identificación -- encontrado en
+    // la auditoría de seguridad. En modo "server" es EL token que exige el
+    // servidor; en modo "client" es el que esta caja usa para autenticarse contra
+    // el servidor (se completa al conectar, ver bootstrap_from_server).
+    #[serde(default)]
+    pub network_token: Option<String>,
 }
 
 impl Default for DeviceConfig {
     fn default() -> Self {
-        DeviceConfig { mode: "standalone".to_string(), server_addr: None, license_email: None, license_key: None, last_verified_at: None }
+        DeviceConfig { mode: "standalone".to_string(), server_addr: None, license_email: None, license_key: None, last_verified_at: None, network_token: None }
     }
+}
+
+// Genera un token nuevo si esta config todavía no tiene uno -- se llama al
+// activar modo servidor. 32 bytes de una CSPRNG real (rand::thread_rng), no
+// un hash de timestamp/pid: es un secreto de verdad, no un identificador.
+pub fn ensure_network_token(cfg: &mut DeviceConfig) -> String {
+    if let Some(t) = &cfg.network_token {
+        if !t.is_empty() {
+            return t.clone();
+        }
+    }
+    use rand::RngCore;
+    let mut bytes = [0u8; 32];
+    rand::thread_rng().fill_bytes(&mut bytes);
+    let token = hex::encode(bytes);
+    cfg.network_token = Some(token.clone());
+    token
 }
 
 fn config_path(app_dir: &Path) -> std::path::PathBuf {
@@ -73,7 +99,12 @@ pub fn get_device_config(state: State<AppState>) -> CmdResult<DeviceConfig> {
 }
 
 #[tauri::command]
-pub fn set_device_config(config: DeviceConfig, state: State<AppState>) -> CmdResult<()> {
+pub fn set_device_config(mut config: DeviceConfig, state: State<AppState>) -> CmdResult<()> {
+    // Al pasar a modo servidor, aseguramos que exista un token de red -- sin
+    // esto el servidor quedaría abierto sin autenticación (ver network_token).
+    if config.mode == "server" {
+        ensure_network_token(&mut config);
+    }
     write_device_config(&app_dir_of(&state)?, &config)
 }
 
@@ -83,12 +114,19 @@ pub fn set_device_config(config: DeviceConfig, state: State<AppState>) -> CmdRes
 // en caliente mientras hay una conexión activa es innecesariamente riesgoso;
 // pedirle a la dueña que reinicie es el mismo patrón que ya usa "modo tablet".
 #[tauri::command]
-pub fn bootstrap_from_server(server_addr: String, state: State<AppState>) -> CmdResult<String> {
+pub fn bootstrap_from_server(server_addr: String, token: String, state: State<AppState>) -> CmdResult<String> {
     let url = format!("http://{}/api/db_snapshot", server_addr);
     let response = ureq::get(&url)
+        .set("X-Kiosco-Token", &token)
         .timeout(std::time::Duration::from_secs(30))
         .call()
-        .map_err(|e| format!("No se pudo conectar con el servidor ({}): {}", server_addr, e))?;
+        .map_err(|e| {
+            if let ureq::Error::Status(401, _) = e {
+                "El código de conexión no coincide con el de la caja servidor. Revisalo y probá de nuevo.".to_string()
+            } else {
+                format!("No se pudo conectar con el servidor ({}): {}", server_addr, e)
+            }
+        })?;
 
     let mut bytes = Vec::new();
     response
@@ -109,6 +147,7 @@ pub fn bootstrap_from_server(server_addr: String, state: State<AppState>) -> Cmd
     let mut cfg = read_device_config(&app_dir);
     cfg.mode = "client".to_string();
     cfg.server_addr = Some(server_addr);
+    cfg.network_token = Some(token);
     write_device_config(&app_dir, &cfg)?;
 
     Ok("Descarga completa. Reiniciá Punto Simple para terminar de conectar esta caja.".to_string())
@@ -288,4 +327,35 @@ pub fn activate_license(email: String, key: String, state: State<AppState>) -> C
     write_device_config(&app_dir, &cfg)?;
 
     Ok(LicenseStatus::from_info(info))
+}
+
+#[cfg(test)]
+mod network_token_tests {
+    use super::{ensure_network_token, DeviceConfig};
+
+    #[test]
+    fn genera_token_si_no_hay() {
+        let mut cfg = DeviceConfig::default();
+        assert!(cfg.network_token.is_none());
+        let token = ensure_network_token(&mut cfg);
+        assert!(!token.is_empty());
+        assert_eq!(cfg.network_token, Some(token));
+    }
+
+    #[test]
+    fn es_idempotente_no_pisa_uno_existente() {
+        let mut cfg = DeviceConfig::default();
+        let first = ensure_network_token(&mut cfg);
+        let second = ensure_network_token(&mut cfg);
+        assert_eq!(first, second);
+    }
+
+    #[test]
+    fn dos_tokens_generados_son_distintos() {
+        let mut cfg_a = DeviceConfig::default();
+        let mut cfg_b = DeviceConfig::default();
+        let a = ensure_network_token(&mut cfg_a);
+        let b = ensure_network_token(&mut cfg_b);
+        assert_ne!(a, b);
+    }
 }
