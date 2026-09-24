@@ -7,9 +7,43 @@ import { playError, playSuccess } from "@/lib/sound";
 import { showToast } from "@/stores/dialogs";
 import { useEscapeToClose } from "@/lib/useEscapeToClose";
 import ModalCloseButton from "@/components/ui/ModalCloseButton";
-import type { PaymentMethod, PaymentSplit, SaleWithItems } from "@/types";
+import type { ArcaConfig, CondicionIva, ElectronicInvoice, PaymentMethod, PaymentSplit, Sale, SaleWithItems } from "@/types";
 import clsx from "clsx";
 import TicketPrint from "./TicketPrint";
+import { decideInvoiceType } from "@/lib/facturacion";
+
+// Arma los datos del comprobante y lo emite contra ARCA. El tipo de factura
+// depende de la condición de IVA de quien vende (condicion_iva, configurada
+// en Facturación → Configuración ARCA) y de la condición real de quien
+// compra (el cliente asignado al carrito, si tiene uno) -- ver
+// src/lib/facturacion.ts para las reglas completas (incluye Factura A
+// obligatoria a monotributistas desde la Ley 27.618).
+// El neto/IVA usa la misma cuenta que ya usa el ticket (TicketPrint.tsx) --
+// no discriminar en C, 21% discriminado en A/B -- para que el número en el
+// papel y el que le llega a ARCA sean siempre el mismo.
+async function issueInvoiceForSale(sale: Sale, clientId: number | null, sellerCondicionIva: CondicionIva): Promise<ElectronicInvoice> {
+  const client = clientId != null ? await api.getClient(clientId).catch(() => null) : null;
+  const { invoiceType, condicionIvaReceptorId } = decideInvoiceType(sellerCondicionIva, client?.condicion_iva);
+
+  const netoCents = invoiceType === "C" ? sale.total_cents : Math.round(sale.total_cents / 1.21);
+  const ivaCents = sale.total_cents - netoCents;
+
+  const dni = client?.dni?.replace(/\D/g, "") ?? "";
+  const docTipo = dni.length === 11 ? 80 : dni.length > 0 ? 96 : 99;
+
+  return api.issueElectronicInvoice({
+    sale_id: sale.id,
+    invoice_type: invoiceType,
+    total_cents: sale.total_cents,
+    neto_cents: invoiceType === "C" ? sale.total_cents : netoCents,
+    iva_cents: invoiceType === "C" ? 0 : ivaCents,
+    client_cuit: dni.length > 0 ? dni : null,
+    client_name: client?.name ?? null,
+    doc_tipo: docTipo,
+    doc_nro: dni.length > 0 ? dni : "0",
+    condicion_iva_receptor_id: condicionIvaReceptorId,
+  });
+}
 
 const SINGLE_METHODS: { id: PaymentMethod; label: string; requiresClient?: boolean }[] = [
   { id: "efectivo",         label: "Efectivo" },
@@ -49,6 +83,9 @@ export default function PaymentModal({ totalCents, sessionId, isRi, onClose, onC
   const [businessName, setBusinessName]   = useState("Punto Simple POS");
   const [businessAddress, setBusinessAddress] = useState("");
   const [ticketFooter, setTicketFooter]   = useState("¡Gracias por su compra!");
+  const [arcaConfig, setArcaConfig] = useState<ArcaConfig | null>(null);
+  const [invoice, setInvoice] = useState<ElectronicInvoice | null>(null);
+  const [invoiceState, setInvoiceState] = useState<"idle" | "issuing" | "ok" | "error">("idle");
   const cart = useCart();
   // Sin Escape en la pantalla de "venta confirmada": es intencional, para no
   // descartar sin querer el ticket recién cobrado antes de imprimirlo.
@@ -86,6 +123,11 @@ export default function PaymentModal({ totalCents, sessionId, isRi, onClose, onC
       if (addr)   setBusinessAddress(addr);
       if (footer) setTicketFooter(footer);
     }).catch(console.error);
+    // Si ARCA está configurada (certificado cargado), después de cobrar se
+    // intenta emitir el comprobante solo -- si esto falla (sin internet, sin
+    // config completa, ARCA caída), la venta ya quedó guardada igual: no se
+    // bloquea el cobro por un problema de facturación electrónica.
+    api.getArcaConfig().then(setArcaConfig).catch(() => setArcaConfig(null));
   }, []);
 
   useEffect(() => {
@@ -154,6 +196,21 @@ export default function PaymentModal({ totalCents, sessionId, isRi, onClose, onC
       const sw = await api.getSaleWithItems(sale.id);
       setCompletedSale(sw);
       playSuccess();
+
+      if (arcaConfig?.has_certificate) {
+        setInvoiceState("issuing");
+        try {
+          const emitted = await issueInvoiceForSale(sw.sale, cart.client_id, arcaConfig.condicion_iva);
+          setInvoice(emitted);
+          setInvoiceState(emitted.status === "autorizada" ? "ok" : "error");
+        } catch (invErr) {
+          // No se bloquea el cobro por esto -- la venta ya está guardada.
+          // Queda como pendiente/error en Facturación → Comprobantes, y se
+          // puede reintentar desde ahí.
+          console.error("No se pudo emitir la factura electrónica:", invErr);
+          setInvoiceState("error");
+        }
+      }
     } catch (err) {
       console.error("Error al guardar la venta:", err);
       const message = typeof err === "string" ? err : err instanceof Error ? err.message : "Error al guardar la venta.";
@@ -173,6 +230,8 @@ export default function PaymentModal({ totalCents, sessionId, isRi, onClose, onC
         businessAddress={businessAddress}
         ticketFooter={ticketFooter}
         isRi={isRi}
+        invoice={invoice}
+        sellerCuit={arcaConfig?.cuit}
         onClose={() => { setShowTicket(false); onConfirmed(completedSale); }}
       />
     );
@@ -203,6 +262,19 @@ export default function PaymentModal({ totalCents, sessionId, isRi, onClose, onC
                 </div>
               ))}
             </div>
+          )}
+          {invoiceState === "issuing" && (
+            <p className="text-xs text-stone-400 mt-2">Emitiendo factura electrónica…</p>
+          )}
+          {invoiceState === "ok" && invoice && (
+            <p className="text-xs text-emerald-600 mt-2">
+              ✓ Factura {invoice.invoice_type} autorizada — CAE {invoice.cae}
+            </p>
+          )}
+          {invoiceState === "error" && (
+            <p className="text-xs text-amber-600 mt-2">
+              ⚠ No se pudo emitir la factura ahora. Se reintenta desde Facturación → Comprobantes.
+            </p>
           )}
           <div className="flex gap-2 mt-5">
             <button onClick={() => onConfirmed(sw)} className="btn btn-secondary flex-1">Sin ticket</button>

@@ -515,6 +515,9 @@ export const api = {
   issueElectronicInvoice: (input: InvoiceInput) =>
     rpc<ElectronicInvoice>("issue_electronic_invoice", { input }),
 
+  issueCreditNote: (invoiceId: number) =>
+    rpc<ElectronicInvoice>("issue_credit_note", { invoiceId }),
+
   listElectronicInvoices: (limit = 200) =>
     rpc<ElectronicInvoice[]>("list_electronic_invoices", { limit }),
 

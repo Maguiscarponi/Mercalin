@@ -150,13 +150,14 @@ fn upsert_clients(db: &Arc<Mutex<Connection>>, data: &Value) {
     let Some(items) = data.as_array() else { return };
     let conn = db.lock();
     for c in items {
+        let condicion_iva = c.get("condicion_iva").and_then(|v| v.as_str()).unwrap_or("consumidor_final");
         let _ = conn.execute(
-            "INSERT INTO clients (id, name, phone, email, address, dni, notes, credit_limit_cents, is_ri, active, created_at, updated_at)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)
+            "INSERT INTO clients (id, name, phone, email, address, dni, notes, credit_limit_cents, is_ri, condicion_iva, active, created_at, updated_at)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)
              ON CONFLICT(id) DO UPDATE SET
                 name=excluded.name, phone=excluded.phone, email=excluded.email, address=excluded.address,
                 dni=excluded.dni, notes=excluded.notes, credit_limit_cents=excluded.credit_limit_cents,
-                is_ri=excluded.is_ri, active=excluded.active, updated_at=excluded.updated_at",
+                is_ri=excluded.is_ri, condicion_iva=excluded.condicion_iva, active=excluded.active, updated_at=excluded.updated_at",
             params![
                 c.get("id").and_then(|v| v.as_i64()),
                 c.get("name").and_then(|v| v.as_str()).unwrap_or(""),
@@ -166,7 +167,8 @@ fn upsert_clients(db: &Arc<Mutex<Connection>>, data: &Value) {
                 c.get("dni").and_then(|v| v.as_str()),
                 c.get("notes").and_then(|v| v.as_str()),
                 c.get("credit_limit_cents").and_then(|v| v.as_i64()).unwrap_or(0),
-                c.get("is_ri").and_then(|v| v.as_bool()).unwrap_or(false) as i64,
+                (condicion_iva == "responsable_inscripto") as i64,
+                condicion_iva,
                 c.get("active").and_then(|v| v.as_bool()).unwrap_or(true) as i64,
                 c.get("created_at").and_then(|v| v.as_str()).unwrap_or(""),
                 c.get("updated_at").and_then(|v| v.as_str()).unwrap_or(""),

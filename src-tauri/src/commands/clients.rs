@@ -25,6 +25,7 @@ fn row_to_client(row: &Row) -> rusqlite::Result<Client> {
         credit_limit_cents: row.get("credit_limit_cents")?,
         balance_cents: row.get("balance_cents")?,
         is_ri: row.get::<_, i64>("is_ri").unwrap_or(0) != 0,
+        condicion_iva: row.get::<_, String>("condicion_iva").unwrap_or_else(|_| "consumidor_final".to_string()),
         active: row.get::<_, i64>("active")? != 0,
         created_at: row.get("created_at")?,
         updated_at: row.get("updated_at")?,
@@ -110,9 +111,10 @@ pub fn get_client(id: i64, state: State<AppState>) -> CmdResult<Client> {
 #[tauri::command]
 pub fn create_client(client: NewClient, state: State<AppState>) -> CmdResult<Client> {
     let conn = state.db.lock();
+    let is_ri = client.condicion_iva == "responsable_inscripto";
     conn.execute(
-        "INSERT INTO clients (name, phone, email, address, dni, notes, credit_limit_cents, is_ri)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        "INSERT INTO clients (name, phone, email, address, dni, notes, credit_limit_cents, is_ri, condicion_iva)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
         params![
             client.name,
             client.phone,
@@ -121,7 +123,8 @@ pub fn create_client(client: NewClient, state: State<AppState>) -> CmdResult<Cli
             client.dni,
             client.notes,
             client.credit_limit_cents,
-            client.is_ri as i64,
+            is_ri as i64,
+            client.condicion_iva,
         ],
     )
     .map_err(friendly_dni_error)?;
@@ -135,10 +138,11 @@ pub fn create_client(client: NewClient, state: State<AppState>) -> CmdResult<Cli
 #[tauri::command]
 pub fn update_client(client: Client, state: State<AppState>) -> CmdResult<Client> {
     let conn = state.db.lock();
+    let is_ri = client.condicion_iva == "responsable_inscripto";
     conn.execute(
         "UPDATE clients SET name=?1, phone=?2, email=?3, address=?4, dni=?5,
-         notes=?6, credit_limit_cents=?7, is_ri=?8, updated_at=CURRENT_TIMESTAMP
-         WHERE id = ?9",
+         notes=?6, credit_limit_cents=?7, is_ri=?8, condicion_iva=?9, updated_at=CURRENT_TIMESTAMP
+         WHERE id = ?10",
         params![
             client.name,
             client.phone,
@@ -147,7 +151,8 @@ pub fn update_client(client: Client, state: State<AppState>) -> CmdResult<Client
             client.dni,
             client.notes,
             client.credit_limit_cents,
-            client.is_ri as i64,
+            is_ri as i64,
+            client.condicion_iva,
             client.id,
         ],
     )

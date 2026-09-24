@@ -289,6 +289,14 @@ fn open_and_migrate_inner(path: &Path) -> Result<Connection> {
     ");
     // IVA discriminado para clientes RI
     let _ = conn.execute_batch("ALTER TABLE clients ADD COLUMN is_ri INTEGER NOT NULL DEFAULT 0;");
+    // Condición real frente al IVA del cliente -- reemplaza a is_ri como fuente
+    // de verdad (is_ri se sigue guardando, derivado, por compatibilidad con
+    // código viejo). Hace falta distinguir Monotributo de Consumidor Final:
+    // desde la Ley 27.618/RG 5003 un Responsable Inscripto que le vende a un
+    // Monotributista debe emitir Factura A (no B), cosa que is_ri solo no
+    // puede representar.
+    let _ = conn.execute_batch("ALTER TABLE clients ADD COLUMN condicion_iva TEXT NOT NULL DEFAULT 'consumidor_final';");
+    let _ = conn.execute_batch("UPDATE clients SET condicion_iva='responsable_inscripto' WHERE is_ri=1 AND condicion_iva='consumidor_final';");
     // Lotes por producto (FEFO — First Expired First Out)
     let _ = conn.execute_batch("
         CREATE TABLE IF NOT EXISTS product_lots (
@@ -410,6 +418,29 @@ fn open_and_migrate_inner(path: &Path) -> Result<Connection> {
         CREATE INDEX IF NOT EXISTS idx_einvoices_status ON electronic_invoices(status);
         CREATE INDEX IF NOT EXISTS idx_einvoices_date   ON electronic_invoices(created_at);
     ");
+    // Condición del propio negocio frente al IVA -- de esto depende si puede
+    // emitir Factura A/B (responsable_inscripto) o solo C (monotributo).
+    let _ = conn.execute_batch("ALTER TABLE arca_config ADD COLUMN condicion_iva TEXT NOT NULL DEFAULT 'monotributo';");
+    // Domicilio comercial del emisor: dato obligatorio en el encabezado de
+    // cualquier factura impresa. Si no se cargó, se usa business_address.
+    let _ = conn.execute_batch("ALTER TABLE arca_config ADD COLUMN domicilio TEXT;");
+    // Datos obligatorios en el encabezado impreso de cualquier factura real
+    // (ver ejemplo oficial de ARCA: Ingresos Brutos y Fecha de Inicio de
+    // Actividades aparecen siempre junto al CUIT del emisor).
+    let _ = conn.execute_batch("ALTER TABLE arca_config ADD COLUMN ingresos_brutos TEXT;");
+    let _ = conn.execute_batch("ALTER TABLE arca_config ADD COLUMN inicio_actividades TEXT;");
+    // Descripción de qué se factura -- solo se usa para mostrarla en el
+    // detalle impreso de facturas creadas a mano (sin venta de Caja detrás).
+    let _ = conn.execute_batch("ALTER TABLE electronic_invoices ADD COLUMN concepto TEXT;");
+    // Condición IVA del receptor tal cual se le declaró a ARCA (obligatorio
+    // desde RG 5616) -- se guarda para poder reimprimir la factura con la
+    // leyenda correcta (ej. Ley 27.618 si el receptor es monotributista).
+    let _ = conn.execute_batch("ALTER TABLE electronic_invoices ADD COLUMN condicion_iva_receptor_id INTEGER NOT NULL DEFAULT 5;");
+    // Nota de Crédito: cuando no es NULL, esta fila ES una nota de crédito que
+    // anula la factura con ese id. Una factura nunca se borra -- ARCA no lo
+    // permite una vez que tiene CAE -- la única forma de anularla es emitir
+    // una Nota de Crédito nueva que la revierte.
+    let _ = conn.execute_batch("ALTER TABLE electronic_invoices ADD COLUMN credited_invoice_id INTEGER REFERENCES electronic_invoices(id);");
 
     // Etiquetas de paquete pesado: al imprimir la etiqueta de un producto pesable
     // con un peso puntual cargado (ej. una bolsa de queso rallado de 560g), se

@@ -32,6 +32,11 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
+      # ARCA/facturación electrónica usa el crate openssl (vendored: compila
+      # OpenSSL desde cero). windows-latest ya trae Strawberry Perl instalado,
+      # pero NASM (para las rutinas optimizadas) no viene por defecto.
+      - uses: ilammy/setup-nasm@v1
+
       - run: npm ci
 
       - name: Leer versión de tauri.conf.json

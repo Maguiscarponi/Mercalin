@@ -1,7 +1,7 @@
 import {
   ShoppingCart, Wallet, Users, RotateCcw,
   Package, Truck, Tag, Calendar, ClipboardList, Layers, Gift,
-  FileText, Percent, Lock,
+  FileText, Percent, Lock, Receipt,
   LayoutDashboard, BarChart2, Search, Settings,
   type LucideIcon,
 } from "lucide-react";
@@ -58,6 +58,7 @@ export const NAV_GROUPS: Array<{ label: string; links: NavLinkDef[] }> = [
     links: [
       { to: "/presupuestos", label: "Presupuestos",     icon: FileText,        key: "",               minRole: "supervisor" },
       { to: "/promociones",  label: "Promociones",      icon: Percent,         key: "",               minRole: "supervisor" },
+      { to: "/facturacion",  label: "Facturación (ARCA)", icon: Receipt,       key: "",               minRole: "supervisor" },
       { to: "/usuarios",     label: "Usuarios",         icon: Lock,            key: "",               minRole: "admin", serverOnly: true },
     ],
   },

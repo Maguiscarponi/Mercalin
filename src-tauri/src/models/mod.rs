@@ -284,7 +284,8 @@ pub struct Client {
     pub notes: Option<String>,
     pub credit_limit_cents: i64,
     pub balance_cents: i64,
-    pub is_ri: bool,
+    pub is_ri: bool,          // derivado de condicion_iva == "responsable_inscripto"
+    pub condicion_iva: String, // "consumidor_final" | "responsable_inscripto" | "monotributo" | "exento"
     pub active: bool,
     pub created_at: String,
     pub updated_at: String,
@@ -299,7 +300,7 @@ pub struct NewClient {
     pub dni: Option<String>,
     pub notes: Option<String>,
     pub credit_limit_cents: i64,
-    pub is_ri: bool,
+    pub condicion_iva: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1017,6 +1018,10 @@ pub struct ArcaConfig {
     pub environment: String,        // "homo" | "prod"
     pub token_valid: bool,
     pub token_expires_at: Option<String>,
+    pub condicion_iva: String,      // "monotributo" | "responsable_inscripto"
+    pub domicilio: Option<String>,
+    pub ingresos_brutos: Option<String>,
+    pub inicio_actividades: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1025,6 +1030,10 @@ pub struct ArcaConfigInput {
     pub razon_social: Option<String>,
     pub punto_venta: i64,
     pub environment: String,
+    pub condicion_iva: String,
+    pub domicilio: Option<String>,
+    pub ingresos_brutos: Option<String>,
+    pub inicio_actividades: Option<String>,
 }
 
 /// Tipos de comprobante ARCA
@@ -1042,7 +1051,13 @@ pub struct InvoiceInput {
     pub client_name: Option<String>,
     pub doc_tipo: i64,              // 80=CUIT, 86=CUIL, 96=DNI, 99=ConsumidorFinal
     pub doc_nro: String,            // Número de documento
+    #[serde(default)]
+    pub concepto: Option<String>,   // qué se factura, solo para facturas sin venta de Caja
+    #[serde(default = "default_condicion_iva_receptor_id")]
+    pub condicion_iva_receptor_id: i64, // obligatorio desde RG 5616 (1=RI, 6=Monotributo, 4=Exento, 5=Consumidor Final)
 }
+
+fn default_condicion_iva_receptor_id() -> i64 { 5 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ElectronicInvoice {
@@ -1063,6 +1078,9 @@ pub struct ElectronicInvoice {
     pub status: String,             // "pendiente" | "autorizada" | "error"
     pub error_msg: Option<String>,
     pub created_at: String,
+    pub concepto: Option<String>,
+    pub condicion_iva_receptor_id: i64,
+    pub credited_invoice_id: Option<i64>, // si no es None, ESTA fila es la nota de crédito que anula a esa factura
 }
 
 // ─── Import de catálogo público (Open Food Facts) ─────────────────────────────

@@ -96,7 +96,7 @@ export default function Clientes() {
           dni: data.dni || null,
           notes: data.notes || null,
           credit_limit_cents: data.credit_limit_cents || 0,
-          is_ri: data.is_ri || false,
+          condicion_iva: data.condicion_iva || "consumidor_final",
         });
       }
       setEditing(null);
@@ -649,15 +649,21 @@ function ClientForm({
           <Field label="Notas">
             <textarea className="input resize-none h-16" value={form.notes || ""} onChange={f("notes")} placeholder="Observaciones del cliente…" />
           </Field>
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              className="w-4 h-4 rounded"
-              checked={!!form.is_ri}
-              onChange={(e) => setForm((prev) => ({ ...prev, is_ri: e.target.checked }))}
-            />
-            <span className="text-sm text-stone-700">Responsable Inscripto (RI) — discriminar IVA</span>
-          </label>
+          <Field label="Condición frente al IVA">
+            <select
+              className="input"
+              value={form.condicion_iva || "consumidor_final"}
+              onChange={(e) => setForm((prev) => ({ ...prev, condicion_iva: e.target.value as Client["condicion_iva"] }))}
+            >
+              <option value="consumidor_final">Consumidor Final</option>
+              <option value="responsable_inscripto">Responsable Inscripto</option>
+              <option value="monotributo">Monotributista</option>
+              <option value="exento">Exento</option>
+            </select>
+            <span className="text-[11px] text-stone-400 block mt-1">
+              Define qué tipo de factura le corresponde cuando facturás desde Caja o Facturación.
+            </span>
+          </Field>
         </div>
 
         <div className="flex gap-2 mt-6">

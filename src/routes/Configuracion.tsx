@@ -12,6 +12,7 @@ import { useStockTrackingStore } from "@/stores/stockTracking";
 import { useCombosEnabledStore } from "@/stores/combosEnabled";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { getVersion } from "@tauri-apps/api/app";
+import { openSupportWhatsapp } from "@/lib/support";
 import Field from "@/components/ui/Field";
 import clsx from "clsx";
 
@@ -253,9 +254,17 @@ export default function Configuracion() {
             ))}
           </div>
         </div>
-        <button onClick={save} disabled={saving} className="btn btn-primary mb-3 disabled:opacity-60">
-          {saving ? "Guardando…" : saved ? "✓ Guardado" : "Guardar cambios"}
-        </button>
+        <div className="flex items-center gap-2 mb-3">
+          <button
+            onClick={() => openSupportWhatsapp("Hola! Tengo una consulta sobre Mercalin.")}
+            className="flex items-center gap-1.5 text-sm font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg px-3 py-2"
+          >
+            💬 Soporte
+          </button>
+          <button onClick={save} disabled={saving} className="btn btn-primary disabled:opacity-60">
+            {saving ? "Guardando…" : saved ? "✓ Guardado" : "Guardar cambios"}
+          </button>
+        </div>
       </div>
 
       {/* Contenido del tab */}

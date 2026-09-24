@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { centsToARS, formatDateTime } from "@/lib/format";
 import { printHtml } from "@/lib/printHtml";
-import type { Sale, SaleItem } from "@/types";
+import { buildAfipQrDataUrl } from "@/lib/afipQr";
+import type { ElectronicInvoice, Sale, SaleItem } from "@/types";
 
 const METHOD_LABELS: Record<string, string> = {
   efectivo: "Efectivo",
@@ -29,11 +30,13 @@ interface Props {
   ticketFooter?: string;
   paperSize?: PaperSize;
   isRi?: boolean;
+  invoice?: ElectronicInvoice | null;
+  sellerCuit?: string;
   onClose: () => void;
 }
 
-function buildReceiptHtml(p: Omit<Props, "onClose"> & { paperSize: PaperSize }): string {
-  const { sale, items, businessName, businessAddress, businessPhone, ticketFooter, paperSize, isRi } = p;
+function buildReceiptHtml(p: Omit<Props, "onClose"> & { paperSize: PaperSize; qrDataUrl?: string | null }): string {
+  const { sale, items, businessName, businessAddress, businessPhone, ticketFooter, paperSize, isRi, invoice, qrDataUrl } = p;
   const pw = PAPER_WIDTH[paperSize];
 
   const itemsHtml = items
@@ -62,12 +65,26 @@ function buildReceiptHtml(p: Omit<Props, "onClose"> & { paperSize: PaperSize }):
 
   const netoCents = Math.round(sale.total_cents / 1.21);
   const ivaCents = sale.total_cents - netoCents;
-  const ivaRows = isRi
+  // Si ya se emitió comprobante, el tipo real (Factura A discrimina IVA,
+  // B/C no) manda sobre el flag isRi -- que solo aplica quede sin ARCA.
+  const showIvaDiscriminado = invoice ? invoice.invoice_type === "A" : isRi;
+  const ivaRows = showIvaDiscriminado
     ? `<div class="dashed"></div>
        <div class="row small"><span>Neto gravado</span><span class="nowrap">${centsToARS(netoCents)}</span></div>
        <div class="row small"><span>IVA 21%</span><span class="nowrap">${centsToARS(ivaCents)}</span></div>
        <div class="small center" style="font-size:9px;color:#555">Responsable Inscripto — IVA discriminado</div>`
     : "";
+
+  // CAE + QR: obligatorios por ley en cualquier comprobante autorizado por
+  // ARCA (RG 4892/2020). Sin esto el papel no es una factura válida.
+  const caeRows =
+    invoice?.status === "autorizada" && invoice.cae
+      ? `<div class="dashed"></div>
+         <div class="center small">Factura ${escHtml(invoice.invoice_type)} · ${String(invoice.punto_venta).padStart(4, "0")}-${String(invoice.cbte_nro ?? 0).padStart(8, "0")}</div>
+         <div class="center small">CAE: ${escHtml(invoice.cae)}</div>
+         ${invoice.cae_expires_at ? `<div class="center small">Vto. CAE: ${escHtml(invoice.cae_expires_at)}</div>` : ""}
+         ${qrDataUrl ? `<div class="center" style="margin-top:4px"><img src="${qrDataUrl}" style="width:120px;height:120px" /></div>` : ""}`
+      : "";
 
   return `<!DOCTYPE html>
 <html>
@@ -120,6 +137,7 @@ function buildReceiptHtml(p: Omit<Props, "onClose"> & { paperSize: PaperSize }):
     ${cashRows}
   </div>
   ${ivaRows}
+  ${caeRows}
   <div class="dashed"></div>
   <div class="center small">${escHtml(ticketFooter || "¡Gracias por su compra!")}</div>
 </body>
@@ -130,11 +148,18 @@ function escHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-export default function TicketPrint({ sale, items, businessName, businessAddress, businessPhone, ticketFooter, paperSize: initialPaperSize = "80mm", isRi = false, onClose }: Props) {
+export default function TicketPrint({ sale, items, businessName, businessAddress, businessPhone, ticketFooter, paperSize: initialPaperSize = "80mm", isRi = false, invoice, sellerCuit, onClose }: Props) {
   const [paperSize, setPaperSize] = useState<PaperSize>(initialPaperSize);
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (invoice?.status === "autorizada" && invoice.cae && sellerCuit) {
+      buildAfipQrDataUrl(invoice, sellerCuit).then(setQrDataUrl).catch(() => setQrDataUrl(null));
+    }
+  }, [invoice, sellerCuit]);
 
   function doPrint() {
-    const html = buildReceiptHtml({ sale, items, businessName, businessAddress, businessPhone, ticketFooter, paperSize, isRi });
+    const html = buildReceiptHtml({ sale, items, businessName, businessAddress, businessPhone, ticketFooter, paperSize, isRi, invoice, qrDataUrl });
     // Pase lo que pase con la impresión (falle, se cancele, no haya impresora), onClose()
     // se llama igual — así la caja siempre queda lista para la próxima venta.
     printHtml(html, onClose);
@@ -218,7 +243,7 @@ export default function TicketPrint({ sale, items, businessName, businessAddress
                 <div className="flex justify-between"><span>Vuelto</span><span>{centsToARS(sale.change_cents)}</span></div>
               </>}
             </div>
-            {isRi && (() => {
+            {(invoice ? invoice.invoice_type === "A" : isRi) && (() => {
               const neto = Math.round(sale.total_cents / 1.21);
               const iva = sale.total_cents - neto;
               return (
@@ -232,6 +257,16 @@ export default function TicketPrint({ sale, items, businessName, businessAddress
                 </>
               );
             })()}
+            {invoice?.status === "autorizada" && invoice.cae && (
+              <>
+                <div className="border-t border-dashed border-stone-400 my-1.5" />
+                <div className="text-center text-[10px] text-stone-500">
+                  Factura {invoice.invoice_type} · {String(invoice.punto_venta).padStart(4, "0")}-{String(invoice.cbte_nro ?? 0).padStart(8, "0")}
+                </div>
+                <div className="text-center text-[10px] text-stone-500">CAE: {invoice.cae}</div>
+                {qrDataUrl && <img src={qrDataUrl} alt="QR AFIP" className="mx-auto mt-1" style={{ width: 90, height: 90 }} />}
+              </>
+            )}
             <div className="border-t border-dashed border-stone-400 my-1.5" />
             <div className="text-center text-[10px]">{ticketFooter || "¡Gracias por su compra!"}</div>
           </div>

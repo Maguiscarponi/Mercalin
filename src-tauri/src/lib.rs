@@ -701,6 +701,7 @@ pub fn run() {
             commands::arca::load_arca_certificate,
             commands::arca::test_arca_connection,
             commands::arca::issue_electronic_invoice,
+            commands::arca::issue_credit_note,
             commands::arca::list_electronic_invoices,
             commands::arca::retry_pending_invoices,
             // Catálogo — plantilla desde Open Food Facts (solo desarrollo)

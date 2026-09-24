@@ -247,6 +247,12 @@ export interface NewCashMovement {
 }
 
 // ─── Clientes ───────────────────────────────────────────────────────────────
+// Condición real frente al IVA. No alcanza con "es RI sí/no": desde la Ley
+// 27.618 un Responsable Inscripto que le vende a un Monotributista tiene que
+// emitir Factura A (no B) -- por eso "monotributo" es un valor propio y no
+// se puede derivar de un booleano.
+export type CondicionIvaCliente = 'consumidor_final' | 'responsable_inscripto' | 'monotributo' | 'exento';
+
 export interface Client {
   id: Id;
   name: string;
@@ -258,6 +264,7 @@ export interface Client {
   credit_limit_cents: number;
   balance_cents: number;
   is_ri: boolean;
+  condicion_iva: CondicionIvaCliente;
   active: boolean;
   created_at: string;
   updated_at: string;
@@ -271,7 +278,7 @@ export interface NewClient {
   dni: string | null;
   notes: string | null;
   credit_limit_cents: number;
-  is_ri: boolean;
+  condicion_iva: CondicionIvaCliente;
 }
 
 export interface ClientAccountEntry {
@@ -457,6 +464,8 @@ export interface NewCombo {
 }
 
 // ─── ARCA / Facturación electrónica ──────────────────────────────────────────
+export type CondicionIva = 'monotributo' | 'responsable_inscripto';
+
 export interface ArcaConfig {
   cuit: string;
   razon_social: string | null;
@@ -465,6 +474,10 @@ export interface ArcaConfig {
   environment: 'homo' | 'prod';
   token_valid: boolean;
   token_expires_at: string | null;
+  condicion_iva: CondicionIva;
+  domicilio: string | null;
+  ingresos_brutos: string | null;
+  inicio_actividades: string | null;
 }
 
 export interface ArcaConfigInput {
@@ -472,6 +485,10 @@ export interface ArcaConfigInput {
   razon_social: string | null;
   punto_venta: number;
   environment: string;
+  condicion_iva: CondicionIva;
+  domicilio: string | null;
+  ingresos_brutos: string | null;
+  inicio_actividades: string | null;
 }
 
 export type InvoiceType = 'A' | 'B' | 'C';
@@ -486,6 +503,8 @@ export interface InvoiceInput {
   client_name: string | null;
   doc_tipo: number;   // 80=CUIT, 86=CUIL, 96=DNI, 99=CF sin doc
   doc_nro: string;
+  concepto?: string | null;
+  condicion_iva_receptor_id: number; // obligatorio desde RG 5616 -- ver src/lib/facturacion.ts
 }
 
 export interface ElectronicInvoice {
@@ -506,6 +525,9 @@ export interface ElectronicInvoice {
   status: 'pendiente' | 'autorizada' | 'error';
   error_msg: string | null;
   created_at: string;
+  concepto: string | null;
+  condicion_iva_receptor_id: number;
+  credited_invoice_id: number | null; // si no es null, ESTA fila es la Nota de Crédito que anula a esa factura
 }
 
 // ─── Backup ─────────────────────────────────────────────────────────────────

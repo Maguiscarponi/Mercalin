@@ -26,7 +26,7 @@ hmac = "0.12"
 hex = "0.4"
 tiny_http = "0.12"
 # ARCA / Facturación electrónica
-# openssl = { version = "0.10", features = ["vendored"] }  # requiere Strawberry Perl — activar cuando esté instalado
+openssl = { version = "0.10", features = ["vendored"] }
 ureq = { version = "2.10", features = ["tls"] }
 quick-xml = { version = "0.36", features = ["serialize"] }
 base64 = "0.22"

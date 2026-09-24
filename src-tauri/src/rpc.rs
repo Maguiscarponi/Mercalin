@@ -207,6 +207,7 @@ pub fn dispatch(app: &AppHandle, command: &str, body: Value) -> RpcResult {
         "load_arca_certificate" => crate::commands::arca::load_arca_certificate[cert_pem: String],
         "test_arca_connection" => crate::commands::arca::test_arca_connection[],
         "issue_electronic_invoice" => crate::commands::arca::issue_electronic_invoice[input: crate::models::InvoiceInput],
+        "issue_credit_note" => crate::commands::arca::issue_credit_note[invoice_id: i64],
         "list_electronic_invoices" => crate::commands::arca::list_electronic_invoices[limit: i64],
         "retry_pending_invoices" => crate::commands::arca::retry_pending_invoices[],
     })
