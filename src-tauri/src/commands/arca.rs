@@ -105,6 +105,20 @@ pub fn save_arca_config(input: ArcaConfigInput, state: State<AppState>) -> CmdRe
     Ok(())
 }
 
+// Borra la configuración de ARCA (CUIT, certificado, clave privada, token) y
+// todo el historial de comprobantes emitidos -- vuelve al estado "recién
+// instalado". Pensado para descartar pruebas en Testing antes de pasar a
+// Producción, o para arrancar de cero si algo quedó mal cargado. No toca
+// nada del lado de ARCA (eso es imposible de todos modos): solo borra lo
+// que hay guardado localmente en esta base.
+#[tauri::command]
+pub fn reset_arca_data(state: State<AppState>) -> CmdResult<()> {
+    let conn = state.db.lock();
+    conn.execute("DELETE FROM electronic_invoices", []).map_err(err)?;
+    conn.execute("DELETE FROM arca_config", []).map_err(err)?;
+    Ok(())
+}
+
 // ─── Certificado digital ──────────────────────────────────────────────────────
 
 // Genera el par de claves RSA-2048 de esta PC (la privada nunca sale de acá)
@@ -499,12 +513,26 @@ pub fn issue_electronic_invoice(input: InvoiceInput, state: State<AppState>) -> 
 }
 
 // Anula una factura autorizada emitiendo una Nota de Crédito del mismo tipo
-// de letra (A/B/C) por el mismo importe. Es la ÚNICA forma de "borrar" una
-// factura: ARCA no permite eliminar un comprobante que ya tiene CAE, ni acá
-// ni en su propia web -- la Nota de Crédito es un comprobante nuevo que la
-// revierte, no un borrado.
+// de letra (A/B/C). Es la ÚNICA forma de "borrar" una factura: ARCA no
+// permite eliminar un comprobante que ya tiene CAE, ni acá ni en su propia
+// web -- la Nota de Crédito es un comprobante nuevo que la revierte, no un
+// borrado.
+//
+// `amount_cents`/`return_id` son para devoluciones parciales (ver Devoluciones):
+// cuando vienen, la NC es solo por lo devuelto (no por el total de la
+// factura), el neto/IVA se recalculan proporcionalmente, y el chequeo de
+// "ya tiene NC" se hace por devolución puntual en vez de por factura entera
+// -- así una misma venta puede tener varias devoluciones parciales, cada una
+// con su propia NC, sin que la primera bloquee a las siguientes. Cuando no
+// vienen (anulación manual desde Facturación), es una anulación total como
+// siempre fue: por el importe completo y solo se puede hacer una vez.
 #[tauri::command]
-pub fn issue_credit_note(invoice_id: i64, state: State<AppState>) -> CmdResult<ElectronicInvoice> {
+pub fn issue_credit_note(
+    invoice_id: i64,
+    amount_cents: Option<i64>,
+    return_id: Option<i64>,
+    state: State<AppState>,
+) -> CmdResult<ElectronicInvoice> {
     let original = fetch_invoice(&state, invoice_id)?;
     if original.status != "autorizada" {
         return Err("Solo se puede anular una factura autorizada.".to_string());
@@ -514,12 +542,22 @@ pub fn issue_credit_note(invoice_id: i64, state: State<AppState>) -> CmdResult<E
     }
     {
         let conn = state.db.lock();
-        let ya_anulada: Option<i64> = conn.query_row(
-            "SELECT id FROM electronic_invoices WHERE credited_invoice_id=?1 AND status IN ('autorizada','pendiente') LIMIT 1",
-            params![invoice_id], |r| r.get(0),
-        ).ok();
-        if ya_anulada.is_some() {
-            return Err("Esta factura ya tiene una nota de crédito emitida.".to_string());
+        if let Some(rid) = return_id {
+            let ya_tiene_nc: Option<i64> = conn.query_row(
+                "SELECT id FROM electronic_invoices WHERE return_id=?1 AND status IN ('autorizada','pendiente') LIMIT 1",
+                params![rid], |r| r.get(0),
+            ).ok();
+            if ya_tiene_nc.is_some() {
+                return Err("Esta devolución ya tiene una nota de crédito emitida.".to_string());
+            }
+        } else if amount_cents.is_none() {
+            let ya_anulada: Option<i64> = conn.query_row(
+                "SELECT id FROM electronic_invoices WHERE credited_invoice_id=?1 AND status IN ('autorizada','pendiente') LIMIT 1",
+                params![invoice_id], |r| r.get(0),
+            ).ok();
+            if ya_anulada.is_some() {
+                return Err("Esta factura ya tiene una nota de crédito emitida.".to_string());
+            }
         }
     }
 
@@ -533,22 +571,45 @@ pub fn issue_credit_note(invoice_id: i64, state: State<AppState>) -> CmdResult<E
     let nc_ct = nc_cbte_tipo(&original.invoice_type);
     let cbte_asoc = (original.cbte_tipo, original.punto_venta, original.cbte_nro.unwrap_or(0));
 
-    let input = InvoiceInput {
-        sale_id: None,
-        invoice_type: original.invoice_type.clone(),
-        total_cents: original.total_cents,
-        neto_cents: original.neto_cents,
-        iva_cents: original.iva_cents,
-        client_cuit: original.client_cuit.clone(),
-        client_name: original.client_name.clone(),
-        doc_tipo: original.doc_tipo,
-        doc_nro: original.client_cuit.clone().unwrap_or_else(|| "0".to_string()),
-        concepto: Some(format!(
+    // Importe total de la NC: el completo de la factura salvo que se pida un
+    // importe parcial (devolución de solo algunos ítems). El IVA se escala
+    // en la misma proporción y el neto se saca por diferencia, para que
+    // neto+iva dé exactamente el total (si no, ARCA rechaza el comprobante).
+    let (total, neto, iva) = match amount_cents {
+        Some(amt) if amt > 0 && amt < original.total_cents => {
+            let iva_part = ((original.iva_cents as i128 * amt as i128) / original.total_cents.max(1) as i128) as i64;
+            (amt, amt - iva_part, iva_part)
+        }
+        _ => (original.total_cents, original.neto_cents, original.iva_cents),
+    };
+
+    let concepto = if let Some(rid) = return_id {
+        format!(
+            "Devolución #{} — NC Factura {} {}-{}",
+            rid, original.invoice_type,
+            format!("{:04}", original.punto_venta),
+            format!("{:08}", original.cbte_nro.unwrap_or(0)),
+        )
+    } else {
+        format!(
             "Anula Factura {} {}-{}",
             original.invoice_type,
             format!("{:04}", original.punto_venta),
             format!("{:08}", original.cbte_nro.unwrap_or(0)),
-        )),
+        )
+    };
+
+    let input = InvoiceInput {
+        sale_id: None,
+        invoice_type: original.invoice_type.clone(),
+        total_cents: total,
+        neto_cents: neto,
+        iva_cents: iva,
+        client_cuit: original.client_cuit.clone(),
+        client_name: original.client_name.clone(),
+        doc_tipo: original.doc_tipo,
+        doc_nro: original.client_cuit.clone().unwrap_or_else(|| "0".to_string()),
+        concepto: Some(concepto),
         condicion_iva_receptor_id: original.condicion_iva_receptor_id,
     };
 
@@ -557,13 +618,13 @@ pub fn issue_credit_note(invoice_id: i64, state: State<AppState>) -> CmdResult<E
         conn.execute(
             "INSERT INTO electronic_invoices
              (sale_id, invoice_type, cbte_tipo, punto_venta, total_cents, neto_cents, iva_cents,
-              client_cuit, client_name, doc_tipo, concepto, condicion_iva_receptor_id, credited_invoice_id, status)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,'pendiente')",
+              client_cuit, client_name, doc_tipo, concepto, condicion_iva_receptor_id, credited_invoice_id, return_id, status)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,'pendiente')",
             params![
                 Option::<i64>::None, input.invoice_type, nc_ct, punto_venta,
                 input.total_cents, input.neto_cents, input.iva_cents,
                 input.client_cuit, input.client_name, input.doc_tipo, input.concepto,
-                input.condicion_iva_receptor_id, invoice_id,
+                input.condicion_iva_receptor_id, invoice_id, return_id,
             ],
         ).map_err(err)?;
         conn.last_insert_rowid()
@@ -602,12 +663,31 @@ pub fn list_electronic_invoices(limit: i64, state: State<AppState>) -> CmdResult
     let conn = state.db.lock();
     let mut stmt = conn.prepare(
         "SELECT id, sale_id, invoice_type, cbte_tipo, punto_venta, cbte_nro, cae, cae_expires_at,
-                total_cents, neto_cents, iva_cents, client_cuit, client_name, doc_tipo, status, error_msg, created_at, concepto, condicion_iva_receptor_id, credited_invoice_id
+                total_cents, neto_cents, iva_cents, client_cuit, client_name, doc_tipo, status, error_msg, created_at, concepto, condicion_iva_receptor_id, credited_invoice_id, return_id
          FROM electronic_invoices ORDER BY created_at DESC LIMIT ?1"
     ).map_err(err)?;
     let x: Vec<ElectronicInvoice> = stmt.query_map(params![limit], row_to_invoice)
         .map_err(err)?.filter_map(|r| r.ok()).collect();
     Ok(x)
+}
+
+// Para Devoluciones: saber si la venta que se está por devolver tiene una
+// factura ARCA vigente (no una NC), para poder ofrecer emitir la nota de
+// crédito correspondiente al confirmar la devolución.
+#[tauri::command]
+pub fn get_invoice_for_sale(sale_id: i64, state: State<AppState>) -> CmdResult<Option<ElectronicInvoice>> {
+    let conn = state.db.lock();
+    let mut stmt = conn.prepare(
+        "SELECT id, sale_id, invoice_type, cbte_tipo, punto_venta, cbte_nro, cae, cae_expires_at,
+                total_cents, neto_cents, iva_cents, client_cuit, client_name, doc_tipo, status, error_msg, created_at, concepto, condicion_iva_receptor_id, credited_invoice_id, return_id
+         FROM electronic_invoices WHERE sale_id=?1 AND credited_invoice_id IS NULL ORDER BY created_at DESC LIMIT 1"
+    ).map_err(err)?;
+    let result = stmt.query_row(params![sale_id], row_to_invoice);
+    match result {
+        Ok(inv) => Ok(Some(inv)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(err(e)),
+    }
 }
 
 #[tauri::command]
@@ -680,7 +760,7 @@ fn fetch_invoice(state: &AppState, id: i64) -> CmdResult<ElectronicInvoice> {
     let conn = state.db.lock();
     let mut stmt = conn.prepare(
         "SELECT id, sale_id, invoice_type, cbte_tipo, punto_venta, cbte_nro, cae, cae_expires_at,
-                total_cents, neto_cents, iva_cents, client_cuit, client_name, doc_tipo, status, error_msg, created_at, concepto, condicion_iva_receptor_id, credited_invoice_id
+                total_cents, neto_cents, iva_cents, client_cuit, client_name, doc_tipo, status, error_msg, created_at, concepto, condicion_iva_receptor_id, credited_invoice_id, return_id
          FROM electronic_invoices WHERE id=?1"
     ).map_err(err)?;
     stmt.query_row(params![id], row_to_invoice).map_err(err)
@@ -695,7 +775,7 @@ fn row_to_invoice(row: &rusqlite::Row) -> rusqlite::Result<ElectronicInvoice> {
         client_cuit: row.get(11)?, client_name: row.get(12)?, doc_tipo: row.get(13)?,
         status: row.get(14)?, error_msg: row.get(15)?, created_at: row.get(16)?,
         concepto: row.get(17)?, condicion_iva_receptor_id: row.get(18)?,
-        credited_invoice_id: row.get(19)?,
+        credited_invoice_id: row.get(19)?, return_id: row.get(20)?,
     })
 }
 

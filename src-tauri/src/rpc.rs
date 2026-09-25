@@ -198,17 +198,21 @@ pub fn dispatch(app: &AppHandle, command: &str, body: Value) -> RpcResult {
         "backup_database" => crate::commands::backup::backup_database[],
         "list_backups" => crate::commands::backup::list_backups[],
         "delete_backup" => crate::commands::backup::delete_backup[name: String],
+        "restore_backup" => crate::commands::backup::restore_backup[file_path: String],
+        "restore_backup_by_name" => crate::commands::backup::restore_backup_by_name[name: String],
         "auto_backup_check" => crate::commands::backup::auto_backup_check[],
 
         // ARCA / facturación electrónica
         "get_arca_config" => crate::commands::arca::get_arca_config[],
         "save_arca_config" => crate::commands::arca::save_arca_config[input: crate::models::ArcaConfigInput],
+        "reset_arca_data" => crate::commands::arca::reset_arca_data[],
         "generate_arca_keypair" => crate::commands::arca::generate_arca_keypair[],
         "load_arca_certificate" => crate::commands::arca::load_arca_certificate[cert_pem: String],
         "test_arca_connection" => crate::commands::arca::test_arca_connection[],
         "issue_electronic_invoice" => crate::commands::arca::issue_electronic_invoice[input: crate::models::InvoiceInput],
-        "issue_credit_note" => crate::commands::arca::issue_credit_note[invoice_id: i64],
+        "issue_credit_note" => crate::commands::arca::issue_credit_note[invoice_id: i64, amount_cents: Option<i64>, return_id: Option<i64>],
         "list_electronic_invoices" => crate::commands::arca::list_electronic_invoices[limit: i64],
+        "get_invoice_for_sale" => crate::commands::arca::get_invoice_for_sale[sale_id: i64],
         "retry_pending_invoices" => crate::commands::arca::retry_pending_invoices[],
     })
 }

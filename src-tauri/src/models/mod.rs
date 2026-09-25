@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+fn default_unit() -> String { "unidad".to_string() }
+
 // ─── Productos ───────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -16,6 +18,9 @@ pub struct Product {
     pub category: Option<String>,
     pub brand: Option<String>,
     pub is_weighable: bool,
+    /// Unidad de venta cuando is_weighable=true (kg, g, l, ml, m, docena...).
+    /// Para productos no pesables no se usa (siempre "unidad").
+    pub unit: String,
     pub active: bool,
     /// Precargado (ej. import de catálogo público) pero todavía sin precio: no cuenta como
     /// parte real del catálogo, pero se puede encontrar buscando o escaneando su código.
@@ -40,6 +45,8 @@ pub struct NewProduct {
     pub category: Option<String>,
     pub brand: Option<String>,
     pub is_weighable: bool,
+    #[serde(default = "default_unit")]
+    pub unit: String,
     pub active: bool,
     pub supplier_id: Option<i64>,
     pub expires_at: Option<String>,
@@ -840,6 +847,8 @@ pub struct CsvProductRow {
     pub supplier_name: Option<String>,
     #[serde(default)]
     pub is_weighable: bool,
+    #[serde(default = "default_unit")]
+    pub unit: String,
     pub expires_at: Option<String>,
 }
 
@@ -1081,6 +1090,7 @@ pub struct ElectronicInvoice {
     pub concepto: Option<String>,
     pub condicion_iva_receptor_id: i64,
     pub credited_invoice_id: Option<i64>, // si no es None, ESTA fila es la nota de crédito que anula a esa factura
+    pub return_id: Option<i64>, // si no es None, esta nota de crédito corresponde a esta devolución puntual
 }
 
 // ─── Import de catálogo público (Open Food Facts) ─────────────────────────────

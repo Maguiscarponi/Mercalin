@@ -11,6 +11,7 @@ import { useUpdaterStore } from "@/stores/updater";
 import { useStockTrackingStore } from "@/stores/stockTracking";
 import { useCombosEnabledStore } from "@/stores/combosEnabled";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { relaunch } from "@tauri-apps/plugin-process";
 import { getVersion } from "@tauri-apps/api/app";
 import { openSupportWhatsapp } from "@/lib/support";
 import Field from "@/components/ui/Field";
@@ -37,6 +38,7 @@ export default function Configuracion() {
   const [backups, setBackups] = useState<BackupInfo[]>([]);
   const [backing, setBacking] = useState(false);
   const [backupMsg, setBackupMsg] = useState<string | null>(null);
+  const [restoring, setRestoring] = useState(false);
   const [networkInfo, setNetworkInfo] = useState<NetworkInfo | null>(null);
   const [deviceConfig, setDeviceConfig] = useState<DeviceConfig | null>(null);
   const [serverAddrInput, setServerAddrInput] = useState("");
@@ -223,6 +225,34 @@ export default function Configuracion() {
     catch (e) { showToast({ message: `Error: ${e}`, tone: "danger" }); }
   }
 
+  async function confirmRestore(): Promise<boolean> {
+    return confirmAction(
+      "Todo lo que tenés cargado ahora (ventas, productos, clientes, configuración de ARCA) se va a REEMPLAZAR por lo que hay en ese backup. Esto no se puede deshacer.",
+      { title: "¿Restaurar este backup?", danger: true, confirmLabel: "Restaurar y reiniciar" }
+    );
+  }
+
+  async function afterRestore() {
+    showToast({ message: "Backup restaurado — reiniciando…", tone: "success" });
+    setTimeout(() => relaunch(), 800);
+  }
+
+  async function doRestoreByName(name: string) {
+    if (!(await confirmRestore())) return;
+    setRestoring(true);
+    try { await api.restoreBackupByName(name); await afterRestore(); }
+    catch (e) { showToast({ message: `Error: ${e}`, tone: "danger" }); setRestoring(false); }
+  }
+
+  async function pickAndRestore() {
+    const selected = await openDialog({ directory: false, multiple: false, title: "Elegí el archivo de backup (.db)", filters: [{ name: "Backup de Mercalin", extensions: ["db"] }] });
+    if (typeof selected !== "string") return;
+    if (!(await confirmRestore())) return;
+    setRestoring(true);
+    try { await api.restoreBackup(selected); await afterRestore(); }
+    catch (e) { showToast({ message: `Error: ${e}`, tone: "danger" }); setRestoring(false); }
+  }
+
   function formatBytes(b: number) {
     if (b < 1024) return `${b} B`;
     if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`;
@@ -274,7 +304,7 @@ export default function Configuracion() {
         {tab === "general" && (
           <div className="max-w-2xl space-y-5">
             <section className="card p-5">
-              <h2 className="font-semibold text-sm mb-4">Datos del negocio</h2>
+              <h2 className="font-semibold text-sm mb-4">🏪 Datos del negocio</h2>
               <div className="space-y-3">
                 <Field label="Nombre del negocio">
                   <input className="input" value={config.business_name || ""} onChange={(e) => setField("business_name", e.target.value)} placeholder="Mi Kiosco" />
@@ -294,7 +324,7 @@ export default function Configuracion() {
             </section>
 
             <section className="card p-5">
-              <h2 className="font-semibold text-sm mb-1">Funciones opcionales</h2>
+              <h2 className="font-semibold text-sm mb-1">⚙️ Funciones opcionales</h2>
               <p className="text-xs text-stone-500 mb-4">
                 Se aplican al instante en todo el sistema, sin tener que guardar cambios.
               </p>
@@ -337,14 +367,14 @@ export default function Configuracion() {
             </section>
 
             <section className="card p-5">
-              <h2 className="font-semibold text-sm mb-4">Ticket de venta</h2>
+              <h2 className="font-semibold text-sm mb-4">🧾 Ticket de venta</h2>
               <Field label="Mensaje al pie del ticket">
                 <input className="input" value={config.ticket_footer || ""} onChange={(e) => setField("ticket_footer", e.target.value)} placeholder="¡Gracias por su compra!" />
               </Field>
             </section>
 
             <section className="card p-5">
-              <h2 className="font-semibold text-sm mb-4">Listas de precios</h2>
+              <h2 className="font-semibold text-sm mb-4">💲 Listas de precios</h2>
               <div className="grid grid-cols-3 gap-3">
                 <Field label="Lista 1"><input className="input" value={config.price1_name || ""} onChange={(e) => setField("price1_name", e.target.value)} placeholder="Minorista" /></Field>
                 <Field label="Lista 2"><input className="input" value={config.price2_name || ""} onChange={(e) => setField("price2_name", e.target.value)} placeholder="Mayorista" /></Field>
@@ -354,7 +384,7 @@ export default function Configuracion() {
 
             <section className="card p-5">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="font-semibold text-sm">Botones rápidos de venta</h2>
+                <h2 className="font-semibold text-sm">⚡ Botones rápidos de venta</h2>
                 <button onClick={addDeptBtn} className="text-sm text-sky-600 hover:underline">+ Agregar</button>
               </div>
               <p className="text-xs text-stone-500 mb-3">Aparecen en Caja para cobrar ítems sin código de barras.</p>
@@ -376,7 +406,7 @@ export default function Configuracion() {
         {tab === "finanzas" && (
           <div className="max-w-2xl space-y-5">
             <section className="card p-5">
-              <h2 className="font-semibold text-sm mb-4">Metas y objetivos</h2>
+              <h2 className="font-semibold text-sm mb-4">🎯 Metas y objetivos</h2>
               <div className="grid grid-cols-2 gap-4">
                 <Field label="Meta de venta diaria ($)">
                   <input className="input tabular" inputMode="numeric"
@@ -406,7 +436,7 @@ export default function Configuracion() {
             </section>
 
             <section className="card p-5">
-              <h2 className="font-semibold text-sm mb-4">Costos y márgenes</h2>
+              <h2 className="font-semibold text-sm mb-4">📊 Costos y márgenes</h2>
               <div className="space-y-3">
                 <Field label="Gastos fijos mensuales ($) — alquiler, salarios, servicios">
                   <input className="input tabular" inputMode="numeric"
@@ -436,7 +466,7 @@ export default function Configuracion() {
             </section>
 
             <section className="card p-5">
-              <h2 className="font-semibold text-sm mb-1">Control de descuentos en Caja</h2>
+              <h2 className="font-semibold text-sm mb-1">🔒 Control de descuentos en Caja</h2>
               <p className="text-xs text-stone-500 mb-4">
                 Si un cajero carga un descuento por encima de este porcentaje, Caja le va a pedir el usuario
                 y contraseña de un supervisor o admin antes de poder cobrar.
@@ -449,7 +479,7 @@ export default function Configuracion() {
             </section>
 
             <section className="card p-5">
-              <h2 className="font-semibold text-sm mb-1">Comisiones por método de pago</h2>
+              <h2 className="font-semibold text-sm mb-1">💳 Comisiones por método de pago</h2>
               <p className="text-xs text-stone-500 mb-4">Opcional. No afecta el precio al cliente — se usa para calcular ganancia real en reportes.</p>
               <div className="space-y-2">
                 {[
@@ -475,69 +505,105 @@ export default function Configuracion() {
 
         {/* ── BACKUP ──────────────────────────────────────────── */}
         {tab === "backup" && (
-          <div className="max-w-xl space-y-5">
-            <section className="card p-5">
-              <h2 className="font-semibold text-sm mb-4">Respaldo automático</h2>
-              <div className="flex items-center justify-between mb-3">
-                <div>
-                  <p className="text-sm font-medium">Activar backup automático</p>
-                  <p className="text-xs text-stone-500 mt-0.5">Se ejecuta al abrir la app si pasó el tiempo configurado</p>
-                </div>
-                <label className="relative inline-flex cursor-pointer">
-                  <input type="checkbox" className="sr-only peer" checked={config.auto_backup_enabled === "1"}
-                    onChange={(e) => setField("auto_backup_enabled", e.target.checked ? "1" : "0")} />
-                  <div className="w-9 h-5 bg-stone-200 peer-checked:bg-sky-500 rounded-full transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:w-4 after:h-4 after:transition-all peer-checked:after:translate-x-4" />
-                </label>
-              </div>
-              {config.auto_backup_enabled === "1" && (
-                <div className="grid grid-cols-2 gap-3 pt-3 border-t border-stone-100">
-                  <Field label="Frecuencia (horas)">
-                    <input className="input tabular" type="number" min="1" max="720"
-                      value={config.auto_backup_freq_hours || "24"}
-                      onChange={(e) => setField("auto_backup_freq_hours", e.target.value)} />
-                  </Field>
-                  <Field label="Conservar últimos N">
-                    <input className="input tabular" type="number" min="1" max="100"
-                      value={config.auto_backup_keep_count || "10"}
-                      onChange={(e) => setField("auto_backup_keep_count", e.target.value)} />
-                  </Field>
-                </div>
-              )}
-              <div className="pt-3 mt-3 border-t border-stone-100">
-                <p className="text-sm font-medium mb-1">Carpeta de destino</p>
-                <p className="text-xs text-stone-500 mb-2">
-                  Elegí tu carpeta local de OneDrive, Google Drive o Dropbox y los backups quedan subidos a la
-                  nube solos — sin ningún servicio nuevo que pagar, lo hace el sincronizador que ya tenés instalado.
-                </p>
-                <div className="flex gap-2">
-                  <input
-                    className="input flex-1 text-xs font-mono"
-                    readOnly
-                    value={config.backup_custom_dir || "(la carpeta de siempre, junto al programa)"}
-                  />
-                  <button onClick={pickBackupDir} className="btn btn-secondary text-sm shrink-0">Elegir carpeta…</button>
-                  {config.backup_custom_dir && (
-                    <button onClick={() => setField("backup_custom_dir", "")} className="btn btn-secondary text-sm shrink-0" title="Volver a la carpeta por defecto">
-                      Quitar
-                    </button>
-                  )}
-                </div>
-              </div>
-            </section>
+          <div className="max-w-2xl space-y-5">
+            <div className="bg-sky-50 border border-sky-200 rounded-lg p-4 text-sm text-sky-900 leading-relaxed">
+              <strong>¿Para qué sirve esto?</strong> Guarda una copia completa de tu negocio (ventas, productos,
+              clientes, configuración de ARCA) para que si un día cambiás de computadora, se rompe la actual, o
+              reinstalás el programa, no pierdas nada. Son 3 pasos, uno abajo del otro.
+            </div>
 
+            {/* Paso 1 */}
             <section className="card p-5">
-              <h2 className="font-semibold text-sm mb-3">Copia de seguridad manual</h2>
-              <button onClick={doBackup} disabled={backing} className="btn btn-secondary w-full disabled:opacity-40">
+              <div className="flex items-center gap-2 mb-4">
+                <span className="w-7 h-7 rounded-full bg-emerald-500 text-white text-sm font-bold flex items-center justify-center shrink-0">1</span>
+                <h2 className="font-semibold text-sm">Hacé una copia</h2>
+              </div>
+
+              <button onClick={doBackup} disabled={backing} className="btn btn-primary w-full disabled:opacity-40">
                 {backing ? "Guardando…" : "💾 Guardar copia ahora"}
               </button>
               {backupMsg && (
                 <p className={`mt-2 text-xs ${backupMsg.startsWith("✓") ? "text-emerald-700" : "text-red-600"}`}>{backupMsg}</p>
               )}
+
+              <div className="pt-4 mt-4 border-t border-stone-100">
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-sm font-medium">O que se haga sola, cada tanto</p>
+                  <label className="relative inline-flex cursor-pointer shrink-0 ml-3">
+                    <input type="checkbox" className="sr-only peer" checked={config.auto_backup_enabled === "1"}
+                      onChange={(e) => setField("auto_backup_enabled", e.target.checked ? "1" : "0")} />
+                    <div className="w-9 h-5 bg-stone-200 peer-checked:bg-emerald-500 rounded-full transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:w-4 after:h-4 after:transition-all peer-checked:after:translate-x-4" />
+                  </label>
+                </div>
+                <p className="text-xs text-stone-500">Se ejecuta sola al abrir la app, si pasó el tiempo que elijas.</p>
+                {config.auto_backup_enabled === "1" && (
+                  <div className="grid grid-cols-2 gap-3 mt-3">
+                    <Field label="Cada cuántas horas">
+                      <input className="input tabular" type="number" min="1" max="720"
+                        value={config.auto_backup_freq_hours || "24"}
+                        onChange={(e) => setField("auto_backup_freq_hours", e.target.value)} />
+                    </Field>
+                    <Field label="Conservar las últimas">
+                      <input className="input tabular" type="number" min="1" max="100"
+                        value={config.auto_backup_keep_count || "10"}
+                        onChange={(e) => setField("auto_backup_keep_count", e.target.value)} />
+                    </Field>
+                  </div>
+                )}
+              </div>
+            </section>
+
+            {/* Paso 2 */}
+            <section className="card p-5">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="w-7 h-7 rounded-full bg-emerald-500 text-white text-sm font-bold flex items-center justify-center shrink-0">2</span>
+                <h2 className="font-semibold text-sm">Guardala en un lugar seguro</h2>
+              </div>
+              <p className="text-xs text-stone-500 mb-3">
+                Por defecto, la copia queda guardada en esta misma computadora — si se rompe o se pierde, la copia
+                se pierde con ella. Para evitar eso, elegí tu carpeta local de <strong>OneDrive, Google Drive o
+                Dropbox</strong>: el programa que ya tenés instalado la sube solo a internet, sin que tengas que
+                pagar ni configurar nada nuevo.
+              </p>
+              <div className="flex gap-2">
+                <input
+                  className="input flex-1 text-xs font-mono"
+                  readOnly
+                  value={config.backup_custom_dir || "(por ahora: solo en esta compu)"}
+                />
+                <button onClick={pickBackupDir} className="btn btn-secondary text-sm shrink-0">Elegir carpeta…</button>
+                {config.backup_custom_dir && (
+                  <button onClick={() => setField("backup_custom_dir", "")} className="btn btn-secondary text-sm shrink-0" title="Volver a guardar solo en esta compu">
+                    Quitar
+                  </button>
+                )}
+              </div>
+              {!config.backup_custom_dir && (
+                <p className="text-xs text-amber-600 mt-2">⚠ Todavía no elegiste una carpeta de nube — si esta compu se rompe, perdés la copia también.</p>
+              )}
+            </section>
+
+            {/* Paso 3 */}
+            <section className="card p-5 border-2 border-sky-300 bg-sky-50/40">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="w-7 h-7 rounded-full bg-sky-500 text-white text-sm font-bold flex items-center justify-center shrink-0">3</span>
+                <h2 className="font-semibold text-sm">¿Cambiaste de computadora? Restaurala acá</h2>
+              </div>
+              <p className="text-xs text-stone-600 mb-3">
+                En la computadora nueva, instalá Mercalin normalmente y activá tu licencia. Después entrá acá y
+                elegí el archivo de backup — lo vas a encontrar dentro de tu carpeta de OneDrive/Drive/Dropbox
+                (la que elegiste en el Paso 2, ahora sincronizada en esta compu nueva). Con eso, todo tu negocio
+                vuelve a aparecer: ventas, productos, clientes y la configuración de ARCA.
+              </p>
+              <button onClick={pickAndRestore} disabled={restoring} className="btn btn-primary w-full disabled:opacity-50">
+                {restoring ? "Restaurando…" : "📂 Elegir archivo y restaurar"}
+              </button>
             </section>
 
             {backups.length > 0 && (
               <section className="card p-5">
-                <h2 className="font-semibold text-sm mb-3">Copias guardadas ({backups.length})</h2>
+                <h2 className="font-semibold text-sm mb-1 text-stone-600">Copias guardadas en esta compu ({backups.length})</h2>
+                <p className="text-xs text-stone-400 mb-3">Para volver atrás rápido, sin salir a buscar el archivo.</p>
                 <div className="space-y-1">
                   {backups.map((b) => (
                     <div key={b.name} className="flex items-center justify-between py-1.5 px-2 rounded-md hover:bg-stone-50 group">
@@ -545,8 +611,17 @@ export default function Configuracion() {
                         <p className="text-xs font-medium text-stone-700">{b.display_date}</p>
                         <p className="text-[11px] text-stone-400">{formatBytes(b.size_bytes)}</p>
                       </div>
-                      <button onClick={() => doDeleteBackup(b.name)}
-                        className="text-stone-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity text-lg leading-none">×</button>
+                      <div className="flex items-center gap-3">
+                        <button
+                          disabled={restoring}
+                          onClick={() => doRestoreByName(b.name)}
+                          className="text-xs text-sky-600 hover:underline disabled:opacity-40"
+                        >
+                          Restaurar
+                        </button>
+                        <button onClick={() => doDeleteBackup(b.name)}
+                          className="text-stone-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity text-lg leading-none">×</button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -559,7 +634,7 @@ export default function Configuracion() {
         {tab === "sistema" && (
           <div className="max-w-xl space-y-5">
             <section className="card p-5">
-              <h2 className="font-semibold text-sm mb-1">Sonido</h2>
+              <h2 className="font-semibold text-sm mb-1">🔊 Sonido</h2>
               <p className="text-xs text-stone-500 mb-4">
                 Aviso sonoro al escanear, al confirmar una venta y ante errores (código no
                 encontrado, venta rechazada). Es una preferencia de esta caja en particular,
@@ -576,7 +651,7 @@ export default function Configuracion() {
             </section>
 
             <section className="card p-5">
-              <h2 className="font-semibold text-sm mb-1">Modo tablet / móvil</h2>
+              <h2 className="font-semibold text-sm mb-1">📱 Modo tablet / móvil</h2>
               <p className="text-xs text-stone-500 mb-4">Cualquier tablet en la misma red WiFi puede ver ventas del día, alertas y órdenes sin instalar nada.</p>
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
@@ -605,7 +680,7 @@ export default function Configuracion() {
             </section>
 
             <section className="card p-5">
-              <h2 className="font-semibold text-sm mb-1">Multicaja (varias cajas en la misma red) — en desarrollo</h2>
+              <h2 className="font-semibold text-sm mb-1">🖥️ Multicaja (varias cajas en la misma red) — en desarrollo</h2>
               <p className="text-xs text-stone-500 mb-4">
                 Preparación para tener varias cajas vendiendo en la misma red, compartiendo el mismo stock.
                 Por ahora las dos cajas necesitan estar siempre conectadas entre sí (sin wifi, la caja
@@ -705,7 +780,7 @@ export default function Configuracion() {
             </section>
 
             <section className="card p-5">
-              <h2 className="font-semibold text-sm mb-3">Licencia</h2>
+              <h2 className="font-semibold text-sm mb-3">🔑 Licencia</h2>
               {licenseStatus && (
                 <>
                   {licenseStatus.kind === "full" ? (
@@ -754,7 +829,7 @@ export default function Configuracion() {
             </section>
 
             <section className="card p-5">
-              <h2 className="font-semibold text-sm mb-3">Acerca del sistema</h2>
+              <h2 className="font-semibold text-sm mb-3">ℹ️ Acerca del sistema</h2>
               <dl className="text-sm space-y-1.5 text-stone-600">
                 <div className="flex justify-between"><dt>Versión</dt><dd className="font-mono">{appVersion || "…"}</dd></div>
                 <div className="flex justify-between"><dt>Sistema</dt><dd>Punto Simple POS</dd></div>

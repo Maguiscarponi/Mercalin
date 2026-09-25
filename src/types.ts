@@ -23,6 +23,9 @@ export interface Product {
   category: string | null;
   brand: string | null;
   is_weighable: boolean;
+  // Unidad en la que se vende cuando is_weighable=true (kg, g, l, m, docena, etc).
+  // "unidad" para productos normales, no pesables.
+  unit: string;
   active: boolean;
   // Precargado (ej. import de catálogo público) pero sin precio todavía: no cuenta como
   // parte real del catálogo, pero se puede encontrar buscándolo o escaneándolo. Se activa
@@ -47,6 +50,7 @@ export interface NewProduct {
   category: string | null;
   brand: string | null;
   is_weighable: boolean;
+  unit?: string;
   active: boolean;
   supplier_id: Id | null;
   expires_at: string | null;
@@ -528,6 +532,7 @@ export interface ElectronicInvoice {
   concepto: string | null;
   condicion_iva_receptor_id: number;
   credited_invoice_id: number | null; // si no es null, ESTA fila es la Nota de Crédito que anula a esa factura
+  return_id: number | null; // si no es null, esta Nota de Crédito corresponde a esta devolución puntual
 }
 
 // ─── Backup ─────────────────────────────────────────────────────────────────
@@ -874,6 +879,7 @@ export interface CsvProductRow {
   supplier_id: Id | null;
   supplier_name: string | null;
   is_weighable: boolean;
+  unit: string;
   expires_at: string | null;
 }
 

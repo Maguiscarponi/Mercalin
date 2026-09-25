@@ -29,6 +29,7 @@ function comboToLabelProduct(cw: ComboWithItems): Product {
     category: "Combo",
     brand: null,
     is_weighable: false,
+    unit: "unidad",
     active: cw.combo.active,
     is_ghost: false,
     supplier_id: null,
@@ -85,25 +86,35 @@ const PAPER_SIZES: Record<PaperSize, string> = {
 // (ver WeighModal en Caja.tsx, que usa el mismo supuesto al cobrar).
 interface LabelEntry { product: Product; qty: number; weightKg?: number }
 
-// Único punto donde se decide cómo se ve el precio de un pesable: sin peso
-// cargado es el cartel "$/kg" de góndola; con peso cargado es la etiqueta de
-// un paquete ya pesado, con el total calculado y el precio por kilo como
-// referencia chica. Se usa tanto en el preview React como en el HTML de
-// impresión, para que nunca queden desincronizados.
-function weighableDisplay(p: Product, priceCents: number, weightKg?: number) {
+// Único punto donde se decide cómo se ve el precio de un pesable: sin
+// cantidad cargada es el cartel "$/unidad" de góndola; con cantidad cargada
+// es la etiqueta de un paquete ya pesado/medido, con el total calculado y el
+// precio por unidad como referencia chica. Usa la unidad real del producto
+// (kg, g, litros, metros...) en vez de asumir siempre kilogramos -- solo
+// "kg" tiene el desglose lindo a gramos para cantidades chicas, el resto
+// muestra la cantidad tal cual con su unidad. Se usa tanto en el preview
+// React como en el HTML de impresión, para que nunca queden desincronizados.
+function weighableDisplay(p: Product, priceCents: number, qty?: number) {
+  const unit = p.unit || "kg";
   if (!p.is_weighable) {
     return { priceStr: centsToARS(priceCents), weightStr: null as string | null, perKgStr: null as string | null };
   }
-  if (weightKg && weightKg > 0) {
-    const totalCents = Math.round(priceCents * weightKg);
-    const grams = Math.round(weightKg * 1000);
+  if (qty && qty > 0) {
+    const totalCents = Math.round(priceCents * qty);
+    let weightStr: string;
+    if (unit === "kg") {
+      const grams = Math.round(qty * 1000);
+      weightStr = grams < 1000 ? `${grams} g` : `${qty.toFixed(3)} kg`;
+    } else {
+      weightStr = `${qty.toFixed(3)} ${unit}`;
+    }
     return {
       priceStr: centsToARS(totalCents),
-      weightStr: grams < 1000 ? `${grams} g` : `${weightKg.toFixed(3)} kg`,
-      perKgStr: `${centsToARS(priceCents)}/kg`,
+      weightStr,
+      perKgStr: `${centsToARS(priceCents)}/${unit}`,
     };
   }
-  return { priceStr: `${centsToARS(priceCents)}/kg`, weightStr: null as string | null, perKgStr: null as string | null };
+  return { priceStr: `${centsToARS(priceCents)}/${unit}`, weightStr: null as string | null, perKgStr: null as string | null };
 }
 
 // ─── Generación de SVG con barcode ──────────────────────────────────────────
@@ -286,8 +297,8 @@ function LabelGrid({
           <LabelPreviewCard p={p} targetPx={targetPx} weightKg={weightKg} {...display} />
           <p className="text-xs text-stone-400 truncate text-center" style={{ maxWidth: targetPx }}>{p.name}</p>
           {p.is_weighable && (
-            <label className="flex items-center gap-1 text-[11px] text-stone-500" title="Al imprimir se genera un código de barras único para este peso — escanearlo en Caja carga el precio solo, sin volver a pesar.">
-              Peso (kg):
+            <label className="flex items-center gap-1 text-[11px] text-stone-500" title="Al imprimir se genera un código de barras único para esta cantidad — escanearlo en Caja carga el precio solo, sin volver a pesar.">
+              Cantidad ({p.unit || "kg"}):
               <input
                 type="number"
                 min={0}
@@ -349,7 +360,7 @@ function LabelGalleryModal({
         {p.is_weighable && (
           <div className="flex flex-col items-center gap-1">
             <label className="flex items-center gap-2 text-sm text-stone-600">
-              Peso de este paquete (kg):
+              Cantidad de este paquete ({p.unit || "kg"}):
               <input
                 type="number"
                 min={0}
@@ -362,7 +373,7 @@ function LabelGalleryModal({
             </label>
             {weightKg && weightKg > 0 && (
               <p className="text-[11px] text-stone-400">
-                Al imprimir se genera un código único para este peso — escanearlo en Caja carga el precio solo.
+                Al imprimir se genera un código único para esta cantidad — escanearlo en Caja carga el precio solo.
               </p>
             )}
           </div>
@@ -914,13 +925,13 @@ export default function Etiquetas() {
                       <td className="px-3 py-2">
                         <div className="font-medium">
                           {p.name}
-                          {p.is_weighable && <span className="ml-1.5 text-[10px] font-normal text-indigo-500">(x kg)</span>}
+                          {p.is_weighable && <span className="ml-1.5 text-[10px] font-normal text-indigo-500">(x {p.unit || "kg"})</span>}
                         </div>
                         {p.barcode && <div className="text-[10px] text-stone-400 font-mono">{p.barcode}</div>}
                       </td>
                       <td className="px-3 py-2 text-stone-500 text-xs">{p.category || "—"}</td>
                       <td className="px-3 py-2 text-right tabular font-medium">
-                        {centsToARS(displayPrice)}{p.is_weighable && <span className="text-stone-400 font-normal">/kg</span>}
+                        {centsToARS(displayPrice)}{p.is_weighable && <span className="text-stone-400 font-normal">/{p.unit || "kg"}</span>}
                       </td>
                       <td className={`px-3 py-2 text-right tabular ${p.id > 0 && stockTrackingEnabled && p.stock <= p.min_stock ? "text-red-600 font-medium" : ""}`}>
                         {p.id > 0 ? p.stock : "—"}

@@ -183,6 +183,7 @@ export default function Productos() {
           category: p.category || null,
           brand: p.brand || null,
           is_weighable: p.is_weighable || false,
+          unit: p.unit || "kg",
           active: true,
           supplier_id: p.supplier_id || null,
           expires_at: p.expires_at || null,
@@ -1217,7 +1218,7 @@ function StockForm({
   const [saving, setSaving] = useState(false);
   useEscapeToClose(onCancel);
   const isWeighable = product.is_weighable;
-  const unitLabel = isWeighable ? "kg" : "unidades";
+  const unitLabel = isWeighable ? (product.unit || "kg") : "unidades";
   const parseVal = (s: string) => (isWeighable ? parseFloat(s) : parseInt(s, 10));
 
   // Modo "sumar" — llegó mercadería
@@ -1508,6 +1509,9 @@ function ProductForm({
   const [usedInCombos, setUsedInCombos] = useState<Combo[]>([]);
   const [imgProcessing, setImgProcessing] = useState(false);
   useEscapeToClose(onCancel);
+  const unitLabel = form.unit || "kg";
+  const KNOWN_UNITS = ["kg", "g", "l", "ml", "m", "docena"];
+  const [customUnit, setCustomUnit] = useState(!!form.unit && !KNOWN_UNITS.includes(form.unit));
 
   useEffect(() => {
     api.listSuppliers().then(setSuppliers).catch(console.error);
@@ -1578,7 +1582,7 @@ function ProductForm({
           </Field>
 
           <div className="grid grid-cols-2 gap-3">
-            <Field label={form.is_weighable ? "Costo por kg ($)" : "Costo ($)"}>
+            <Field label={form.is_weighable ? `Costo por ${unitLabel} ($)` : "Costo ($)"}>
               <input
                 className="input tabular text-right"
                 value={costStr}
@@ -1586,7 +1590,7 @@ function ProductForm({
                 placeholder="1000"
               />
             </Field>
-            <Field label={`Precio ${priceListNames[0].toLowerCase()}${form.is_weighable ? " por kg" : ""} ($)`}>
+            <Field label={`Precio ${priceListNames[0].toLowerCase()}${form.is_weighable ? ` por ${unitLabel}` : ""} ($)`}>
               <input
                 className="input tabular text-right"
                 value={priceStr}
@@ -1597,7 +1601,7 @@ function ProductForm({
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <Field label={`Precio ${priceListNames[1].toLowerCase()}${form.is_weighable ? " por kg" : ""} ($)`}>
+            <Field label={`Precio ${priceListNames[1].toLowerCase()}${form.is_weighable ? ` por ${unitLabel}` : ""} ($)`}>
               <input
                 className="input tabular text-right"
                 value={price2Str}
@@ -1605,7 +1609,7 @@ function ProductForm({
                 placeholder="0 = no aplica"
               />
             </Field>
-            <Field label={`Precio ${priceListNames[2].toLowerCase()}${form.is_weighable ? " por kg" : ""} ($)`}>
+            <Field label={`Precio ${priceListNames[2].toLowerCase()}${form.is_weighable ? ` por ${unitLabel}` : ""} ($)`}>
               <input
                 className="input tabular text-right"
                 value={price3Str}
@@ -1616,7 +1620,7 @@ function ProductForm({
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <Field label={form.is_weighable ? "Stock actual (kg)" : "Stock actual"}>
+            <Field label={form.is_weighable ? `Stock actual (${unitLabel})` : "Stock actual"}>
               <input
                 type="number"
                 step={form.is_weighable ? "0.001" : "1"}
@@ -1627,7 +1631,7 @@ function ProductForm({
                 }
               />
             </Field>
-            <Field label={form.is_weighable ? "Stock mínimo (kg)" : "Stock mínimo"}>
+            <Field label={form.is_weighable ? `Stock mínimo (${unitLabel})` : "Stock mínimo"}>
               <input
                 type="number"
                 step={form.is_weighable ? "0.001" : "1"}
@@ -1749,10 +1753,45 @@ function ProductForm({
               type="checkbox"
               className="w-4 h-4 accent-emerald-600"
               checked={form.is_weighable || false}
-              onChange={(e) => setForm({ ...form, is_weighable: e.target.checked })}
+              onChange={(e) => setForm({ ...form, is_weighable: e.target.checked, unit: e.target.checked ? (form.unit || "kg") : form.unit })}
             />
-            <span className="text-sm text-stone-700">Se vende por peso (producto pesable)</span>
+            <span className="text-sm text-stone-700">Se vende por peso o medida (no por unidad entera)</span>
           </label>
+
+          {form.is_weighable && (
+            <Field label="Unidad de venta">
+              <select
+                className="input"
+                value={customUnit ? "otra" : (form.unit || "kg")}
+                onChange={(e) => {
+                  if (e.target.value === "otra") {
+                    setCustomUnit(true);
+                    setForm({ ...form, unit: "" });
+                  } else {
+                    setCustomUnit(false);
+                    setForm({ ...form, unit: e.target.value });
+                  }
+                }}
+              >
+                <option value="kg">Kilogramos (kg)</option>
+                <option value="g">Gramos (g)</option>
+                <option value="l">Litros (l)</option>
+                <option value="ml">Mililitros (ml)</option>
+                <option value="m">Metros (m)</option>
+                <option value="docena">Docena</option>
+                <option value="otra">Otra…</option>
+              </select>
+              {customUnit && (
+                <input
+                  autoFocus
+                  className="input mt-2"
+                  value={form.unit || ""}
+                  onChange={(e) => setForm({ ...form, unit: e.target.value })}
+                  placeholder="Nombre de la unidad (ej: bolsa, caja, rollo)"
+                />
+              )}
+            </Field>
+          )}
         </div>
 
         <div className="p-6 pt-4 border-t border-stone-200 flex gap-2">
@@ -1936,6 +1975,7 @@ function ImportCsvModal({ onClose, onImported }: { onClose: () => void; onImport
     const iSupplierId = idx(["proveedor_id", "supplier_id"]);
     const iSupplierName = idx(["proveedor", "supplier"]);
     const iWeighable = idx(["se_vende_por_peso", "is_weighable", "pesable"]);
+    const iUnit      = idx(["unidad", "unit"]);
     const iExpiresAt = idx(["vencimiento", "expires_at"]);
 
     if (iName < 0) throw new Error("Columna 'nombre' no encontrada. Es requerida.");
@@ -1957,6 +1997,7 @@ function ImportCsvModal({ onClose, onImported }: { onClose: () => void; onImport
       const brand    = iBrand >= 0 ? (cols[iBrand] ?? "").trim() || null : null;
       const supplierName = iSupplierName >= 0 ? (cols[iSupplierName] ?? "").trim() || null : null;
       const rawWeighable = iWeighable >= 0 ? (cols[iWeighable] ?? "").trim().toLowerCase() : "";
+      const rawUnit = iUnit >= 0 ? (cols[iUnit] ?? "").trim() : "";
       return {
         name,
         barcode,
@@ -1971,6 +2012,7 @@ function ImportCsvModal({ onClose, onImported }: { onClose: () => void; onImport
         supplier_id: rawSupId ? (parseInt(rawSupId) || null) : null,
         supplier_name: supplierName,
         is_weighable: ["1", "si", "sí", "true", "x"].includes(rawWeighable),
+        unit: rawUnit || "kg",
         expires_at:  rawExp ? rawExp : null,
       } satisfies CsvProductRow;
     }).filter((r): r is CsvProductRow => r !== null);

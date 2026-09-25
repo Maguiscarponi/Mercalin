@@ -240,6 +240,12 @@ fn open_and_migrate_inner(path: &Path) -> Result<Connection> {
     // de un producto borrado de verdad (soft-delete, también active=0 pero is_ghost=0), para
     // que sigan siendo encontrables por búsqueda/escaneo y un borrado real no "reviva".
     let _ = conn.execute_batch("ALTER TABLE products ADD COLUMN is_ghost INTEGER NOT NULL DEFAULT 0;");
+    // Unidad de venta para productos "por peso/medida" -- antes estaba fijo a
+    // "kg" en todo el sistema (formulario, báscula, ticket, factura). Ahora
+    // cada producto puede vender por la unidad que corresponda (litros,
+    // gramos, metros, docenas, etc), no solo kilos.
+    let _ = conn.execute_batch("ALTER TABLE products ADD COLUMN unit TEXT NOT NULL DEFAULT 'unidad';");
+    let _ = conn.execute_batch("UPDATE products SET unit='kg' WHERE is_weighable=1 AND unit='unidad';");
     // Corrige de una vez los productos que ya se importaron como activos antes de este cambio
     // (quedaban contando en alertas de stock bajo pese a no ser parte real del catálogo).
     let _ = conn.execute_batch(
@@ -441,6 +447,10 @@ fn open_and_migrate_inner(path: &Path) -> Result<Connection> {
     // permite una vez que tiene CAE -- la única forma de anularla es emitir
     // una Nota de Crédito nueva que la revierte.
     let _ = conn.execute_batch("ALTER TABLE electronic_invoices ADD COLUMN credited_invoice_id INTEGER REFERENCES electronic_invoices(id);");
+    // Vincula una Nota de Crédito con la devolución que la generó -- permite
+    // detectar si una devolución puntual ya tiene su NC emitida (para no
+    // duplicarla) sin bloquear otras devoluciones parciales de la misma venta.
+    let _ = conn.execute_batch("ALTER TABLE electronic_invoices ADD COLUMN return_id INTEGER REFERENCES returns(id);");
 
     // Etiquetas de paquete pesado: al imprimir la etiqueta de un producto pesable
     // con un peso puntual cargado (ej. una bolsa de queso rallado de 560g), se

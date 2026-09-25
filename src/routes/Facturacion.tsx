@@ -15,10 +15,14 @@ import imgListaServicios from "@/assets/ayuda-arca/wsass-lista-servicios.png";
 import imgAutorizacion from "@/assets/ayuda-arca/wsass-autorizacion.png";
 import clsx from "clsx";
 
-const WSASS_URL: Record<"homo" | "prod", string> = {
-  homo: "https://wsass-homo.afip.gob.ar/wsass/portal/main.aspx",
-  prod: "https://wsass.afip.gob.ar/wsass/portal/main.aspx",
-};
+// El wizard conecta siempre contra ARCA Producción -- no se le muestra la
+// opción de Testing a quien usa la app (decisión de producto: simplificar
+// la conexión real, que es lo único que le importa al comerciante). El
+// soporte para Testing/WSASS se deja funcionando en el código a propósito
+// (helper, constante, capturas, instrucciones) por si hace falta reactivarlo
+// más adelante -- alcanza con volver a mostrar el <select> de Entorno.
+const WSASS_HOMO_URL = "https://wsass-homo.afip.gob.ar/wsass/portal/main.aspx";
+const ARCA_PORTAL_URL = "https://auth.afip.gob.ar";
 
 type Tab = "facturas" | "configuracion";
 
@@ -56,6 +60,18 @@ function formatCbteNro(nro: number | null, pv: number): string {
 function fmtFechaArg(iso: string): string {
   const [y, m, d] = iso.split("-");
   return y && m && d ? `${d}/${m}/${y}` : iso;
+}
+
+// Según la guía oficial de ARCA, el CSR a veces se pega como texto y a veces
+// se sube como archivo -- por eso hace falta poder bajarlo también como
+// .csr, no solo copiarlo.
+function downloadTextFile(filename: string, content: string) {
+  const blob = new Blob([content], { type: "text/plain" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 export default function Facturacion() {
@@ -189,10 +205,7 @@ export default function Facturacion() {
             <div className="flex items-center justify-between">
               {arcaConfig && (
                 <p className="text-xs text-stone-500">
-                  CUIT {arcaConfig.cuit} · PV {arcaConfig.punto_venta} ·{" "}
-                  <span className={arcaConfig.environment === "prod" ? "text-emerald-600" : "text-amber-600"}>
-                    {arcaConfig.environment === "prod" ? "Producción" : "Testing (homo)"}
-                  </span>
+                  CUIT {arcaConfig.cuit} · PV {arcaConfig.punto_venta}
                 </p>
               )}
               {!arcaConfig && (
@@ -353,7 +366,7 @@ export default function Facturacion() {
           <div className="p-5">
             <ArcaSetup
               arcaConfig={arcaConfig || null}
-              onRefresh={() => api.getArcaConfig().then(setArcaConfig)}
+              onRefresh={load}
             />
           </div>
         )}
@@ -390,11 +403,16 @@ function FacturaViewerLoader({ inv, arcaConfig, invoices, onClose }: { inv: Elec
 
   useEffect(() => {
     if (!inv.sale_id) { setLoading(false); return; }
-    api.getSaleWithItems(inv.sale_id)
-      .then((sw) => setItems(sw.items.map((it) => ({
-        code: it.barcode, name: it.name, qty: it.qty, unitPriceCents: it.unit_price_cents,
-        bonifPct: it.discount_pct, subtotalCents: it.subtotal_cents,
-      }))))
+    Promise.all([api.getSaleWithItems(inv.sale_id), api.listProducts().catch(() => [])])
+      .then(([sw, products]) => {
+        const unitById = new Map(products.map((p) => [p.id, p.is_weighable ? (p.unit || "kg") : "unidades"]));
+        setItems(sw.items.map((it) => ({
+          code: it.barcode, name: it.name, qty: it.qty,
+          unit: (it.product_id != null ? unitById.get(it.product_id) : null) || "unidades",
+          unitPriceCents: it.unit_price_cents,
+          bonifPct: it.discount_pct, subtotalCents: it.subtotal_cents,
+        })));
+      })
       .catch(() => setItems(undefined))
       .finally(() => setLoading(false));
   }, [inv.sale_id]);
@@ -579,7 +597,9 @@ function ArcaSetup({ arcaConfig, onRefresh }: { arcaConfig: ArcaConfig | null; o
     cuit: arcaConfig?.cuit || "",
     razon_social: arcaConfig?.razon_social || "",
     punto_venta: arcaConfig?.punto_venta || 1,
-    environment: arcaConfig?.environment || "homo",
+    // Fijo en "prod" -- no se le muestra el selector de entorno al
+    // comerciante (ver comentario de WSASS_HOMO_URL más arriba).
+    environment: "prod",
     condicion_iva: arcaConfig?.condicion_iva || "monotributo",
     domicilio: arcaConfig?.domicilio || "",
     ingresos_brutos: arcaConfig?.ingresos_brutos || "",
@@ -591,6 +611,7 @@ function ArcaSetup({ arcaConfig, onRefresh }: { arcaConfig: ArcaConfig | null; o
   const [loadingCert, setLoadingCert] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [resetting, setResetting] = useState(false);
   const certInputRef = useRef<HTMLInputElement>(null);
 
   async function saveCfg() {
@@ -622,6 +643,22 @@ function ArcaSetup({ arcaConfig, onRefresh }: { arcaConfig: ArcaConfig | null; o
     try { setTestResult({ ok: true, msg: await api.testArcaConnection() }); }
     catch (e) { setTestResult({ ok: false, msg: String(e) }); }
     finally { setTesting(false); }
+  }
+
+  async function resetAll() {
+    const ok = await confirmAction(
+      "Se van a borrar el CUIT, el certificado y TODAS las facturas y notas de crédito emitidas hasta ahora (incluidas las autorizadas). Esto no afecta nada de tu ARCA real -- es solo lo guardado localmente. Vas a tener que configurar todo de nuevo desde el Paso 1.",
+      { title: "¿Borrar toda la configuración de ARCA?", danger: true, confirmLabel: "Borrar todo" }
+    );
+    if (!ok) return;
+    setResetting(true);
+    try {
+      await api.resetArcaData();
+      setActiveStep(1);
+      onRefresh();
+      showToast({ message: "Configuración de ARCA borrada", tone: "success" });
+    } catch (e) { showToast({ message: `Error: ${e}`, tone: "danger" }); }
+    finally { setResetting(false); }
   }
 
   const step1Done = !!arcaConfig;
@@ -762,26 +799,14 @@ function ArcaSetup({ arcaConfig, onRefresh }: { arcaConfig: ArcaConfig | null; o
                 <span className="text-sm text-stone-400 block mt-1">Fecha que figura en tu constancia de ARCA.</span>
               </label>
             </div>
-            <div className="grid grid-cols-2 gap-2">
-              <label className="block">
-                <span className="text-sm font-medium text-stone-600 block mb-1">Punto de venta</span>
-                <input className="input text-sm tabular" type="number" min="1" max="999"
-                  value={form.punto_venta} onChange={(e) => setForm((f) => ({ ...f, punto_venta: Number(e.target.value) }))} />
-                <span className="text-sm text-stone-400 block mt-1">El número que ARCA te asignó (casi siempre es el 1).</span>
-              </label>
-              <label className="block">
-                <span className="text-sm font-medium text-stone-600 block mb-1">Entorno</span>
-                <select className="input text-sm" value={form.environment}
-                  onChange={(e) => setForm((f) => ({ ...f, environment: e.target.value }))}>
-                  <option value="homo">Testing</option>
-                  <option value="prod">Producción</option>
-                </select>
-                <span className="text-sm text-stone-400 block mt-1">
-                  {form.environment === "prod"
-                    ? "⚠ Emite facturas reales de verdad."
-                    : "No afecta tu ARCA real — es un ambiente de prueba."}
-                </span>
-              </label>
+            <label className="block">
+              <span className="text-sm font-medium text-stone-600 block mb-1">Punto de venta</span>
+              <input className="input text-sm tabular" type="number" min="1" max="999"
+                value={form.punto_venta} onChange={(e) => setForm((f) => ({ ...f, punto_venta: Number(e.target.value) }))} />
+              <span className="text-sm text-stone-400 block mt-1">El número que ARCA te asignó (casi siempre es el 1).</span>
+            </label>
+            <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded p-3">
+              ⚠ Esta conexión es real: las facturas que emitas van a quedar en tu cuenta de ARCA de verdad.
             </div>
             <div className="flex gap-2">
               <button onClick={saveCfg} disabled={savingCfg} className="btn btn-primary flex-1 text-sm">
@@ -818,41 +843,77 @@ function ArcaSetup({ arcaConfig, onRefresh }: { arcaConfig: ArcaConfig | null; o
                   <div className="bg-stone-900 rounded p-2 max-h-20 overflow-y-auto">
                     <pre className="text-sm text-green-400 whitespace-pre-wrap break-all">{csr}</pre>
                   </div>
-                  <button onClick={() => navigator.clipboard.writeText(csr)} className="text-sm text-sky-600 hover:underline">
-                    📋 Copiar este texto (lo vas a necesitar en el paso 2)
-                  </button>
+                  <div className="flex gap-3">
+                    <button onClick={() => navigator.clipboard.writeText(csr)} className="text-sm text-sky-600 hover:underline">
+                      📋 Copiar este texto
+                    </button>
+                    <button onClick={() => downloadTextFile("mercalin.csr", csr)} className="text-sm text-sky-600 hover:underline">
+                      💾 Descargar como archivo (.csr)
+                    </button>
+                  </div>
+                  <p className="text-sm text-stone-400">Lo vas a necesitar en el Paso 2 — algunas pantallas de ARCA piden pegar el texto, otras piden subir el archivo.</p>
                 </div>
               )}
             </div>
 
-            {/* Sub-paso 2: pedirlo en ARCA -- SIEMPRE visible, no depende de haber generado la clave recién */}
+            {/* Sub-paso 2: pedirlo en ARCA -- SIEMPRE visible, no depende de haber generado la clave recién.
+                Testing y Producción son trámites DISTINTOS en ARCA (nombres de menú distintos), no la misma
+                pantalla con otra URL -- por eso las instrucciones cambian según el entorno elegido. */}
             <div>
               <p className="text-base font-semibold text-stone-700 mb-2">2. Pedí el certificado en la web de ARCA</p>
-              <div className="text-sm text-stone-600 bg-amber-50 border border-amber-200 rounded-lg p-4 space-y-4">
-                <button
-                  onClick={() => openUrl(WSASS_URL[form.environment === "prod" ? "prod" : "homo"])}
-                  className="w-full text-left bg-white border border-amber-300 rounded px-3 py-2.5 text-amber-800 font-medium hover:bg-amber-100"
-                >
-                  🔗 Abrir WSASS ({form.environment === "prod" ? "Producción" : "Testing"})
-                </button>
-                <div className="text-sm text-stone-400">
-                  Si el botón no abre nada, copiá y pegá esta dirección en el navegador:<br />
-                  <code className="select-all bg-white border border-stone-200 rounded px-1.5 py-0.5 inline-block mt-1 break-all">
-                    {WSASS_URL[form.environment === "prod" ? "prod" : "homo"]}
-                  </code>
+              {form.environment === "prod" ? (
+                <div className="text-sm text-stone-600 bg-amber-50 border border-amber-200 rounded-lg p-4 space-y-4">
+                  <div className="bg-red-50 border border-red-200 text-red-700 rounded p-2.5 font-medium">
+                    ⚠ Estás en Producción: el certificado que generes acá va a poder emitir facturas reales.
+                  </div>
+                  <button
+                    onClick={() => openUrl(ARCA_PORTAL_URL)}
+                    className="w-full text-left bg-white border border-amber-300 rounded px-3 py-2.5 text-amber-800 font-medium hover:bg-amber-100"
+                  >
+                    🔗 Abrir el portal de ARCA
+                  </button>
+                  <div className="text-sm text-stone-400">
+                    Si el botón no abre nada, copiá y pegá esta dirección en el navegador:<br />
+                    <code className="select-all bg-white border border-stone-200 rounded px-1.5 py-0.5 inline-block mt-1 break-all">{ARCA_PORTAL_URL}</code>
+                  </div>
+                  <div className="space-y-2.5">
+                    <NumberedStep n={1}>Ingresá con tu <strong>Clave Fiscal</strong> (nivel 3 o superior).</NumberedStep>
+                    <NumberedStep n={2}>En el buscador de servicios de ARCA, escribí y abrí <strong>"Administración de Certificados Digitales"</strong>. Si no te aparece en la lista, primero hay que sumarlo desde "Administrador de Relaciones de Clave Fiscal" → buscarlo y adherirlo.</NumberedStep>
+                    <NumberedStep n={3}>Si tenés más de una empresa/CUIT a tu nombre, seleccioná la que corresponde.</NumberedStep>
+                    <NumberedStep n={4}>Tocá <strong>"Agregar alias"</strong>.</NumberedStep>
+                    <NumberedStep n={5}>Completá el campo <strong>"Alias"</strong> con un nombre para reconocerlo (por ejemplo el nombre de tu negocio, solo letras y números).</NumberedStep>
+                    <NumberedStep n={6}>Te va a pedir el archivo del CSR — usá el que descargaste en el Paso 1 ("mercalin.csr"). Si en cambio te pide pegar el texto, usá el botón "Copiar" de arriba.</NumberedStep>
+                    <NumberedStep n={7}>Confirmá con <strong>"Agregar Alias"</strong>. En la lista que aparece, tocá <strong>"Ver"</strong> y después <strong>"Descargar"</strong> — ese archivo es tu certificado.</NumberedStep>
+                  </div>
+                  <p className="text-sm text-stone-500 pt-2 border-t border-amber-200">
+                    Estos nombres de menú pueden variar un poco según cómo esté organizado tu ARCA. Si te trabás, tocá "¿Necesitás ayuda?" arriba de todo y escribinos.
+                  </p>
                 </div>
-                <div className="space-y-2.5">
-                  <NumberedStep n={1}>Te va a pedir tu <strong>Clave Fiscal</strong> (la misma con la que entrás a ARCA/AFIP normalmente) — ingresala.</NumberedStep>
-                  <NumberedStep n={2}>Del lado izquierdo de la pantalla hay una lista de opciones. Buscá la que dice <strong>"Nuevo Certificado"</strong> y tocala — te va a abrir una página que dice <strong>"Crear DN y certificado"</strong>.<br /><HelpImageButton src={imgCrearDn} alt="Formulario Crear DN y certificado en WSASS" /></NumberedStep>
-                  <NumberedStep n={3}>Va a aparecer un cuadro de texto grande (dice "Solicitud de certificado"). Pegá ahí el texto que copiaste en el Paso 1 (Ctrl+V, o mantené apretado y elegí "Pegar").</NumberedStep>
-                  <NumberedStep n={4}>Más arriba te va a pedir un <strong>alias</strong> ("Nombre simbólico del DN"): es solo un nombre para reconocerlo después, podés poner el que quieras — por ejemplo el nombre de tu negocio.<br /><span className="text-amber-700">Importante: solo letras y números, sin guiones ni espacios (ej. "mikiosco", no "mi-kiosco").</span></NumberedStep>
-                  <NumberedStep n={5}>Tocá el botón <strong>"Crear DN y obtener certificado"</strong>. Más abajo va a aparecer un resultado y la posibilidad de <strong>descargar un archivo</strong> — descargalo, es tu certificado.</NumberedStep>
+              ) : (
+                <div className="text-sm text-stone-600 bg-amber-50 border border-amber-200 rounded-lg p-4 space-y-4">
+                  <button
+                    onClick={() => openUrl(WSASS_HOMO_URL)}
+                    className="w-full text-left bg-white border border-amber-300 rounded px-3 py-2.5 text-amber-800 font-medium hover:bg-amber-100"
+                  >
+                    🔗 Abrir WSASS (Testing)
+                  </button>
+                  <div className="text-sm text-stone-400">
+                    Si el botón no abre nada, copiá y pegá esta dirección en el navegador:<br />
+                    <code className="select-all bg-white border border-stone-200 rounded px-1.5 py-0.5 inline-block mt-1 break-all">{WSASS_HOMO_URL}</code>
+                  </div>
+                  <div className="space-y-2.5">
+                    <NumberedStep n={1}>Te va a pedir tu <strong>Clave Fiscal</strong> (la misma con la que entrás a ARCA/AFIP normalmente) — ingresala.</NumberedStep>
+                    <NumberedStep n={2}>Del lado izquierdo de la pantalla hay una lista de opciones. Buscá la que dice <strong>"Nuevo Certificado"</strong> y tocala — te va a abrir una página que dice <strong>"Crear DN y certificado"</strong>.<br /><HelpImageButton src={imgCrearDn} alt="Formulario Crear DN y certificado en WSASS" /></NumberedStep>
+                    <NumberedStep n={3}>Va a aparecer un cuadro de texto grande (dice "Solicitud de certificado"). Pegá ahí el texto que copiaste en el Paso 1 (Ctrl+V, o mantené apretado y elegí "Pegar").</NumberedStep>
+                    <NumberedStep n={4}>Más arriba te va a pedir un <strong>alias</strong> ("Nombre simbólico del DN"): es solo un nombre para reconocerlo después, podés poner el que quieras — por ejemplo el nombre de tu negocio.<br /><span className="text-amber-700">Importante: solo letras y números, sin guiones ni espacios (ej. "mikiosco", no "mi-kiosco").</span></NumberedStep>
+                    <NumberedStep n={5}>Tocá el botón <strong>"Crear DN y obtener certificado"</strong>. Más abajo va a aparecer un resultado y la posibilidad de <strong>descargar un archivo</strong> — descargalo, es tu certificado.</NumberedStep>
+                  </div>
+                  <p className="text-sm text-stone-500 pt-2 border-t border-amber-200">
+                    ¿No encontrás "Nuevo Certificado" en el menú? Arriba de la página de ARCA suele haber una lupa o buscador — escribí "certificado" ahí.
+                    Si igual te trabás, tocá "¿Necesitás ayuda?" arriba de todo y escribinos.
+                  </p>
                 </div>
-                <p className="text-sm text-stone-500 pt-2 border-t border-amber-200">
-                  ¿No encontrás "Nuevo Certificado" en el menú? Arriba de la página de ARCA suele haber una lupa o buscador — escribí "certificado" ahí.
-                  Si igual te trabás, tocá "¿Necesitás ayuda?" arriba de todo y escribinos.
-                </p>
-              </div>
+              )}
             </div>
 
             {/* Sub-paso 3: subir el archivo */}
@@ -886,31 +947,57 @@ function ArcaSetup({ arcaConfig, onRefresh }: { arcaConfig: ArcaConfig | null; o
               <strong>Un paso más antes de probar:</strong> tenés que decirle a ARCA que ese certificado puede usarse
               específicamente para facturar (no alcanza con haberlo creado).
             </div>
-            <div className="text-sm text-stone-600 bg-amber-50 border border-amber-200 rounded-lg p-4 space-y-4">
-              <button
-                onClick={() => openUrl(WSASS_URL[form.environment === "prod" ? "prod" : "homo"])}
-                className="w-full text-left bg-white border border-amber-300 rounded px-3 py-2.5 text-amber-800 font-medium hover:bg-amber-100"
-              >
-                🔗 Abrir WSASS de nuevo
-              </button>
-              <div className="text-sm text-stone-400">
-                Si el botón no abre nada, copiá y pegá esta dirección en el navegador:<br />
-                <code className="select-all bg-white border border-stone-200 rounded px-1.5 py-0.5 inline-block mt-1 break-all">
-                  {WSASS_URL[form.environment === "prod" ? "prod" : "homo"]}
-                </code>
+            {form.environment === "prod" ? (
+              <div className="text-sm text-stone-600 bg-amber-50 border border-amber-200 rounded-lg p-4 space-y-4">
+                <button
+                  onClick={() => openUrl(ARCA_PORTAL_URL)}
+                  className="w-full text-left bg-white border border-amber-300 rounded px-3 py-2.5 text-amber-800 font-medium hover:bg-amber-100"
+                >
+                  🔗 Abrir el portal de ARCA
+                </button>
+                <div className="text-sm text-stone-400">
+                  Si el botón no abre nada, copiá y pegá esta dirección en el navegador:<br />
+                  <code className="select-all bg-white border border-stone-200 rounded px-1.5 py-0.5 inline-block mt-1 break-all">{ARCA_PORTAL_URL}</code>
+                </div>
+                <div className="space-y-2.5">
+                  <NumberedStep n={1}>Ingresá con tu Clave Fiscal (si te la pide de nuevo).</NumberedStep>
+                  <NumberedStep n={2}>En el buscador de servicios, escribí y abrí <strong>"Administrador de Relaciones de Clave Fiscal"</strong>.</NumberedStep>
+                  <NumberedStep n={3}>Si administrás más de un CUIT, seleccioná el que corresponde.</NumberedStep>
+                  <NumberedStep n={4}>Tocá <strong>"Nueva Relación"</strong>.</NumberedStep>
+                  <NumberedStep n={5}>En "Representado" va a aparecer tu propio CUIT por defecto — dejalo así.</NumberedStep>
+                  <NumberedStep n={6}>Tocá el primer botón <strong>"Buscar"</strong>, abrí "ARCA {'>'} Web Services" y elegí <strong>"Facturación Electrónica"</strong>.</NumberedStep>
+                  <NumberedStep n={7}>Tocá el segundo botón <strong>"Buscar"</strong> y elegí el certificado (el alias) que creaste en el Paso 2.</NumberedStep>
+                  <NumberedStep n={8}>Tocá <strong>"Confirmar"</strong>, y confirmá otra vez cuando te lo vuelva a pedir. Con eso queda autorizado.</NumberedStep>
+                </div>
+                <p className="text-sm text-stone-500 pt-2 border-t border-amber-200">
+                  ¿Te trabaste en algún punto? Tocá "¿Necesitás ayuda?" arriba de todo y escribinos por WhatsApp.
+                </p>
               </div>
-              <div className="space-y-2.5">
-                <NumberedStep n={1}>Ingresá con tu Clave Fiscal (si te la pide de nuevo).</NumberedStep>
-                <NumberedStep n={2}>Del lado izquierdo, buscá <strong>"Crear autorización a servicio"</strong> y tocala.</NumberedStep>
-                <NumberedStep n={3}>En "Nombre simbólico del DN a autorizar", elegí el alias que creaste en el Paso 2 (el nombre que le hayas puesto).</NumberedStep>
-                <NumberedStep n={4}>En "CUIT representado", va a aparecer tu propio CUIT — dejalo así.</NumberedStep>
-                <NumberedStep n={5}>En "Servicio al que desea acceder" va a aparecer una lista larga. Buscá el que dice <strong>wsfe - Facturacion Electronica</strong> — si no lo encontrás a simple vista, apretá Ctrl+F en el teclado, escribí "wsfe" y Enter para que el navegador lo resalte.<br /><HelpImageButton src={imgListaServicios} alt="Lista de servicios en WSASS" label="Ver cómo es la lista" /></NumberedStep>
-                <NumberedStep n={6}>Elegilo y tocá <strong>"Crear autorización de acceso"</strong>. Con eso queda autorizado.<br /><HelpImageButton src={imgAutorizacion} alt="Formulario de autorización completo" label="Ver ejemplo completo" /></NumberedStep>
+            ) : (
+              <div className="text-sm text-stone-600 bg-amber-50 border border-amber-200 rounded-lg p-4 space-y-4">
+                <button
+                  onClick={() => openUrl(WSASS_HOMO_URL)}
+                  className="w-full text-left bg-white border border-amber-300 rounded px-3 py-2.5 text-amber-800 font-medium hover:bg-amber-100"
+                >
+                  🔗 Abrir WSASS de nuevo
+                </button>
+                <div className="text-sm text-stone-400">
+                  Si el botón no abre nada, copiá y pegá esta dirección en el navegador:<br />
+                  <code className="select-all bg-white border border-stone-200 rounded px-1.5 py-0.5 inline-block mt-1 break-all">{WSASS_HOMO_URL}</code>
+                </div>
+                <div className="space-y-2.5">
+                  <NumberedStep n={1}>Ingresá con tu Clave Fiscal (si te la pide de nuevo).</NumberedStep>
+                  <NumberedStep n={2}>Del lado izquierdo, buscá <strong>"Crear autorización a servicio"</strong> y tocala.</NumberedStep>
+                  <NumberedStep n={3}>En "Nombre simbólico del DN a autorizar", elegí el alias que creaste en el Paso 2 (el nombre que le hayas puesto).</NumberedStep>
+                  <NumberedStep n={4}>En "CUIT representado", va a aparecer tu propio CUIT — dejalo así.</NumberedStep>
+                  <NumberedStep n={5}>En "Servicio al que desea acceder" va a aparecer una lista larga. Buscá el que dice <strong>wsfe - Facturacion Electronica</strong> — si no lo encontrás a simple vista, apretá Ctrl+F en el teclado, escribí "wsfe" y Enter para que el navegador lo resalte.<br /><HelpImageButton src={imgListaServicios} alt="Lista de servicios en WSASS" label="Ver cómo es la lista" /></NumberedStep>
+                  <NumberedStep n={6}>Elegilo y tocá <strong>"Crear autorización de acceso"</strong>. Con eso queda autorizado.<br /><HelpImageButton src={imgAutorizacion} alt="Formulario de autorización completo" label="Ver ejemplo completo" /></NumberedStep>
+                </div>
+                <p className="text-sm text-stone-500 pt-2 border-t border-amber-200">
+                  ¿Te trabaste en algún punto? Tocá "¿Necesitás ayuda?" arriba de todo y escribinos por WhatsApp.
+                </p>
               </div>
-              <p className="text-sm text-stone-500 pt-2 border-t border-amber-200">
-                ¿Te trabaste en algún punto? Tocá "¿Necesitás ayuda?" arriba de todo y escribinos por WhatsApp.
-              </p>
-            </div>
+            )}
             <p className="text-sm text-stone-500">
               Recién ahora tiene sentido probar. Necesitás conexión a internet.
             </p>
@@ -938,6 +1025,19 @@ function ArcaSetup({ arcaConfig, onRefresh }: { arcaConfig: ArcaConfig | null; o
         </div>
         )}
       </div>
+
+      {arcaConfig && (
+        <div className="mt-8 border-t border-stone-200 pt-4">
+          <p className="text-sm font-semibold text-red-700 mb-1">Zona de peligro</p>
+          <p className="text-sm text-stone-500 mb-2">
+            Borra el CUIT, el certificado y todo el historial de facturas/notas de crédito guardado en esta compu.
+            No toca nada de tu ARCA real. Útil para descartar pruebas antes de pasar a Producción.
+          </p>
+          <button onClick={resetAll} disabled={resetting} className="btn text-sm bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 disabled:opacity-50">
+            {resetting ? "Borrando…" : "🗑️ Borrar configuración y facturas de ARCA"}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

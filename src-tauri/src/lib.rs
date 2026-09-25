@@ -646,6 +646,8 @@ pub fn run() {
             commands::backup::backup_database,
             commands::backup::list_backups,
             commands::backup::delete_backup,
+            commands::backup::restore_backup,
+            commands::backup::restore_backup_by_name,
             commands::backup::auto_backup_check,
             // Dashboard
             commands::dashboard::get_dashboard,
@@ -697,12 +699,14 @@ pub fn run() {
             // ARCA — Facturación electrónica
             commands::arca::get_arca_config,
             commands::arca::save_arca_config,
+            commands::arca::reset_arca_data,
             commands::arca::generate_arca_keypair,
             commands::arca::load_arca_certificate,
             commands::arca::test_arca_connection,
             commands::arca::issue_electronic_invoice,
             commands::arca::issue_credit_note,
             commands::arca::list_electronic_invoices,
+            commands::arca::get_invoice_for_sale,
             commands::arca::retry_pending_invoices,
             // Catálogo — plantilla desde Open Food Facts (solo desarrollo)
             #[cfg(debug_assertions)]

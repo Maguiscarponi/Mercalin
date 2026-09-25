@@ -49,7 +49,8 @@ export default function Caja() {
   const [stockMap, setStockMap] = useState<Record<number, number>>({});
   const [costMap, setCostMap] = useState<Record<number, number>>({});
   const [weighableMap, setWeighableMap] = useState<Record<number, boolean>>({});
-  const [weighPrompt, setWeighPrompt] = useState<{ name: string; product?: Product; editIdx?: number; currentKg?: number } | null>(null);
+  const [unitMap, setUnitMap] = useState<Record<number, string>>({});
+  const [weighPrompt, setWeighPrompt] = useState<{ name: string; product?: Product; editIdx?: number; currentKg?: number; unit?: string } | null>(null);
   const [showParked, setShowParked] = useState(false);
   const [minMarginPct, setMinMarginPct] = useState(10);
   const [promos, setPromos] = useState<Promotion[]>([]);
@@ -391,8 +392,9 @@ export default function Caja() {
     setStockMap((m) => ({ ...m, [product.id]: product.stock }));
     setCostMap((m) => ({ ...m, [product.id]: product.cost_cents }));
     setWeighableMap((m) => ({ ...m, [product.id]: product.is_weighable }));
+    setUnitMap((m) => ({ ...m, [product.id]: product.unit || "kg" }));
     if (product.is_weighable) {
-      setWeighPrompt({ name: product.name, product });
+      setWeighPrompt({ name: product.name, product, unit: product.unit || "kg" });
       return;
     }
     addWithPromo(product, price);
@@ -694,11 +696,11 @@ ${itemsHtml}
 
                       {item.product_id && weighableMap[item.product_id] ? (
                         <button
-                          onClick={() => setWeighPrompt({ name: item.name, editIdx: idx, currentKg: item.qty })}
+                          onClick={() => setWeighPrompt({ name: item.name, editIdx: idx, currentKg: item.qty, unit: (item.product_id && unitMap[item.product_id]) || "kg" })}
                           data-cart-ctrl="true"
                           className="flex items-center gap-1.5 justify-center h-9 px-2 rounded-md border border-stone-300 hover:bg-stone-100 tabular font-bold text-base"
                         >
-                          {item.qty.toFixed(3)} kg ✎
+                          {item.qty.toFixed(3)} {(item.product_id && unitMap[item.product_id]) || "kg"} ✎
                         </button>
                       ) : (
                         <div className="flex items-center gap-2">
@@ -1073,6 +1075,7 @@ ${itemsHtml}
         <WeighModal
           name={weighPrompt.name}
           currentKg={weighPrompt.currentKg}
+          unit={weighPrompt.unit}
           onConfirm={confirmWeighed}
           onCancel={() => setWeighPrompt(null)}
         />
@@ -1267,13 +1270,15 @@ function ParkedSalesModal({
 }
 
 function WeighModal({
-  name, currentKg, onConfirm, onCancel,
+  name, currentKg, unit, onConfirm, onCancel,
 }: {
   name: string;
   currentKg?: number;
+  unit?: string;
   onConfirm: (kg: number) => void;
   onCancel: () => void;
 }) {
+  const u = unit || "kg";
   const [kgStr, setKgStr] = useState(currentKg ? currentKg.toString() : "");
   useEscapeToClose(onCancel);
 
@@ -1288,7 +1293,7 @@ function WeighModal({
       <div className="relative bg-white rounded-lg shadow-xl w-[340px] p-6" onClick={(e) => e.stopPropagation()}>
         <ModalCloseButton onClick={onCancel} />
         <h3 className="font-semibold mb-1">⚖️ {name}</h3>
-        <p className="text-sm text-stone-500 mb-4">Cantidad en kilogramos</p>
+        <p className="text-sm text-stone-500 mb-4">Cantidad en {u}</p>
         <div className="relative">
           <input
             autoFocus
@@ -1299,7 +1304,7 @@ function WeighModal({
             inputMode="decimal"
             onKeyDown={(e) => e.key === "Enter" && submit()}
           />
-          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 text-sm">kg</span>
+          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 text-sm">{u}</span>
         </div>
         <div className="flex gap-2 mt-4">
           <button onClick={onCancel} className="btn btn-secondary flex-1">Cancelar</button>

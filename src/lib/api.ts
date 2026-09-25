@@ -351,6 +351,12 @@ export const api = {
   deleteBackup: (name: string) =>
     rpc<void>("delete_backup", { name }),
 
+  restoreBackup: (filePath: string) =>
+    rpc<void>("restore_backup", { filePath }),
+
+  restoreBackupByName: (name: string) =>
+    rpc<void>("restore_backup_by_name", { name }),
+
   autoBackupCheck: () =>
     rpc<boolean>("auto_backup_check"),
 
@@ -503,6 +509,9 @@ export const api = {
   saveArcaConfig: (input: ArcaConfigInput) =>
     rpc<void>("save_arca_config", { input }),
 
+  resetArcaData: () =>
+    rpc<void>("reset_arca_data"),
+
   generateArcaKeypair: () =>
     rpc<string>("generate_arca_keypair"),
 
@@ -515,11 +524,14 @@ export const api = {
   issueElectronicInvoice: (input: InvoiceInput) =>
     rpc<ElectronicInvoice>("issue_electronic_invoice", { input }),
 
-  issueCreditNote: (invoiceId: number) =>
-    rpc<ElectronicInvoice>("issue_credit_note", { invoiceId }),
+  issueCreditNote: (invoiceId: number, amountCents: number | null = null, returnId: number | null = null) =>
+    rpc<ElectronicInvoice>("issue_credit_note", { invoiceId, amountCents, returnId }),
 
   listElectronicInvoices: (limit = 200) =>
     rpc<ElectronicInvoice[]>("list_electronic_invoices", { limit }),
+
+  getInvoiceForSale: (saleId: number) =>
+    rpc<ElectronicInvoice | null>("get_invoice_for_sale", { saleId }),
 
   retryPendingInvoices: () =>
     rpc<number>("retry_pending_invoices"),

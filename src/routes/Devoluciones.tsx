@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { centsToARS, formatDateTime } from "@/lib/format";
-import type { Client, NewReturnItem, ReturnRecord, Sale, SaleWithItems } from "@/types";
+import type { Client, ElectronicInvoice, NewReturnItem, ReturnRecord, Sale, SaleWithItems } from "@/types";
 import clsx from "clsx";
 
 type Tab = "nueva" | "historial";
@@ -49,6 +49,12 @@ export default function Devoluciones() {
   const [error, setError] = useState<string | null>(null);
   const [loadingSearch, setLoadingSearch] = useState(false);
 
+  // Factura ARCA de la venta que se está devolviendo (si tiene una vigente) y
+  // el resultado de emitir la Nota de Crédito correspondiente al confirmar.
+  const [saleInvoice, setSaleInvoice] = useState<ElectronicInvoice | null>(null);
+  const [ncState, setNcState] = useState<"idle" | "issuing" | "done" | "error">("idle");
+  const [ncError, setNcError] = useState<string | null>(null);
+
   // Historial
   const [returns, setReturns] = useState<ReturnRecord[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
@@ -93,15 +99,20 @@ export default function Devoluciones() {
     setError(null);
     setSaleData(null);
     setLines([]);
+    setSaleInvoice(null);
+    setNcState("idle");
+    setNcError(null);
     try {
-      const [sw, allReturns] = await Promise.all([
+      const [sw, allReturns, invoice] = await Promise.all([
         api.getSaleWithItems(id),
         api.listReturns(500),
+        api.getInvoiceForSale(id).catch(() => null),
       ]);
       if (sw.sale.notes?.includes("[ANULADA]")) {
         setError("Esta venta está anulada");
         return;
       }
+      if (invoice && invoice.status === "autorizada") setSaleInvoice(invoice);
 
       // Calcular qué ya fue devuelto de esta venta
       const saleReturns = allReturns.filter((r) => r.sale_id === id);
@@ -161,6 +172,8 @@ export default function Devoluciones() {
     setSaving(true);
     setError(null);
     setSuccess(null);
+    setNcState("idle");
+    setNcError(null);
     try {
       const items: NewReturnItem[] = selectedLines.map((l) => ({
         product_id: l.product_id,
@@ -175,7 +188,30 @@ export default function Devoluciones() {
         reason,
         notes: notes.trim() || null,
       });
-      setSuccess(`Devolución #${ret.id} registrada. Se devolvieron ${items.length} ítem(s) al stock.`);
+      let msg = `Devolución #${ret.id} registrada. Se devolvieron ${items.length} ítem(s) al stock.`;
+
+      // Si la venta original tiene una factura ARCA vigente, la devolución
+      // tiene que quedar reflejada ahí también -- si no, el comercio queda
+      // habiendo facturado algo que ya no vendió. Se emite automáticamente
+      // por el monto devuelto (parcial si no se devolvió todo).
+      if (saleInvoice) {
+        setNcState("issuing");
+        try {
+          const nc = await api.issueCreditNote(saleInvoice.id, totalReturn, ret.id);
+          if (nc.status === "autorizada") {
+            setNcState("done");
+            msg += ` Nota de crédito ${nc.invoice_type} emitida por ${centsToARS(nc.total_cents)}.`;
+          } else {
+            setNcState("error");
+            setNcError(nc.error_msg || "ARCA rechazó la nota de crédito.");
+          }
+        } catch (e) {
+          setNcState("error");
+          setNcError(String(e));
+        }
+      }
+
+      setSuccess(msg);
       setSaleData(null);
       setLines([]);
       setSaleIdInput("");
@@ -183,6 +219,7 @@ export default function Devoluciones() {
       setSelectedClient(null);
       setClientQuery("");
       setClientSales([]);
+      setSaleInvoice(null);
     } catch (e) {
       setError(String(e));
     } finally {
@@ -200,6 +237,9 @@ export default function Devoluciones() {
     setSelectedClient(null);
     setClientQuery("");
     setClientSales([]);
+    setSaleInvoice(null);
+    setNcState("idle");
+    setNcError(null);
   }
 
   return (
@@ -229,6 +269,12 @@ export default function Devoluciones() {
             <div className="bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-lg px-4 py-3 text-sm flex items-center justify-between">
               <span>{success}</span>
               <button onClick={() => setSuccess(null)} className="text-emerald-500 hover:text-emerald-700 ml-3">×</button>
+            </div>
+          )}
+          {ncState === "error" && (
+            <div className="bg-amber-50 text-amber-800 border border-amber-200 rounded-lg px-4 py-3 text-sm flex items-center justify-between">
+              <span>La devolución se registró, pero la nota de crédito ARCA falló: {ncError}. Podés reintentarla desde Facturación.</span>
+              <button onClick={() => { setNcState("idle"); setNcError(null); }} className="text-amber-500 hover:text-amber-700 ml-3">×</button>
             </div>
           )}
           {error && (
@@ -341,9 +387,19 @@ export default function Devoluciones() {
                 <span>
                   Venta #{saleData.sale.id} — {formatDateTime(saleData.sale.created_at)} — {centsToARS(saleData.sale.total_cents)}
                   {saleData.sale.client_name && <span className="ml-2 text-stone-400">({saleData.sale.client_name})</span>}
+                  {saleInvoice && (
+                    <span className="ml-2 inline-flex items-center gap-1 text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full">
+                      🧾 Factura {saleInvoice.invoice_type} {String(saleInvoice.punto_venta).padStart(4, "0")}-{String(saleInvoice.cbte_nro ?? 0).padStart(8, "0")}
+                    </span>
+                  )}
                 </span>
                 <button onClick={reset} className="text-stone-400 hover:text-red-600 text-xs ml-2">Cambiar</button>
               </div>
+            )}
+            {saleInvoice && (
+              <p className="mt-2 text-xs text-indigo-600">
+                Esta venta tiene factura ARCA — al confirmar la devolución se emite automáticamente la nota de crédito correspondiente.
+              </p>
             )}
           </div>
 
@@ -430,7 +486,10 @@ export default function Devoluciones() {
                     <span>{selectedLines.length} ítem(s) a devolver</span>
                     <span className="text-emerald-700">{centsToARS(totalReturn)}</span>
                   </div>
-                  <div className="text-xs text-stone-500 mt-1">El stock se restituirá automáticamente</div>
+                  <div className="text-xs text-stone-500 mt-1">
+                    El stock se restituirá automáticamente
+                    {saleInvoice && " y se emitirá la nota de crédito ARCA correspondiente"}
+                  </div>
                 </div>
               )}
 
@@ -440,7 +499,7 @@ export default function Devoluciones() {
                   disabled={selectedLines.length === 0 || saving}
                   className="btn btn-primary flex-1 disabled:opacity-40"
                 >
-                  {saving ? "Registrando…" : `Confirmar devolución${selectedLines.length > 0 ? ` (${centsToARS(totalReturn)})` : ""}`}
+                  {ncState === "issuing" ? "Emitiendo nota de crédito…" : saving ? "Registrando…" : `Confirmar devolución${selectedLines.length > 0 ? ` (${centsToARS(totalReturn)})` : ""}`}
                 </button>
                 <button onClick={reset} className="btn btn-secondary">Cancelar</button>
               </div>

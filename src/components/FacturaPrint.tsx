@@ -17,6 +17,7 @@ export interface FacturaItem {
   code?: string | null;
   name: string;
   qty: number;
+  unit?: string | null;
   unitPriceCents: number;
   bonifPct?: number;
   subtotalCents: number;
@@ -77,14 +78,14 @@ function buildFacturaHtml(p: Props): string {
   const discriminaIva = inv.invoice_type === "A" || inv.invoice_type === "B";
   const rows = items && items.length > 0
     ? items
-    : [{ code: null, name: inv.concepto || "Venta de productos/servicios", qty: 1, unitPriceCents: inv.total_cents, bonifPct: 0, subtotalCents: inv.total_cents }];
+    : [{ code: null, name: inv.concepto || "Venta de productos/servicios", qty: 1, unit: "unidades", unitPriceCents: inv.total_cents, bonifPct: 0, subtotalCents: inv.total_cents }];
 
   const itemsHtml = rows.map((it) => `
     <tr>
       <td class="cell">${escHtml(it.code || "—")}</td>
       <td class="cell">${escHtml(it.name)}</td>
       <td class="cell num">${it.qty}</td>
-      <td class="cell">unidades</td>
+      <td class="cell">${escHtml(it.unit || "unidades")}</td>
       <td class="cell num">${centsToARS(it.unitPriceCents)}</td>
       <td class="cell num">${(it.bonifPct || 0).toFixed(2)}</td>
       <td class="cell num">${centsToARS(it.subtotalCents)}</td>

@@ -134,6 +134,60 @@ pub fn delete_backup(name: String, state: State<AppState>) -> CmdResult<()> {
     Ok(())
 }
 
+// Restaura la base desde un archivo de backup (propio o copiado de otra
+// compu, ej. bajado de una carpeta de OneDrive/Drive/Dropbox). Es la manera
+// de "cambiar de computadora sin perder nada": hacés backup en la vieja,
+// copiás ese archivo a la nueva por la nube, y lo restaurás acá.
+//
+// En Windows no se puede sobreescribir un archivo que la propia app tiene
+// abierto -- por eso primero hay que soltar la conexión actual (cambiándola
+// por una en memoria) antes de copiar. Después de esto, el frontend tiene
+// que reiniciar la app (relaunch) para que abra la base ya restaurada desde
+// cero -- no se intenta seguir usando la conexión vieja en caliente.
+fn do_restore(src: &std::path::Path, state: &AppState) -> CmdResult<()> {
+    if !src.exists() {
+        return Err("El archivo no existe.".to_string());
+    }
+
+    // Validación mínima: que sea una base de Mercalin de verdad, no
+    // cualquier archivo con extensión .db, antes de pisar todo.
+    {
+        let test_conn = rusqlite::Connection::open(src).map_err(err)?;
+        test_conn
+            .query_row("SELECT COUNT(*) FROM config", [], |_| Ok(()))
+            .map_err(|_| "Ese archivo no es un backup válido de Mercalin.".to_string())?;
+    }
+
+    let db_path = state.db_path.clone();
+    {
+        let mut conn_guard = state.db.lock();
+        *conn_guard = rusqlite::Connection::open_in_memory().map_err(err)?;
+    }
+    let _ = std::fs::remove_file(format!("{}-wal", db_path.display()));
+    let _ = std::fs::remove_file(format!("{}-shm", db_path.display()));
+
+    std::fs::copy(src, &db_path).map_err(err)?;
+    Ok(())
+}
+
+// Restaurar desde un archivo elegido a mano (típicamente en otra compu, sin
+// historial local de backups todavía).
+#[tauri::command]
+pub fn restore_backup(file_path: String, state: State<AppState>) -> CmdResult<()> {
+    do_restore(std::path::Path::new(&file_path), &state)
+}
+
+// Restaurar uno de los backups que ya están en la lista de esta misma compu
+// -- no hace falta volver a elegir el archivo, ya se sabe dónde está.
+#[tauri::command]
+pub fn restore_backup_by_name(name: String, state: State<AppState>) -> CmdResult<()> {
+    if !name.starts_with("kiosco_backup_") || !name.ends_with(".db") || name.contains('/') || name.contains('\\') {
+        return Err("Nombre de backup inválido".into());
+    }
+    let path = backup_dir(&state).join(&name);
+    do_restore(&path, &state)
+}
+
 #[tauri::command]
 pub fn auto_backup_check(state: State<AppState>) -> CmdResult<bool> {
     let (enabled, last_at, freq_hours, keep_count) = {

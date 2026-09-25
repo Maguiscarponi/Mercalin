@@ -73,6 +73,7 @@ fn row_to_product(row: &Row) -> rusqlite::Result<Product> {
         category: row.get("category")?,
         brand: row.get("brand")?,
         is_weighable: row.get::<_, i64>("is_weighable")? != 0,
+        unit: row.get::<_, Option<String>>("unit")?.filter(|s| !s.is_empty()).unwrap_or_else(|| "unidad".to_string()),
         active: row.get::<_, i64>("active")? != 0,
         is_ghost: row.get::<_, i64>("is_ghost")? != 0,
         supplier_id: row.get("supplier_id")?,
@@ -159,8 +160,8 @@ pub fn create_product(product: NewProduct, user_id: Option<i64>, state: State<Ap
     let conn = state.db.lock();
     conn.execute(
         "INSERT INTO products
-            (barcode, name, price_cents, price2_cents, price3_cents, cost_cents, stock, min_stock, category, brand, is_weighable, active, is_ghost, supplier_id, expires_at, image_path)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, 0, ?13, ?14, ?15)",
+            (barcode, name, price_cents, price2_cents, price3_cents, cost_cents, stock, min_stock, category, brand, is_weighable, unit, active, is_ghost, supplier_id, expires_at, image_path)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, 0, ?14, ?15, ?16)",
         params![
             product.barcode,
             product.name,
@@ -173,6 +174,7 @@ pub fn create_product(product: NewProduct, user_id: Option<i64>, state: State<Ap
             product.category,
             product.brand,
             product.is_weighable as i64,
+            product.unit,
             product.active as i64,
             product.supplier_id,
             product.expires_at,
@@ -203,9 +205,9 @@ pub fn update_product(product: Product, user_id: Option<i64>, state: State<AppSt
         "UPDATE products SET
             barcode=?1, name=?2, price_cents=?3, price2_cents=?4, price3_cents=?5,
             cost_cents=?6, stock=?7, min_stock=?8, category=?9, brand=?10, is_weighable=?11,
-            active=?12, is_ghost=?13, supplier_id=?14, expires_at=?15, image_path=?16,
+            unit=?12, active=?13, is_ghost=?14, supplier_id=?15, expires_at=?16, image_path=?17,
             updated_at=CURRENT_TIMESTAMP
-         WHERE id = ?17",
+         WHERE id = ?18",
         params![
             product.barcode,
             product.name,
@@ -218,6 +220,7 @@ pub fn update_product(product: Product, user_id: Option<i64>, state: State<AppSt
             product.category,
             product.brand,
             product.is_weighable as i64,
+            product.unit,
             active as i64,
             is_ghost as i64,
             product.supplier_id,
@@ -723,17 +726,17 @@ pub fn import_products_csv(
         let result = if let Some(id) = existing_id {
             conn.execute(
                 "UPDATE products SET name=?1, price_cents=?2, price2_cents=?3, price3_cents=?4, cost_cents=?5, stock=?6,
-                 min_stock=?7, category=?8, brand=?9, supplier_id=?10, is_weighable=?11, expires_at=?12,
-                 updated_at=CURRENT_TIMESTAMP WHERE id=?13",
+                 min_stock=?7, category=?8, brand=?9, supplier_id=?10, is_weighable=?11, unit=?12, expires_at=?13,
+                 updated_at=CURRENT_TIMESTAMP WHERE id=?14",
                 params![row.name, row.price_cents, row.price2_cents, row.price3_cents, row.cost_cents, row.stock,
-                        row.min_stock, row.category, row.brand, supplier_id, row.is_weighable as i64, row.expires_at, id],
+                        row.min_stock, row.category, row.brand, supplier_id, row.is_weighable as i64, row.unit, row.expires_at, id],
             )
         } else {
             conn.execute(
-                "INSERT INTO products (barcode,name,price_cents,price2_cents,price3_cents,cost_cents,stock,min_stock,category,brand,supplier_id,is_weighable,expires_at,active)
-                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,1)",
+                "INSERT INTO products (barcode,name,price_cents,price2_cents,price3_cents,cost_cents,stock,min_stock,category,brand,supplier_id,is_weighable,unit,expires_at,active)
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,1)",
                 params![row.barcode, row.name, row.price_cents, row.price2_cents, row.price3_cents, row.cost_cents, row.stock,
-                        row.min_stock, row.category, row.brand, supplier_id, row.is_weighable as i64, row.expires_at],
+                        row.min_stock, row.category, row.brand, supplier_id, row.is_weighable as i64, row.unit, row.expires_at],
             )
         };
 
