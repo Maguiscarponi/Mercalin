@@ -189,6 +189,9 @@ pub fn dispatch(app: &AppHandle, command: &str, body: Value) -> RpcResult {
         // Reportes / dashboard / insights
         "get_dashboard" => crate::commands::dashboard::get_dashboard[],
         "get_insights" => crate::commands::insights::get_insights[],
+        "dismiss_insight" => crate::commands::insights::dismiss_insight[insight_id: String, message: String, forever: bool],
+        "list_dismissed_insights" => crate::commands::insights::list_dismissed_insights[],
+        "restore_insight" => crate::commands::insights::restore_insight[insight_id: String],
         "daily_report" => crate::commands::reports::daily_report[date: String],
         "range_report" => crate::commands::reports::range_report[from_date: String, to_date: String],
         "sales_by_user" => crate::commands::reports::sales_by_user[from_date: String, to_date: String],

@@ -703,6 +703,13 @@ export interface Insight {
   route: string | null;
 }
 
+export interface DismissedInsight {
+  insight_id: string;
+  message: string;
+  dismissed_until: string | null;
+  dismissed_at: string;
+}
+
 // ─── RFM de Clientes ──────────────────────────────────────────────────────────
 export type ClientSegment = 'vip' | 'habitual' | 'en_riesgo' | 'deudor_critico' | 'nuevo';
 export interface ClientRfm {

@@ -504,6 +504,23 @@ fn open_and_migrate_inner(path: &Path) -> Result<Connection> {
         CREATE INDEX IF NOT EXISTS idx_weighed_labels_barcode ON weighed_labels(barcode);
     ");
 
+    // Pedido por Magalí: poder descartar un consejo puntual (hoy solamente, o
+    // para siempre) en vez de tener que verlo todos los días -- algunos
+    // consejos aplican solo a ese día (metas, ventas de hoy), y verlos fijos
+    // en la pantalla cuando ya se leyeron es molesto. dismissed_until NULL =
+    // para siempre; una fecha = oculto hasta el final de ese día local.
+    // `message` guarda una copia del texto al momento de descartarlo, para
+    // poder mostrar la lista de "consejos ocultos" en Configuración aunque la
+    // condición que lo generó ya no esté vigente.
+    let _ = conn.execute_batch("
+        CREATE TABLE IF NOT EXISTS insight_dismissals (
+            insight_id      TEXT PRIMARY KEY,
+            message         TEXT NOT NULL,
+            dismissed_until TEXT,
+            dismissed_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+    ");
+
     Ok(conn)
 }
 
@@ -573,6 +590,9 @@ fn seed_default_config(conn: &Connection) -> Result<()> {
         // Descuento máximo (%) que un cajero puede aplicar en Caja sin que un
         // supervisor/admin lo autorice con su usuario y contraseña.
         ("max_discount_pct_no_pin", "20"),
+        // Interruptor general de "Consejo del día" (pedido por Magalí) --
+        // apagable desde Configuración para quien no lo quiera ver nunca.
+        ("insights_enabled", "1"),
     ];
     for (key, value) in configs {
         conn.execute(

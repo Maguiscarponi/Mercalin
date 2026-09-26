@@ -660,6 +660,9 @@ pub fn run() {
             commands::dashboard::get_dashboard,
             // Insights
             commands::insights::get_insights,
+            commands::insights::dismiss_insight,
+            commands::insights::list_dismissed_insights,
+            commands::insights::restore_insight,
             // RFM
             commands::clients::get_clients_rfm,
             // Stock muerto y desajuste precio

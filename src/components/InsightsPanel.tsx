@@ -1,6 +1,9 @@
 import clsx from "clsx";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Clock, BellOff } from "lucide-react";
 import { useEscapeToClose } from "@/lib/useEscapeToClose";
+import { api } from "@/lib/api";
+import { useInsightsStore } from "@/stores/insights";
+import { showToast } from "@/stores/dialogs";
 import type { Insight } from "@/types";
 
 // Compartido entre el Dashboard (tarjeta "Consejo del día") y el ícono de
@@ -57,9 +60,25 @@ export function insightBadgeClass(insights: Insight[]): string {
   return level ? BADGE_CLASS[level] : BADGE_CLASS.info;
 }
 
+// Pedido por Magalí: poder sacar un consejo puntual en vez de tener que
+// verlo todos los días -- "Hoy no" (vuelve mañana si la condición sigue) o
+// "Nunca más" (solo vuelve si se restaura a mano desde Configuración).
+// Está acá (no en cada pantalla que usa InsightRow) para que cualquier
+// lugar que lo muestre lo pueda descartar sin tener que repetir la lógica.
+async function dismissInsight(ins: Insight, forever: boolean) {
+  try {
+    await api.dismissInsight(ins.id, ins.message, forever);
+    showToast({ message: forever ? "No se va a mostrar más" : "Listo, no lo vas a ver hoy" });
+    useInsightsStore.getState().refresh();
+  } catch (e) {
+    console.error(e);
+    showToast({ message: "No se pudo descartar el consejo", tone: "danger" });
+  }
+}
+
 export function InsightRow({ ins, onNavigate }: { ins: Insight; onNavigate: (route: string) => void }) {
   return (
-    <div className={clsx("rounded-lg px-3 py-2.5 flex items-start gap-3", LEVEL_STYLE[ins.level])}>
+    <div className={clsx("group rounded-lg px-3 py-2.5 flex items-start gap-3", LEVEL_STYLE[ins.level])}>
       <div className="flex items-center gap-1.5 shrink-0 mt-0.5">
         <div className={clsx("w-2 h-2 rounded-full shrink-0", LEVEL_DOT[ins.level])} />
         <span className={clsx(
@@ -75,14 +94,34 @@ export function InsightRow({ ins, onNavigate }: { ins: Insight; onNavigate: (rou
         <div className="text-xs font-semibold text-stone-800">{ins.message}</div>
         {ins.detail && <div className="text-[10px] text-stone-500 mt-0.5">{ins.detail}</div>}
       </div>
-      {ins.route && ins.action && (
-        <button
-          onClick={() => onNavigate(ins.route!)}
-          className="flex items-center gap-0.5 text-[10px] font-semibold text-red-600 hover:text-red-800 shrink-0 mt-0.5"
-        >
-          {ins.action} <ArrowRight className="w-3 h-3" />
-        </button>
-      )}
+      <div className="flex items-center gap-2 shrink-0 mt-0.5">
+        {ins.route && ins.action && (
+          <button
+            onClick={() => onNavigate(ins.route!)}
+            className="flex items-center gap-0.5 text-[10px] font-semibold text-red-600 hover:text-red-800"
+          >
+            {ins.action} <ArrowRight className="w-3 h-3" />
+          </button>
+        )}
+        {/* Solo visibles al pasar el mouse -- no competir con el mensaje en
+            el uso normal, pero estar ahí apenas se necesitan. */}
+        <div className="hidden group-hover:flex items-center gap-1">
+          <button
+            onClick={() => dismissInsight(ins, false)}
+            title="No mostrar hoy — puede volver a aparecer mañana"
+            className="text-stone-400 hover:text-stone-700 p-0.5"
+          >
+            <Clock className="w-3 h-3" />
+          </button>
+          <button
+            onClick={() => dismissInsight(ins, true)}
+            title="No mostrar nunca más — se puede reactivar desde Configuración"
+            className="text-stone-400 hover:text-stone-700 p-0.5"
+          >
+            <BellOff className="w-3 h-3" />
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

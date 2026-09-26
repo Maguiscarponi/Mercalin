@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { api } from "@/lib/api";
-import type { BackupInfo, ConfigEntry, DeptButton, DeviceConfig, LicenseStatus, NetworkInfo, PendingSyncOp } from "@/types";
+import type { BackupInfo, ConfigEntry, DeptButton, DeviceConfig, DismissedInsight, LicenseStatus, NetworkInfo, PendingSyncOp } from "@/types";
 import { arsStringToCents, centsToARS } from "@/lib/format";
 import { usePosModeStore } from "@/stores/posMode";
 import { confirmAction, showToast } from "@/stores/dialogs";
@@ -10,6 +10,7 @@ import { useCatalogImport } from "@/stores/catalogImport";
 import { useUpdaterStore } from "@/stores/updater";
 import { useStockTrackingStore } from "@/stores/stockTracking";
 import { useCombosEnabledStore } from "@/stores/combosEnabled";
+import { useInsightsStore } from "@/stores/insights";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { getVersion } from "@tauri-apps/api/app";
@@ -122,7 +123,38 @@ export default function Configuracion() {
       setDeviceConfig(dc);
       if (dc.mode === "client") api.listPendingSyncOps().then(setPendingOps).catch(console.error);
     }).catch(console.error);
+    api.listDismissedInsights().then(setDismissedInsights).catch(console.error);
     setLoading(false);
+  }
+
+  // "Consejo del día": interruptor general (pedido por Magalí) y la lista de
+  // consejos puntuales descartados, para poder restaurarlos.
+  const [dismissedInsights, setDismissedInsights] = useState<DismissedInsight[]>([]);
+  const insightsEnabled = config.insights_enabled !== "0";
+
+  async function toggleInsights(next: boolean) {
+    if (!next) {
+      const ok = await confirmAction(
+        "Vas a dejar de ver avisos como stock crítico, vencimientos, caja abierta hace muchas horas, facturas de ARCA con error, y más. Los podés reactivar cuando quieras desde acá.",
+        { title: "¿Desactivar Consejo del día?", danger: true, confirmLabel: "Desactivar" }
+      );
+      if (!ok) return;
+    }
+    setField("insights_enabled", next ? "1" : "0");
+    await api.setConfig({ key: "insights_enabled", value: next ? "1" : "0" });
+    useInsightsStore.getState().refresh();
+  }
+
+  async function restoreDismissedInsight(insightId: string) {
+    try {
+      await api.restoreInsight(insightId);
+      setDismissedInsights((prev) => prev.filter((d) => d.insight_id !== insightId));
+      useInsightsStore.getState().refresh();
+      showToast({ message: "Consejo restaurado" });
+    } catch (e) {
+      console.error(e);
+      showToast({ message: "No se pudo restaurar", tone: "danger" });
+    }
   }
 
   async function setServerMode(enabled: boolean) {
@@ -398,6 +430,49 @@ export default function Configuracion() {
                   </p>
                 </div>
               </div>
+            </section>
+
+            <section className="card p-5">
+              <div className="flex items-center justify-between mb-1">
+                <h2 className="font-semibold text-sm">💡 Consejo del día</h2>
+                <label className="relative inline-flex cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="sr-only peer"
+                    checked={insightsEnabled}
+                    onChange={(e) => toggleInsights(e.target.checked)}
+                  />
+                  <div className="w-9 h-5 bg-stone-200 peer-checked:bg-sky-500 rounded-full transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:w-4 after:h-4 after:transition-all peer-checked:after:translate-x-4" />
+                </label>
+              </div>
+              <p className="text-xs text-stone-400 mb-4">
+                Avisos automáticos de stock crítico, vencimientos, caja abierta, metas, y más — se pueden apagar acá si no los querés ver más.
+              </p>
+              {dismissedInsights.length > 0 && (
+                <div className="border-t border-stone-100 pt-3">
+                  <p className="text-xs font-medium text-stone-600 mb-2">
+                    Consejos que descartaste ({dismissedInsights.length})
+                  </p>
+                  <div className="space-y-1.5 max-h-52 overflow-y-auto">
+                    {dismissedInsights.map((d) => (
+                      <div key={d.insight_id} className="flex items-center justify-between gap-3 text-xs bg-stone-50 rounded-md px-3 py-2">
+                        <div className="min-w-0">
+                          <div className="text-stone-700 truncate">{d.message}</div>
+                          <div className="text-[10px] text-stone-400">
+                            {d.dismissed_until ? "Oculto solo por hoy" : "Oculto para siempre"}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => restoreDismissedInsight(d.insight_id)}
+                          className="text-sky-600 hover:underline shrink-0"
+                        >
+                          Restaurar
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </section>
 
             <section className="card p-5">

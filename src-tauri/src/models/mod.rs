@@ -682,6 +682,15 @@ pub struct Insight {
     pub route: Option<String>,
 }
 
+// Un consejo descartado -- ver commands::insights y la tabla insight_dismissals.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DismissedInsight {
+    pub insight_id: String,
+    pub message: String,
+    pub dismissed_until: Option<String>, // None = para siempre
+    pub dismissed_at: String,
+}
+
 // ─── RFM de Clientes ──────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

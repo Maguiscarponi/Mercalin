@@ -1,8 +1,9 @@
 use crate::commands::{err, CmdResult};
-use crate::models::Insight;
+use crate::models::{DismissedInsight, Insight};
 use crate::AppState;
 use chrono::{Datelike, Timelike};
 use rusqlite::params;
+use std::collections::HashSet;
 use tauri::State;
 
 fn fmt_cents(cents: i64) -> String {
@@ -51,6 +52,16 @@ macro_rules! push {
 #[tauri::command]
 pub fn get_insights(state: State<AppState>) -> CmdResult<Vec<Insight>> {
     let conn = state.db.lock();
+
+    // Interruptor general, pedido por Magalí: apagado desde Configuración,
+    // no se calcula ni se muestra nada.
+    let insights_enabled: String = conn
+        .query_row("SELECT value FROM config WHERE key='insights_enabled'", [], |r| r.get(0))
+        .unwrap_or_else(|_| "1".to_string());
+    if insights_enabled == "0" {
+        return Ok(Vec::new());
+    }
+
     let mut out: Vec<Insight> = Vec::new();
 
     let now = chrono::Local::now();
@@ -913,7 +924,75 @@ pub fn get_insights(state: State<AppState>) -> CmdResult<Vec<Insight>> {
         }
     }
 
+    // Sacar los que la dueña ya descartó (hoy o para siempre). De paso,
+    // limpia los descartes "solo hoy" que ya vencieron -- tabla chica, no
+    // hace falta guardar esa basura.
+    let _ = conn.execute(
+        "DELETE FROM insight_dismissals WHERE dismissed_until IS NOT NULL AND dismissed_until < date('now','localtime')",
+        [],
+    );
+    let dismissed: HashSet<String> = {
+        let mut stmt = conn.prepare(
+            "SELECT insight_id FROM insight_dismissals
+             WHERE dismissed_until IS NULL OR dismissed_until >= date('now','localtime')",
+        ).map_err(err)?;
+        let x: HashSet<String> = stmt.query_map([], |r| r.get::<_, String>(0))
+            .map_err(err)?.filter_map(|r| r.ok()).collect();
+        x
+    };
+    out.retain(|i| !dismissed.contains(&i.id));
+
     // Ordenar: urgente → importante → consejo → info
     out.sort_by_key(|i| level_priority(&i.level));
     Ok(out)
+}
+
+// Pedido por Magalí: poder sacar un consejo puntual en vez de tener que
+// verlo todos los días -- "hoy" (dismissed_until = fecha de hoy, vuelve a
+// aparecer mañana si la condición sigue) o "para siempre" (dismissed_until
+// NULL, solo vuelve si se restaura a mano desde Configuración).
+#[tauri::command]
+pub fn dismiss_insight(insight_id: String, message: String, forever: bool, state: State<AppState>) -> CmdResult<()> {
+    let conn = state.db.lock();
+    let dismissed_until: Option<String> = if forever {
+        None
+    } else {
+        conn.query_row("SELECT date('now','localtime')", [], |r| r.get(0)).ok()
+    };
+    conn.execute(
+        "INSERT INTO insight_dismissals (insight_id, message, dismissed_until, dismissed_at)
+         VALUES (?1, ?2, ?3, CURRENT_TIMESTAMP)
+         ON CONFLICT(insight_id) DO UPDATE SET message=excluded.message, dismissed_until=excluded.dismissed_until, dismissed_at=CURRENT_TIMESTAMP",
+        params![insight_id, message, dismissed_until],
+    ).map_err(err)?;
+    Ok(())
+}
+
+// Para la lista de "consejos ocultos" en Configuración -- deja restaurar uno
+// puntual sin tener que esperar a que venza solo (los "para siempre" nunca
+// vencerían) ni tocar la base a mano.
+#[tauri::command]
+pub fn list_dismissed_insights(state: State<AppState>) -> CmdResult<Vec<DismissedInsight>> {
+    let conn = state.db.lock();
+    let mut stmt = conn.prepare(
+        "SELECT insight_id, message, dismissed_until, dismissed_at FROM insight_dismissals ORDER BY dismissed_at DESC",
+    ).map_err(err)?;
+    let rows = stmt.query_map([], |r| {
+        Ok(DismissedInsight {
+            insight_id: r.get(0)?,
+            message: r.get(1)?,
+            dismissed_until: r.get(2)?,
+            dismissed_at: r.get(3)?,
+        })
+    }).map_err(err)?;
+    let mut out = Vec::new();
+    for r in rows { out.push(r.map_err(err)?); }
+    Ok(out)
+}
+
+#[tauri::command]
+pub fn restore_insight(insight_id: String, state: State<AppState>) -> CmdResult<()> {
+    let conn = state.db.lock();
+    conn.execute("DELETE FROM insight_dismissals WHERE insight_id=?1", params![insight_id]).map_err(err)?;
+    Ok(())
 }

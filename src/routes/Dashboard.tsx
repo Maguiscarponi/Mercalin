@@ -225,6 +225,7 @@ function AllAlertsModal({
 export default function Dashboard() {
   const [data, setData] = useState<DashboardData | null>(null);
   const insights = useInsightsStore((s) => s.insights);
+  const insightsHydrated = useInsightsStore((s) => s.hydrated);
   const [loading, setLoading] = useState(true);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [hasProducts, setHasProducts] = useState(false);
@@ -270,8 +271,15 @@ export default function Dashboard() {
     );
   }
 
-  // Insights vienen de Rust — fallback a los del frontend si aún no cargaron
-  const activeInsights = insights.length > 0 ? insights : buildInsights(data);
+  // Insights vienen de Rust — fallback a los del frontend SOLO mientras
+  // todavía no cargó la respuesta real (evita el parpadeo en blanco al
+  // entrar). Encontrado en el análisis: antes se usaba el fallback cada vez
+  // que la lista real venía vacía, sin distinguir "todavía no cargó" de
+  // "cargó y no hay nada" -- eso rompía tanto el interruptor general (si se
+  // apaga Consejo del día, el backend responde [] a propósito) como poder
+  // descartar consejos (si ya se descartaron todos, volvían a aparecer los
+  // del fallback, que no respetan ni el apagado ni los descartes).
+  const activeInsights = insightsHydrated ? insights : buildInsights(data);
   const totalAlerts =
     data.critical_stock.length + data.expiring_soon.length + data.overdue_accounts.length;
 

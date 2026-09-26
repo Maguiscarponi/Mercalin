@@ -32,7 +32,7 @@ import type {
   CostInflationItem, CountAdjustment, CsvProductRow,
   DailyReport, DashboardData,
   ExpiringProduct, ExpiringLot, LowStockProduct, StockAdjustInput, StockMovement,
-  ImportResult, Insight, InventoryCountItem, IvaReportItem,
+  ImportResult, Insight, DismissedInsight, InventoryCountItem, IvaReportItem,
   NetworkInfo,
   NewProduct, Product, ProductLot, NewProductLot, ProductVelocity, PriceSyncAlert,
   WeighedLabel, NewWeighedLabel,
@@ -385,6 +385,15 @@ export const api = {
   // ─── Insights (motor BI) ────────────────────────────────────────────────────
   getInsights: () =>
     rpc<Insight[]>("get_insights"),
+
+  dismissInsight: (insightId: string, message: string, forever: boolean) =>
+    rpc<void>("dismiss_insight", { insightId, message, forever }),
+
+  listDismissedInsights: () =>
+    rpc<DismissedInsight[]>("list_dismissed_insights"),
+
+  restoreInsight: (insightId: string) =>
+    rpc<void>("restore_insight", { insightId }),
 
   // ─── RFM de clientes ────────────────────────────────────────────────────────
   getClientsRfm: () =>
