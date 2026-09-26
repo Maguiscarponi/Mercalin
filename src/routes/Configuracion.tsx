@@ -161,6 +161,28 @@ export default function Configuracion() {
     }
   }
 
+  // Encontrado en la auditoría: la única forma de forzar una resincronización
+  // completa era desconectar y volver a conectar a mano -- reusa las mismas
+  // credenciales ya guardadas, sin pedirle a la dueña que las vuelva a tipear.
+  const [resyncing, setResyncing] = useState(false);
+  async function doForceResync() {
+    if (!deviceConfig?.serverAddr || !deviceConfig?.networkToken) return;
+    const ok = await confirmAction(
+      "Se vuelve a descargar toda la base del servidor, reemplazando lo que esta caja tenga guardado local. Hace falta reiniciar para terminar.",
+      { title: "¿Resincronizar todo desde el servidor?", confirmLabel: "Resincronizar y reiniciar" }
+    );
+    if (!ok) return;
+    setResyncing(true);
+    try {
+      await api.bootstrapFromServer(deviceConfig.serverAddr, deviceConfig.networkToken);
+      showToast({ message: "Descarga completa — reiniciando…", tone: "success" });
+      setTimeout(() => relaunch(), 800);
+    } catch (e) {
+      showToast({ message: `Error: ${e}`, tone: "danger" });
+      setResyncing(false);
+    }
+  }
+
   async function doDisconnectClient() {
     await api.disconnectClient();
     setDeviceConfig({
@@ -765,9 +787,14 @@ export default function Configuracion() {
                           ))}
                         </div>
                       )}
-                      <button onClick={doDisconnectClient} className="text-xs text-stone-500 underline mt-2">
-                        Desconectar (volver a standalone)
-                      </button>
+                      <div className="flex items-center gap-3 mt-2">
+                        <button onClick={doForceResync} disabled={resyncing} className="text-xs text-stone-600 underline disabled:opacity-50">
+                          {resyncing ? "Resincronizando…" : "Resincronizar todo"}
+                        </button>
+                        <button onClick={doDisconnectClient} className="text-xs text-stone-500 underline">
+                          Desconectar (volver a standalone)
+                        </button>
+                      </div>
                     </div>
                   ) : (
                     <div className="flex gap-2">

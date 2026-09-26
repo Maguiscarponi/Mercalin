@@ -429,6 +429,21 @@ export default function Layout() {
             </button>
             <span className="text-white text-[11px] font-semibold uppercase tracking-wider">{focusLabel}</span>
             <div className="flex-1" />
+            {/* Encontrado en la auditoría: el estado de sincronización solo
+                vivía en el sidebar, que el modo foco de Caja (la pantalla más
+                usada) oculta por completo -- un cajero podía llevar horas
+                vendiendo offline sin ninguna señal visible de que pasó. */}
+            {posModeMode === "client" && (
+              <span
+                title={syncStatus === "online" ? "Conectada al servidor" : syncStatus === "syncing" ? "Sincronizando…" : "Sin conexión — vendiendo local"}
+                className="flex items-center gap-1.5 px-2 shrink-0"
+              >
+                <span className={clsx(
+                  "w-2 h-2 rounded-full",
+                  syncStatus === "online" ? "bg-emerald-400" : syncStatus === "syncing" ? "bg-amber-300" : "bg-orange-300 animate-pulse"
+                )} />
+              </span>
+            )}
             <button
               onClick={() => setShowInsights(true)}
               title="Consejos del día"
