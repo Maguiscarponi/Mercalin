@@ -125,18 +125,18 @@ pub fn dispatch(app: &AppHandle, command: &str, body: Value) -> RpcResult {
 
         // Promociones
         "list_promotions" => crate::commands::promotions::list_promotions[],
-        "create_promotion" => crate::commands::promotions::create_promotion[promo: crate::models::NewPromotion],
-        "update_promotion" => crate::commands::promotions::update_promotion[promo: crate::models::Promotion],
-        "toggle_promotion" => crate::commands::promotions::toggle_promotion[id: i64],
-        "delete_promotion" => crate::commands::promotions::delete_promotion[id: i64],
+        "create_promotion" => crate::commands::promotions::create_promotion[promo: crate::models::NewPromotion, actor_id: Option<i64>],
+        "update_promotion" => crate::commands::promotions::update_promotion[promo: crate::models::Promotion, actor_id: Option<i64>],
+        "toggle_promotion" => crate::commands::promotions::toggle_promotion[id: i64, actor_id: Option<i64>],
+        "delete_promotion" => crate::commands::promotions::delete_promotion[id: i64, actor_id: Option<i64>],
 
         // Presupuestos
         "list_quotes" => crate::commands::quotes::list_quotes[],
         "get_quote_with_items" => crate::commands::quotes::get_quote_with_items[id: i64],
-        "create_quote" => crate::commands::quotes::create_quote[quote: crate::models::NewQuote],
-        "update_quote" => crate::commands::quotes::update_quote[id: i64, quote: crate::models::NewQuote],
-        "update_quote_status" => crate::commands::quotes::update_quote_status[id: i64, status: String],
-        "delete_quote" => crate::commands::quotes::delete_quote[id: i64],
+        "create_quote" => crate::commands::quotes::create_quote[quote: crate::models::NewQuote, actor_id: Option<i64>],
+        "update_quote" => crate::commands::quotes::update_quote[id: i64, quote: crate::models::NewQuote, actor_id: Option<i64>],
+        "update_quote_status" => crate::commands::quotes::update_quote_status[id: i64, status: String, actor_id: Option<i64>],
+        "delete_quote" => crate::commands::quotes::delete_quote[id: i64, actor_id: Option<i64>],
 
         // Devoluciones
         "create_return" => crate::commands::returns::create_return[input: crate::models::NewReturn],
@@ -207,8 +207,8 @@ pub fn dispatch(app: &AppHandle, command: &str, body: Value) -> RpcResult {
 
         // ARCA / facturación electrónica
         "get_arca_config" => crate::commands::arca::get_arca_config[],
-        "save_arca_config" => crate::commands::arca::save_arca_config[input: crate::models::ArcaConfigInput],
-        "reset_arca_data" => crate::commands::arca::reset_arca_data[],
+        "save_arca_config" => crate::commands::arca::save_arca_config[input: crate::models::ArcaConfigInput, actor_id: Option<i64>],
+        "reset_arca_data" => crate::commands::arca::reset_arca_data[actor_id: Option<i64>],
         "generate_arca_keypair" => crate::commands::arca::generate_arca_keypair[],
         "load_arca_certificate" => crate::commands::arca::load_arca_certificate[cert_pem: String],
         "test_arca_connection" => crate::commands::arca::test_arca_connection[],
@@ -217,5 +217,6 @@ pub fn dispatch(app: &AppHandle, command: &str, body: Value) -> RpcResult {
         "list_electronic_invoices" => crate::commands::arca::list_electronic_invoices[limit: i64],
         "get_invoice_for_sale" => crate::commands::arca::get_invoice_for_sale[sale_id: i64],
         "retry_pending_invoices" => crate::commands::arca::retry_pending_invoices[],
+        "retry_invoice" => crate::commands::arca::retry_invoice[invoice_id: i64],
     })
 }

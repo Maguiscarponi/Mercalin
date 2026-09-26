@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { centsToARS, arsStringToCents, todayISO } from "@/lib/format";
 import { confirmAction, showToast } from "@/stores/dialogs";
+import { useAuthStore } from "@/stores/auth";
 import Field from "@/components/ui/Field";
 import { useEscapeToClose } from "@/lib/useEscapeToClose";
 import ModalCloseButton from "@/components/ui/ModalCloseButton";
@@ -38,6 +39,7 @@ function targetLabel(p: Promotion): string {
 }
 
 export default function Promociones() {
+  const actorId = useAuthStore((s) => s.user?.id ?? null);
   const [promos, setPromos] = useState<Promotion[]>([]);
   const [editing, setEditing] = useState<Partial<Promotion> | null>(null);
 
@@ -53,7 +55,7 @@ export default function Promociones() {
 
   async function handleToggle(id: number) {
     try {
-      const updated = await api.togglePromotion(id);
+      const updated = await api.togglePromotion(id, actorId);
       setPromos((prev) => prev.map((p) => (p.id === id ? updated : p)));
     } catch (e) {
       console.error(e);
@@ -64,7 +66,7 @@ export default function Promociones() {
   async function handleDelete(id: number) {
     if (!(await confirmAction("Esta acción no se puede deshacer.", { title: "¿Eliminar esta promoción?", danger: true, confirmLabel: "Eliminar" }))) return;
     try {
-      await api.deletePromotion(id);
+      await api.deletePromotion(id, actorId);
       load();
       showToast({ message: "Promoción eliminada" });
     } catch (e) {
@@ -76,9 +78,9 @@ export default function Promociones() {
   async function handleSave(promo: Partial<Promotion>) {
     try {
       if (promo.id) {
-        await api.updatePromotion(promo as Promotion);
+        await api.updatePromotion(promo as Promotion, actorId);
       } else {
-        await api.createPromotion(promo as NewPromotion);
+        await api.createPromotion(promo as NewPromotion, actorId);
       }
       setEditing(null);
       load();

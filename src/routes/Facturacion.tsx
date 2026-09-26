@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { api } from "@/lib/api";
+import { useAuthStore } from "@/stores/auth";
 import { centsToARS, arsStringToCents } from "@/lib/format";
 import type { ArcaConfig, ArcaConfigInput, Client, CondicionIvaCliente, ElectronicInvoice } from "@/types";
 import { showToast, confirmAction } from "@/stores/dialogs";
@@ -112,6 +113,21 @@ export default function Facturacion() {
       else showToast({ message: "Sin facturas pendientes o sin conexión a ARCA" });
     } catch (e) { showToast({ message: `Error: ${e}`, tone: "danger" }); }
     finally { setRetrying(false); }
+  }
+
+  // Reintento puntual de una factura en error/pendiente -- antes solo existía
+  // el reintento en lote de arriba (que además solo miraba "pendiente", un
+  // estado al que casi nunca se llegaba).
+  const [retryingId, setRetryingId] = useState<number | null>(null);
+  async function retryOne(id: number) {
+    setRetryingId(id);
+    try {
+      const inv = await api.retryInvoice(id);
+      if (inv.status === "autorizada") showToast({ message: "Factura autorizada", tone: "success" });
+      else showToast({ message: inv.error_msg || "ARCA volvió a rechazarla", tone: "danger" });
+      load();
+    } catch (e) { showToast({ message: `Error: ${e}`, tone: "danger" }); }
+    finally { setRetryingId(null); }
   }
 
   const pendientes = invoices.filter((i) => i.status === "pendiente");
@@ -339,6 +355,15 @@ export default function Facturacion() {
                             <button onClick={() => setSelected(inv)} className="text-xs text-stone-400 hover:text-stone-700 mr-2">Ver</button>
                             {inv.status === "autorizada" && (
                               <button onClick={() => setPrinting(inv)} className="text-xs text-red-500 hover:text-red-700 mr-2">🖨️</button>
+                            )}
+                            {(inv.status === "error" || inv.status === "pendiente") && (
+                              <button
+                                onClick={() => retryOne(inv.id)}
+                                disabled={retryingId === inv.id}
+                                className="text-xs text-amber-600 hover:text-amber-800 mr-2 disabled:opacity-40"
+                              >
+                                {retryingId === inv.id ? "Reintentando…" : "🔄 Reintentar"}
+                              </button>
                             )}
                             {puedeAnular && (
                               <button
@@ -593,6 +618,8 @@ function NuevaFacturaModal({ arcaConfig, onClose, onIssued }: { arcaConfig: Arca
 // ── Wizard de configuración ARCA ────────────────────────────────────────────
 
 function ArcaSetup({ arcaConfig, onRefresh }: { arcaConfig: ArcaConfig | null; onRefresh: () => void }) {
+  const actorId = useAuthStore((s) => s.user?.id ?? null);
+  const currentRole = useAuthStore((s) => s.user?.role ?? null);
   const [form, setForm] = useState<ArcaConfigInput>({
     cuit: arcaConfig?.cuit || "",
     razon_social: arcaConfig?.razon_social || "",
@@ -617,7 +644,7 @@ function ArcaSetup({ arcaConfig, onRefresh }: { arcaConfig: ArcaConfig | null; o
   async function saveCfg() {
     setSavingCfg(true);
     try {
-      await api.saveArcaConfig({ ...form, cuit: form.cuit.trim().replace(/-/g, "") });
+      await api.saveArcaConfig({ ...form, cuit: form.cuit.trim().replace(/-/g, "") }, actorId);
       onRefresh();
       showToast({ message: "Datos guardados", tone: "success" });
     } catch (e) { showToast({ message: `Error: ${e}`, tone: "danger" }); }
@@ -653,7 +680,7 @@ function ArcaSetup({ arcaConfig, onRefresh }: { arcaConfig: ArcaConfig | null; o
     if (!ok) return;
     setResetting(true);
     try {
-      await api.resetArcaData();
+      await api.resetArcaData(actorId);
       setActiveStep(1);
       onRefresh();
       showToast({ message: "Configuración de ARCA borrada", tone: "success" });
@@ -1033,9 +1060,17 @@ function ArcaSetup({ arcaConfig, onRefresh }: { arcaConfig: ArcaConfig | null; o
             Borra el CUIT, el certificado y todo el historial de facturas/notas de crédito guardado en esta compu.
             No toca nada de tu ARCA real. Útil para descartar pruebas antes de pasar a Producción.
           </p>
-          <button onClick={resetAll} disabled={resetting} className="btn text-sm bg-orange-50 text-orange-700 border border-orange-200 hover:bg-orange-100 disabled:opacity-50">
-            {resetting ? "Borrando…" : "🗑️ Borrar configuración y facturas de ARCA"}
-          </button>
+          {/* Encontrado en la auditoría: esto borra facturas autorizadas reales
+              (CAE incluido) sin vuelta atrás -- ahora el backend exige admin, y
+              acá se oculta directamente para el resto en vez de mostrar el
+              botón y fallar recién al hacer clic. */}
+          {currentRole === "admin" ? (
+            <button onClick={resetAll} disabled={resetting} className="btn text-sm bg-orange-50 text-orange-700 border border-orange-200 hover:bg-orange-100 disabled:opacity-50">
+              {resetting ? "Borrando…" : "🗑️ Borrar configuración y facturas de ARCA"}
+            </button>
+          ) : (
+            <p className="text-xs text-stone-400 italic">Esta acción requiere un usuario administrador.</p>
+          )}
         </div>
       )}
     </div>

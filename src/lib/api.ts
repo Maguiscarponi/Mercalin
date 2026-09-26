@@ -285,17 +285,17 @@ export const api = {
   listPromotions: () =>
     rpc<Promotion[]>("list_promotions"),
 
-  createPromotion: (promo: NewPromotion) =>
-    rpc<Promotion>("create_promotion", { promo }),
+  createPromotion: (promo: NewPromotion, actorId: number | null) =>
+    rpc<Promotion>("create_promotion", { promo, actorId }),
 
-  updatePromotion: (promo: Promotion) =>
-    rpc<Promotion>("update_promotion", { promo }),
+  updatePromotion: (promo: Promotion, actorId: number | null) =>
+    rpc<Promotion>("update_promotion", { promo, actorId }),
 
-  togglePromotion: (id: number) =>
-    rpc<Promotion>("toggle_promotion", { id }),
+  togglePromotion: (id: number, actorId: number | null) =>
+    rpc<Promotion>("toggle_promotion", { id, actorId }),
 
-  deletePromotion: (id: number) =>
-    rpc<void>("delete_promotion", { id }),
+  deletePromotion: (id: number, actorId: number | null) =>
+    rpc<void>("delete_promotion", { id, actorId }),
 
   // ─── Devoluciones ───────────────────────────────────────────────────────────
   createReturn: (input: NewReturn) =>
@@ -324,17 +324,17 @@ export const api = {
   getQuoteWithItems: (id: number) =>
     rpc<QuoteWithItems>("get_quote_with_items", { id }),
 
-  createQuote: (quote: NewQuote) =>
-    rpc<Quote>("create_quote", { quote }),
+  createQuote: (quote: NewQuote, actorId: number | null) =>
+    rpc<Quote>("create_quote", { quote, actorId }),
 
-  updateQuote: (id: number, quote: NewQuote) =>
-    rpc<Quote>("update_quote", { id, quote }),
+  updateQuote: (id: number, quote: NewQuote, actorId: number | null) =>
+    rpc<Quote>("update_quote", { id, quote, actorId }),
 
-  updateQuoteStatus: (id: number, status: string) =>
-    rpc<Quote>("update_quote_status", { id, status }),
+  updateQuoteStatus: (id: number, status: string, actorId: number | null) =>
+    rpc<Quote>("update_quote_status", { id, status, actorId }),
 
-  deleteQuote: (id: number) =>
-    rpc<void>("delete_quote", { id }),
+  deleteQuote: (id: number, actorId: number | null) =>
+    rpc<void>("delete_quote", { id, actorId }),
 
   // ─── Proveedores (auto-orders) ───────────────────────────────────────────────
   generateAutoOrders: () =>
@@ -516,11 +516,11 @@ export const api = {
   getArcaConfig: () =>
     rpc<ArcaConfig | null>("get_arca_config"),
 
-  saveArcaConfig: (input: ArcaConfigInput) =>
-    rpc<void>("save_arca_config", { input }),
+  saveArcaConfig: (input: ArcaConfigInput, actorId: number | null) =>
+    rpc<void>("save_arca_config", { input, actorId }),
 
-  resetArcaData: () =>
-    rpc<void>("reset_arca_data"),
+  resetArcaData: (actorId: number | null) =>
+    rpc<void>("reset_arca_data", { actorId }),
 
   generateArcaKeypair: () =>
     rpc<string>("generate_arca_keypair"),
@@ -545,6 +545,9 @@ export const api = {
 
   retryPendingInvoices: () =>
     rpc<number>("retry_pending_invoices"),
+
+  retryInvoice: (invoiceId: number) =>
+    rpc<ElectronicInvoice>("retry_invoice", { invoiceId }),
 
   // ─── Import de catálogo público (Open Food Facts) ──────────────────────
   // El progreso y el resultado final llegan por los eventos "catalog_import_progress"

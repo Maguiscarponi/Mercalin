@@ -57,6 +57,86 @@ pub fn require_admin(conn: &rusqlite::Connection, actor_id: Option<i64>) -> CmdR
     }
 }
 
+fn role_rank(role: &str) -> i32 {
+    match role {
+        "admin" => 3,
+        "supervisor" => 2,
+        "cajero" => 1,
+        _ => 0,
+    }
+}
+
+// Encontrado en la auditoría: Promociones y Presupuestos no tenían NINGÚN
+// control de rol en el backend (peor que Usuarios) -- el acceso existía
+// solo como <RequireRole> en el router de React, totalmente evitable con un
+// invoke directo. Mismo límite documentado en require_admin: no hay sesión
+// real con token, actor_id sigue siendo un argumento que el llamador elige.
+pub fn require_role(conn: &rusqlite::Connection, actor_id: Option<i64>, min_role: &str) -> CmdResult<()> {
+    let role: Option<String> = actor_id.and_then(|id| {
+        conn.query_row(
+            "SELECT role FROM users WHERE id=?1 AND active=1",
+            rusqlite::params![id],
+            |r| r.get(0),
+        )
+        .ok()
+    });
+    let ok = role.as_deref().map(|r| role_rank(r) >= role_rank(min_role)).unwrap_or(false);
+    if ok {
+        Ok(())
+    } else {
+        Err(format!("Esta acción requiere permisos de {}.", if min_role == "admin" { "administrador" } else { "supervisor o administrador" }))
+    }
+}
+
+#[cfg(test)]
+mod require_role_tests {
+    use super::require_role;
+    use std::path::Path;
+
+    fn insert_user(conn: &rusqlite::Connection, role: &str) -> i64 {
+        conn.execute(
+            "INSERT INTO users (username, full_name, password_hash, role, active) VALUES (?1, ?1, 'x', ?2, 1)",
+            rusqlite::params![format!("user_{}", role), role],
+        ).unwrap();
+        conn.last_insert_rowid()
+    }
+
+    #[test]
+    fn cajero_no_alcanza_para_supervisor() {
+        let conn = crate::db::open_and_migrate(Path::new(":memory:")).unwrap();
+        let id = insert_user(&conn, "cajero");
+        assert!(require_role(&conn, Some(id), "supervisor").is_err());
+    }
+
+    #[test]
+    fn supervisor_alcanza_para_supervisor() {
+        let conn = crate::db::open_and_migrate(Path::new(":memory:")).unwrap();
+        let id = insert_user(&conn, "supervisor");
+        assert!(require_role(&conn, Some(id), "supervisor").is_ok());
+    }
+
+    #[test]
+    fn admin_alcanza_para_cualquier_nivel() {
+        let conn = crate::db::open_and_migrate(Path::new(":memory:")).unwrap();
+        let id = insert_user(&conn, "admin");
+        assert!(require_role(&conn, Some(id), "supervisor").is_ok());
+        assert!(require_role(&conn, Some(id), "admin").is_ok());
+    }
+
+    #[test]
+    fn supervisor_no_alcanza_para_admin() {
+        let conn = crate::db::open_and_migrate(Path::new(":memory:")).unwrap();
+        let id = insert_user(&conn, "supervisor");
+        assert!(require_role(&conn, Some(id), "admin").is_err());
+    }
+
+    #[test]
+    fn sin_actor_id_no_alcanza_para_nada() {
+        let conn = crate::db::open_and_migrate(Path::new(":memory:")).unwrap();
+        assert!(require_role(&conn, None, "supervisor").is_err());
+    }
+}
+
 #[cfg(test)]
 mod require_admin_tests {
     use super::require_admin;

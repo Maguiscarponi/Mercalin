@@ -1,4 +1,4 @@
-use crate::commands::{err, CmdResult};
+use crate::commands::{err, require_role, CmdResult};
 use crate::models::{NewQuote, Quote, QuoteItem, QuoteWithItems};
 use crate::AppState;
 use rusqlite::params;
@@ -63,8 +63,9 @@ pub fn get_quote_with_items(id: i64, state: State<AppState>) -> CmdResult<QuoteW
 }
 
 #[tauri::command]
-pub fn create_quote(quote: NewQuote, state: State<AppState>) -> CmdResult<Quote> {
+pub fn create_quote(quote: NewQuote, actor_id: Option<i64>, state: State<AppState>) -> CmdResult<Quote> {
     let mut conn = state.db.lock();
+    require_role(&conn, actor_id, "supervisor")?;
     let tx = conn.transaction().map_err(err)?;
 
     let subtotal: i64 = quote.items.iter().map(|i| {
@@ -97,8 +98,9 @@ pub fn create_quote(quote: NewQuote, state: State<AppState>) -> CmdResult<Quote>
 }
 
 #[tauri::command]
-pub fn update_quote(id: i64, quote: NewQuote, state: State<AppState>) -> CmdResult<Quote> {
+pub fn update_quote(id: i64, quote: NewQuote, actor_id: Option<i64>, state: State<AppState>) -> CmdResult<Quote> {
     let mut conn = state.db.lock();
+    require_role(&conn, actor_id, "supervisor")?;
     let tx = conn.transaction().map_err(err)?;
 
     let subtotal: i64 = quote.items.iter().map(|i| {
@@ -130,8 +132,9 @@ pub fn update_quote(id: i64, quote: NewQuote, state: State<AppState>) -> CmdResu
 }
 
 #[tauri::command]
-pub fn update_quote_status(id: i64, status: String, state: State<AppState>) -> CmdResult<Quote> {
+pub fn update_quote_status(id: i64, status: String, actor_id: Option<i64>, state: State<AppState>) -> CmdResult<Quote> {
     let conn = state.db.lock();
+    require_role(&conn, actor_id, "supervisor")?;
     conn.execute(
         "UPDATE quotes SET status=?1, updated_at=datetime('now') WHERE id=?2",
         params![status, id],
@@ -142,8 +145,9 @@ pub fn update_quote_status(id: i64, status: String, state: State<AppState>) -> C
 }
 
 #[tauri::command]
-pub fn delete_quote(id: i64, state: State<AppState>) -> CmdResult<()> {
+pub fn delete_quote(id: i64, actor_id: Option<i64>, state: State<AppState>) -> CmdResult<()> {
     let conn = state.db.lock();
+    require_role(&conn, actor_id, "supervisor")?;
     conn.execute("DELETE FROM quotes WHERE id=?1", params![id]).map_err(err)?;
     Ok(())
 }

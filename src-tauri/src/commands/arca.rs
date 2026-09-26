@@ -1,4 +1,4 @@
-use crate::commands::{err, CmdResult};
+use crate::commands::{audit::log_action, err, require_role, CmdResult};
 use crate::models::{ArcaConfig, ArcaConfigInput, ElectronicInvoice, InvoiceInput};
 use crate::AppState;
 use base64::{engine::general_purpose::STANDARD as B64, Engine};
@@ -86,8 +86,14 @@ pub fn get_arca_config(state: State<AppState>) -> CmdResult<Option<ArcaConfig>> 
 }
 
 #[tauri::command]
-pub fn save_arca_config(input: ArcaConfigInput, state: State<AppState>) -> CmdResult<()> {
+pub fn save_arca_config(input: ArcaConfigInput, actor_id: Option<i64>, state: State<AppState>) -> CmdResult<()> {
     let conn = state.db.lock();
+    // Encontrado en la auditoría: guardar la configuración de ARCA (CUIT,
+    // razón social, punto de venta, condición de IVA del negocio) no
+    // requería ningún rol del lado del servidor ni quedaba registrado en
+    // Auditoría, pese a ser uno de los datos más sensibles del sistema
+    // (de acá depende qué factura se emite y a nombre de quién).
+    require_role(&conn, actor_id, "supervisor")?;
     conn.execute(
         "INSERT INTO arca_config (id, cuit, razon_social, punto_venta, environment, condicion_iva, domicilio, ingresos_brutos, inicio_actividades, updated_at)
          VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, CURRENT_TIMESTAMP)
@@ -102,6 +108,7 @@ pub fn save_arca_config(input: ArcaConfigInput, state: State<AppState>) -> CmdRe
             input.ingresos_brutos, input.inicio_actividades,
         ],
     ).map_err(err)?;
+    log_action(&conn, actor_id, "editar", "arca_config", None, Some(&format!("CUIT: {}, razón social: {}", input.cuit, input.razon_social.as_deref().unwrap_or("—"))));
     Ok(())
 }
 
@@ -112,8 +119,16 @@ pub fn save_arca_config(input: ArcaConfigInput, state: State<AppState>) -> CmdRe
 // nada del lado de ARCA (eso es imposible de todos modos): solo borra lo
 // que hay guardado localmente en esta base.
 #[tauri::command]
-pub fn reset_arca_data(state: State<AppState>) -> CmdResult<()> {
+pub fn reset_arca_data(actor_id: Option<i64>, state: State<AppState>) -> CmdResult<()> {
     let conn = state.db.lock();
+    // Encontrado en la auditoría: borra TODO el historial real de facturas
+    // autorizadas (CAE incluido) sin ningún control de rol ni de auditoría --
+    // se exige admin específicamente (más estricto que el resto de ARCA, que
+    // alcanza con supervisor) por ser irreversible y perder trazabilidad
+    // fiscal real.
+    require_role(&conn, actor_id, "admin")?;
+    let invoice_count: i64 = conn.query_row("SELECT COUNT(*) FROM electronic_invoices WHERE status='autorizada'", [], |r| r.get(0)).unwrap_or(0);
+    log_action(&conn, actor_id, "borrar", "arca_config", None, Some(&format!("Reseteo de ARCA: se perdió el historial de {} factura(s) autorizada(s)", invoice_count)));
     conn.execute("DELETE FROM electronic_invoices", []).map_err(err)?;
     conn.execute("DELETE FROM arca_config", []).map_err(err)?;
     Ok(())
@@ -456,8 +471,25 @@ fn call_fecae_solicitar(
     Ok((cae, cae_expires))
 }
 
+// Encontrado en la auditoría: Facturación decide Factura A/B/C por reglas de
+// negocio (condición de IVA), pero el tipo de documento del receptor (CUIT
+// vs. DNI) lo decidía el frontend solo por la LONGITUD del texto ingresado,
+// sin ninguna validación cruzada del lado del servidor -- una Factura A con
+// un documento que no es un CUIT de 11 dígitos podía llegar a pedirse.
+fn validate_invoice_input(input: &InvoiceInput) -> CmdResult<()> {
+    if input.invoice_type == "A" {
+        let digits_only = input.doc_nro.chars().all(|c| c.is_ascii_digit());
+        if input.doc_tipo != 80 || input.doc_nro.len() != 11 || !digits_only {
+            return Err("Una Factura A necesita el CUIT del receptor (11 dígitos), no un DNI.".to_string());
+        }
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub fn issue_electronic_invoice(input: InvoiceInput, state: State<AppState>) -> CmdResult<ElectronicInvoice> {
+    validate_invoice_input(&input)?;
+
     let (cuit, punto_venta, environment) = {
         let conn = state.db.lock();
         conn.query_row(
@@ -466,6 +498,23 @@ pub fn issue_electronic_invoice(input: InvoiceInput, state: State<AppState>) -> 
         ).map_err(|_| "No hay configuración ARCA".to_string())?
     };
     let ct = cbte_tipo(&input.invoice_type);
+
+    // Encontrado en la auditoría: si ARCA tardaba más de lo que espera la app
+    // pero en realidad terminó autorizando la factura, "Reintentar" emitía un
+    // segundo comprobante real -- un CAE fantasma que la app nunca vio. Antes
+    // de intentar de nuevo, se chequea si esta venta ya tiene una factura
+    // autorizada en el propio historial.
+    if let Some(sid) = input.sale_id {
+        let conn = state.db.lock();
+        let existing_id: Option<i64> = conn.query_row(
+            "SELECT id FROM electronic_invoices WHERE sale_id=?1 AND status='autorizada' AND credited_invoice_id IS NULL LIMIT 1",
+            params![sid], |r| r.get(0),
+        ).ok();
+        if let Some(id) = existing_id {
+            drop(conn);
+            return fetch_invoice(&state, id);
+        }
+    }
 
     let inv_id = {
         let conn = state.db.lock();
@@ -502,9 +551,10 @@ pub fn issue_electronic_invoice(input: InvoiceInput, state: State<AppState>) -> 
                 ).map_err(err)?;
             }
             Err(e) => {
+                let status = if is_connectivity_error(e) { "pendiente" } else { "error" };
                 conn.execute(
-                    "UPDATE electronic_invoices SET status='error', error_msg=?1 WHERE id=?2",
-                    params![e, inv_id],
+                    "UPDATE electronic_invoices SET status=?1, error_msg=?2 WHERE id=?3",
+                    params![status, e, inv_id],
                 ).map_err(err)?;
             }
         }
@@ -558,6 +608,23 @@ pub fn issue_credit_note(
             if ya_anulada.is_some() {
                 return Err("Esta factura ya tiene una nota de crédito emitida.".to_string());
             }
+        }
+
+        // Defensa adicional (más allá de lo que ya garantiza returns.rs con la
+        // cantidad vendida vs. devuelta): la suma de todas las notas de
+        // crédito ya emitidas para esta factura, más la nueva, nunca puede
+        // superar el total de la factura original.
+        let already_credited: i64 = conn.query_row(
+            "SELECT COALESCE(SUM(total_cents), 0) FROM electronic_invoices
+             WHERE credited_invoice_id=?1 AND status IN ('autorizada','pendiente')",
+            params![invoice_id], |r| r.get(0),
+        ).unwrap_or(0);
+        let this_amount = amount_cents.unwrap_or(original.total_cents);
+        if already_credited + this_amount > original.total_cents {
+            return Err(format!(
+                "Esta nota de crédito ({}) sumada a las ya emitidas ({}) superaría el total de la factura original ({}).",
+                this_amount, already_credited, original.total_cents
+            ));
         }
     }
 
@@ -648,9 +715,10 @@ pub fn issue_credit_note(
                 ).map_err(err)?;
             }
             Err(e) => {
+                let status = if is_connectivity_error(e) { "pendiente" } else { "error" };
                 conn.execute(
-                    "UPDATE electronic_invoices SET status='error', error_msg=?1 WHERE id=?2",
-                    params![e, inv_id],
+                    "UPDATE electronic_invoices SET status=?1, error_msg=?2 WHERE id=?3",
+                    params![status, e, inv_id],
                 ).map_err(err)?;
             }
         }
@@ -717,41 +785,83 @@ pub fn retry_pending_invoices(state: State<AppState>) -> CmdResult<i64> {
 
     let mut processed = 0i64;
     for inv_id in pending_ids {
-        let inv = match fetch_invoice(&state, inv_id) { Ok(i) => i, Err(_) => continue };
-        // El código ya guardado en `cbte_tipo` es el correcto tanto para
-        // facturas (1/6/11) como para notas de crédito (3/8/13) -- no
-        // recalcularlo con cbte_tipo(), que solo conoce las facturas.
-        let ct = inv.cbte_tipo;
-        let cbte_asoc = inv.credited_invoice_id.and_then(|orig_id| {
-            fetch_invoice(&state, orig_id).ok().map(|o| (o.cbte_tipo, o.punto_venta, o.cbte_nro.unwrap_or(0)))
-        });
-        let result: Result<(i64, String, String), String> = (|| {
-            let last = get_last_cbte_nro(&cuit, punto_venta, ct, &token, &sign, &environment)?;
-            let cbte_nro = last + 1;
-            let input = InvoiceInput {
-                sale_id: inv.sale_id, invoice_type: inv.invoice_type.clone(),
-                total_cents: inv.total_cents, neto_cents: inv.neto_cents, iva_cents: inv.iva_cents,
-                client_cuit: inv.client_cuit.clone(), client_name: inv.client_name.clone(),
-                doc_tipo: inv.doc_tipo, doc_nro: inv.client_cuit.clone().unwrap_or_else(|| "0".to_string()),
-                concepto: inv.concepto.clone(),
-                condicion_iva_receptor_id: inv.condicion_iva_receptor_id,
-            };
-            let (cae, exp) = call_fecae_solicitar(&cuit, punto_venta, ct, cbte_nro, &input, &token, &sign, &environment, cbte_asoc)?;
-            Ok((cbte_nro, cae, exp))
-        })();
-        let conn = state.db.lock();
-        match result {
-            Ok((cbte_nro, cae, exp)) => {
-                let _ = conn.execute(
-                    "UPDATE electronic_invoices SET cbte_nro=?1, cae=?2, cae_expires_at=?3, status='autorizada' WHERE id=?4",
-                    params![cbte_nro, cae, exp, inv_id],
-                );
-                processed += 1;
-            }
-            Err(e) => { let _ = conn.execute("UPDATE electronic_invoices SET error_msg=?1 WHERE id=?2", params![e, inv_id]); }
+        if attempt_reissue(&state, inv_id, &cuit, punto_venta, &token, &sign, &environment).is_ok() {
+            processed += 1;
         }
     }
     Ok(processed)
+}
+
+// Encontrado en la auditoría: no existía forma de reintentar UNA factura
+// puntual -- solo el bulk de arriba (que además solo miraba 'pendiente', que
+// nunca ocurría). Ahora permite reintentar una factura en 'error' o
+// 'pendiente' desde Facturación, una por una.
+#[tauri::command]
+pub fn retry_invoice(invoice_id: i64, state: State<AppState>) -> CmdResult<ElectronicInvoice> {
+    let inv = fetch_invoice(&state, invoice_id)?;
+    if inv.status != "error" && inv.status != "pendiente" {
+        return Err("Esta factura no está en un estado que se pueda reintentar.".to_string());
+    }
+    let (token, sign, environment) = get_or_refresh_token(&state)?;
+    let (cuit, punto_venta) = {
+        let conn = state.db.lock();
+        conn.query_row(
+            "SELECT cuit, punto_venta FROM arca_config WHERE id=1",
+            [], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
+        ).map_err(err)?
+    };
+    let _ = attempt_reissue(&state, invoice_id, &cuit, punto_venta, &token, &sign, &environment);
+    fetch_invoice(&state, invoice_id)
+}
+
+// Un solo intento de reemisión sobre una factura/NC ya insertada (en 'error'
+// o 'pendiente'): pide el próximo número real a ARCA (nunca reutiliza uno ya
+// autorizado) y reintenta el mismo pedido. Compartido por el reintento en
+// lote y el individual para que ambos se comporten exactamente igual.
+fn attempt_reissue(
+    state: &AppState, inv_id: i64, cuit: &str, punto_venta: i64,
+    token: &str, sign: &str, environment: &str,
+) -> CmdResult<()> {
+    let inv = fetch_invoice(state, inv_id)?;
+    // El código ya guardado en `cbte_tipo` es el correcto tanto para
+    // facturas (1/6/11) como para notas de crédito (3/8/13) -- no
+    // recalcularlo con cbte_tipo(), que solo conoce las facturas.
+    let ct = inv.cbte_tipo;
+    let cbte_asoc = inv.credited_invoice_id.and_then(|orig_id| {
+        fetch_invoice(state, orig_id).ok().map(|o| (o.cbte_tipo, o.punto_venta, o.cbte_nro.unwrap_or(0)))
+    });
+    let result: Result<(i64, String, String), String> = (|| {
+        let last = get_last_cbte_nro(cuit, punto_venta, ct, token, sign, environment)?;
+        let cbte_nro = last + 1;
+        let input = InvoiceInput {
+            sale_id: inv.sale_id, invoice_type: inv.invoice_type.clone(),
+            total_cents: inv.total_cents, neto_cents: inv.neto_cents, iva_cents: inv.iva_cents,
+            client_cuit: inv.client_cuit.clone(), client_name: inv.client_name.clone(),
+            doc_tipo: inv.doc_tipo, doc_nro: inv.client_cuit.clone().unwrap_or_else(|| "0".to_string()),
+            concepto: inv.concepto.clone(),
+            condicion_iva_receptor_id: inv.condicion_iva_receptor_id,
+        };
+        let (cae, exp) = call_fecae_solicitar(cuit, punto_venta, ct, cbte_nro, &input, token, sign, environment, cbte_asoc)?;
+        Ok((cbte_nro, cae, exp))
+    })();
+    let conn = state.db.lock();
+    match result {
+        Ok((cbte_nro, cae, exp)) => {
+            conn.execute(
+                "UPDATE electronic_invoices SET cbte_nro=?1, cae=?2, cae_expires_at=?3, status='autorizada' WHERE id=?4",
+                params![cbte_nro, cae, exp, inv_id],
+            ).map_err(err)?;
+            Ok(())
+        }
+        Err(e) => {
+            let status = if is_connectivity_error(&e) { "pendiente" } else { "error" };
+            conn.execute(
+                "UPDATE electronic_invoices SET status=?1, error_msg=?2 WHERE id=?3",
+                params![status, e, inv_id],
+            ).map_err(err)?;
+            Err(e)
+        }
+    }
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -779,6 +889,20 @@ fn row_to_invoice(row: &rusqlite::Row) -> rusqlite::Result<ElectronicInvoice> {
     })
 }
 
+// Encontrado en la auditoría: "pendiente" era código muerto -- todo error acá
+// (de red, de timeout, o un rechazo real y explícito de ARCA) terminaba
+// guardado como 'error', así que retry_pending_invoices nunca encontraba
+// nada para reintentar. Se distingue: un error de CONECTIVIDAD (no se sabe
+// si ARCA llegó a procesar el pedido) queda 'pendiente' -- reintentar es
+// seguro porque get_last_cbte_nro siempre pide el próximo número real a
+// ARCA, nunca reutiliza uno ya autorizado. Un rechazo EXPLÍCITO de ARCA
+// (SOAP fault, "ARCA rechazó...") queda 'error' -- reintentar la misma
+// solicitud sin cambiar nada solo la va a rechazar de nuevo.
+fn is_connectivity_error(msg: &str) -> bool {
+    msg.starts_with("Error conectando con ARCA")
+        || msg.starts_with("Error leyendo la respuesta")
+}
+
 fn extract_xml_tag(xml: &str, tag: &str) -> Option<String> {
     let open = format!("<{}>", tag);
     let close = format!("</{}>", tag);
@@ -797,6 +921,42 @@ mod tests {
     use openssl::asn1::Asn1Time;
     use openssl::pkcs7::Pkcs7;
     use openssl::x509::X509Builder;
+
+    fn invoice_input(invoice_type: &str, doc_tipo: i64, doc_nro: &str) -> InvoiceInput {
+        InvoiceInput {
+            sale_id: None, invoice_type: invoice_type.to_string(),
+            total_cents: 1000, neto_cents: 826, iva_cents: 174,
+            client_cuit: None, client_name: None,
+            doc_tipo, doc_nro: doc_nro.to_string(),
+            concepto: None, condicion_iva_receptor_id: 5,
+        }
+    }
+
+    #[test]
+    fn rechaza_factura_a_sin_cuit_de_11_digitos() {
+        // Este es el bug real: el tipo de documento se decidía en el frontend
+        // solo por la longitud del texto -- una Factura A con un DNI (8
+        // dígitos, doc_tipo 96) podía llegar a pedirse sin que nada la frene.
+        assert!(validate_invoice_input(&invoice_input("A", 96, "12345678")).is_err());
+        assert!(validate_invoice_input(&invoice_input("A", 80, "1234567890")).is_err()); // 10 dígitos, no 11
+        assert!(validate_invoice_input(&invoice_input("A", 80, "20123456789")).is_ok());
+    }
+
+    #[test]
+    fn factura_b_o_c_no_exige_cuit() {
+        assert!(validate_invoice_input(&invoice_input("B", 99, "0")).is_ok());
+        assert!(validate_invoice_input(&invoice_input("C", 96, "12345678")).is_ok());
+    }
+
+    #[test]
+    fn clasifica_errores_de_conectividad_como_reintentables() {
+        // Encontrado en la auditoría: "pendiente" era código muerto porque
+        // todo error (de red o de rechazo real de ARCA) caía en "error".
+        assert!(is_connectivity_error("Error conectando con ARCA: timeout"));
+        assert!(is_connectivity_error("Error leyendo la respuesta de ARCA: conexión cerrada"));
+        assert!(!is_connectivity_error("ARCA rechazó la factura: CUIT no autorizado"));
+        assert!(!is_connectivity_error("No hay configuración ARCA"));
+    }
 
     #[test]
     fn csr_generation_produces_valid_pkcs10() {

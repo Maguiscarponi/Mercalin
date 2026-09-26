@@ -711,6 +711,7 @@ pub fn run() {
             commands::arca::list_electronic_invoices,
             commands::arca::get_invoice_for_sale,
             commands::arca::retry_pending_invoices,
+            commands::arca::retry_invoice,
             // Catálogo — plantilla desde Open Food Facts (solo desarrollo)
             #[cfg(debug_assertions)]
             commands::catalog_import::generate_catalog_template,

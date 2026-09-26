@@ -7,6 +7,7 @@ import { printHtml } from "@/lib/printHtml";
 import { useEscapeToClose } from "@/lib/useEscapeToClose";
 import ModalCloseButton from "@/components/ui/ModalCloseButton";
 import { useCart } from "@/stores/cart";
+import { useAuthStore } from "@/stores/auth";
 import type { CartItem, Client, NewQuote, NewQuoteItem, Product, Quote, QuoteWithItems, QuoteStatus } from "@/types";
 import clsx from "clsx";
 
@@ -39,6 +40,7 @@ const STATUS_COLORS: Record<QuoteStatus, string> = {
 };
 
 export default function Presupuestos() {
+  const actorId = useAuthStore((s) => s.user?.id ?? null);
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [loading, setLoading] = useState(false);
   const [detail, setDetail] = useState<QuoteWithItems | null>(null);
@@ -64,7 +66,7 @@ export default function Presupuestos() {
 
   async function handleChangeStatus(id: number, status: string) {
     try {
-      const updated = await api.updateQuoteStatus(id, status);
+      const updated = await api.updateQuoteStatus(id, status, actorId);
       setQuotes((prev) => prev.map((q) => (q.id === id ? updated : q)));
       if (detail?.quote.id === id) setDetail((d) => d ? { ...d, quote: updated } : d);
     } catch (e) { console.error(e); showToast({ message: "No se pudo cambiar el estado", tone: "danger" }); }
@@ -72,7 +74,7 @@ export default function Presupuestos() {
 
   async function handleDelete(id: number) {
     if (!(await confirmAction("Esta acción no se puede deshacer.", { title: "¿Eliminar este presupuesto?", danger: true, confirmLabel: "Eliminar" }))) return;
-    try { await api.deleteQuote(id); load(); setDetail(null); showToast({ message: "Presupuesto eliminado" }); }
+    try { await api.deleteQuote(id, actorId); load(); setDetail(null); showToast({ message: "Presupuesto eliminado" }); }
     catch { showToast({ message: "No se pudo eliminar el presupuesto", tone: "danger" }); }
   }
 
@@ -396,6 +398,7 @@ function QuoteDetailModal({
 }
 
 function QuoteForm({ initial, onCancel, onSaved }: { initial?: QuoteWithItems; onCancel: () => void; onSaved: () => void }) {
+  const actorId = useAuthStore((s) => s.user?.id ?? null);
   const [clients, setClients] = useState<Client[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [clientId, setClientId] = useState<number | null>(initial?.quote.client_id ?? null);
@@ -488,10 +491,10 @@ function QuoteForm({ initial, onCancel, onSaved }: { initial?: QuoteWithItems; o
         valid_until: validUntil || null,
       };
       if (initial) {
-        await api.updateQuote(initial.quote.id, q);
+        await api.updateQuote(initial.quote.id, q, actorId);
         showToast({ message: "Presupuesto actualizado", tone: "success" });
       } else {
-        await api.createQuote(q);
+        await api.createQuote(q, actorId);
         showToast({ message: "Presupuesto creado", tone: "success" });
       }
       onSaved();
