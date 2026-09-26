@@ -25,6 +25,11 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Sin esto el checkout es superficial (1 commit) y no se puede armar
+          # la lista de "qué cambió" contra el tag anterior más abajo.
+          fetch-depth: 0
+          fetch-tags: true
 
       - uses: actions/setup-node@v4
         with:
@@ -46,6 +51,31 @@ jobs:
           $conf = Get-Content "src-tauri/tauri.conf.json" -Raw | ConvertFrom-Json
           "version=$($conf.version)" >> $env:GITHUB_OUTPUT
 
+      # Encontrado por Magalí: las notas del updater decían literal "Mercalin
+      # vX.Y.Z", sin contar nada real -- quedaba rarísimo en el diálogo de
+      # actualización. Arma la lista sola a partir de los mensajes de commit
+      # desde el tag anterior (el título de cada commit, que en este repo ya
+      # se escribe pensando en explicar el cambio), sacando los bumps de
+      # versión que no le sirven a quien está actualizando.
+      - name: Armar notas de la versión
+        id: notes
+        shell: pwsh
+        run: |
+          $tags = git tag --sort=-creatordate
+          $prevTag = $tags | Where-Object { $_ -ne "${{ github.ref_name }}" } | Select-Object -First 1
+          if ($prevTag) {
+            $log = git log "$prevTag..${{ github.ref_name }}" --pretty=format:"%s"
+          } else {
+            $log = git log --pretty=format:"%s"
+          }
+          $lines = $log -split "`n" | Where-Object { $_ -and $_ -notmatch "^Sube versión a " }
+          $notes = ($lines | ForEach-Object { "- $_" }) -join "`n"
+          if (-not $notes) { $notes = "Mercalin ${{ steps.version.outputs.version }}" }
+          # Salida multilínea: ver docs de GITHUB_OUTPUT para el formato de heredoc.
+          "notes<<EOF" >> $env:GITHUB_OUTPUT
+          $notes >> $env:GITHUB_OUTPUT
+          "EOF" >> $env:GITHUB_OUTPUT
+
       - uses: tauri-apps/tauri-action@v0
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -58,13 +88,15 @@ jobs:
       # (ver src/stores/updater.ts / tauri.conf.json > plugins.updater.endpoints).
       - name: Generar latest.json
         shell: pwsh
+        env:
+          RELEASE_NOTES: ${{ steps.notes.outputs.notes }}
         run: |
           $version = "${{ steps.version.outputs.version }}"
           $exeSig = (Get-Content "src-tauri/target/release/bundle/nsis/Mercalin_${version}_x64-setup.exe.sig" -Raw).Trim()
           $pubDate = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
           $manifest = [ordered]@{
             version   = $version
-            notes     = "Mercalin v${version}"
+            notes     = $env:RELEASE_NOTES
             pub_date  = $pubDate
             platforms = [ordered]@{
               "windows-x86_64" = [ordered]@{
