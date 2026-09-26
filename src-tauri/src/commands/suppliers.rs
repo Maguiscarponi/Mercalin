@@ -35,8 +35,33 @@ pub fn list_suppliers(state: State<AppState>) -> CmdResult<Vec<Supplier>> {
     Ok(out)
 }
 
+// Encontrado en la auditoría: el frontend marca el nombre como obligatorio,
+// pero ni create_supplier ni update_supplier lo exigían del lado del servidor.
+fn validate_supplier_name(name: &str) -> CmdResult<()> {
+    if name.trim().is_empty() {
+        return Err("El nombre del proveedor no puede estar vacío".to_string());
+    }
+    Ok(())
+}
+
+// Encontrado en la auditoría: ni crear una orden de compra ni recibirla
+// validaban cantidad/costo -- una cantidad negativa se aceptaba y, al
+// "recibir" la orden, restaba stock real en vez de sumarlo.
+fn validate_purchase_items(items: &[NewPurchaseOrderItem]) -> CmdResult<()> {
+    for item in items {
+        if !item.qty.is_finite() || item.qty <= 0.0 {
+            return Err(format!("Cantidad inválida para \"{}\": {}", item.name, item.qty));
+        }
+        if item.unit_cost_cents < 0 {
+            return Err(format!("Costo inválido para \"{}\"", item.name));
+        }
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub fn create_supplier(supplier: NewSupplier, state: State<AppState>) -> CmdResult<Supplier> {
+    validate_supplier_name(&supplier.name)?;
     let conn = state.db.lock();
     conn.execute(
         "INSERT INTO suppliers (name, contact_name, phone, email, address, cuit, notes)
@@ -62,6 +87,7 @@ pub fn create_supplier(supplier: NewSupplier, state: State<AppState>) -> CmdResu
 
 #[tauri::command]
 pub fn update_supplier(supplier: Supplier, state: State<AppState>) -> CmdResult<Supplier> {
+    validate_supplier_name(&supplier.name)?;
     let conn = state.db.lock();
     conn.execute(
         "UPDATE suppliers SET name=?1, contact_name=?2, phone=?3, email=?4,
@@ -106,6 +132,7 @@ pub fn create_purchase_order(
     if order.items.is_empty() {
         return Err("La orden no tiene ítems".to_string());
     }
+    validate_purchase_items(&order.items)?;
 
     let mut conn = state.db.lock();
     let tx = conn.transaction().map_err(err)?;

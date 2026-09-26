@@ -183,6 +183,7 @@ export interface SaleItem {
   id: Id;
   sale_id: Id;
   product_id: Id | null;
+  combo_id: Id | null;
   barcode: string | null;
   name: string;
   unit_price_cents: number;
@@ -615,6 +616,7 @@ export interface ReturnItem {
   id: Id;
   return_id: Id;
   product_id: Id | null;
+  combo_id: Id | null;
   barcode: string | null;
   name: string;
   unit_price_cents: number;
@@ -628,6 +630,7 @@ export interface ReturnWithItems {
 
 export interface NewReturnItem {
   product_id: Id | null;
+  combo_id: Id | null;
   barcode: string | null;
   name: string;
   unit_price_cents: number;

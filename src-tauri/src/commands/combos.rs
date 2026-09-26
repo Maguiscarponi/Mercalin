@@ -1,8 +1,44 @@
 use crate::commands::{err, CmdResult};
 use crate::models::{Combo, ComboItem, ComboWithItems, NewCombo};
 use crate::AppState;
-use rusqlite::params;
+use rusqlite::{params, Connection};
 use tauri::State;
+
+// Encontrado en la auditoría: mismo problema que del lado de productos --
+// nada impedía que un combo compartiera código de barras con un producto ya
+// existente, dejando a uno de los dos permanentemente inalcanzable por
+// escaneo, sin ningún error al crearlo.
+fn check_barcode_not_used_by_product(conn: &Connection, barcode: &Option<String>) -> CmdResult<()> {
+    if let Some(bc) = barcode {
+        if bc.trim().is_empty() { return Ok(()); }
+        let exists: bool = conn
+            .query_row("SELECT 1 FROM products WHERE barcode=?1", params![bc], |_| Ok(()))
+            .is_ok();
+        if exists {
+            return Err("Ese código de barras ya lo usa un producto.".to_string());
+        }
+    }
+    Ok(())
+}
+
+// Encontrado en la auditoría: un componente con cantidad negativa o cero no
+// se rechazaba -- vender ese combo SUMABA stock al componente en vez de
+// restarlo (se puede "fabricar" mercadería), y un precio negativo del combo
+// tampoco se validaba.
+fn validate_combo_fields(price_cents: i64, items: &[crate::models::NewComboItem]) -> CmdResult<()> {
+    if price_cents < 0 {
+        return Err("El precio del combo no puede ser negativo".to_string());
+    }
+    if items.is_empty() {
+        return Err("El combo necesita al menos un componente".to_string());
+    }
+    for item in items {
+        if !item.qty.is_finite() || item.qty <= 0.0 {
+            return Err(format!("Cantidad de componente inválida: {}", item.qty));
+        }
+    }
+    Ok(())
+}
 
 fn row_to_combo(row: &rusqlite::Row) -> rusqlite::Result<Combo> {
     Ok(Combo {
@@ -133,7 +169,9 @@ pub fn create_combo(input: NewCombo, state: State<AppState>) -> CmdResult<ComboW
     if input.name.trim().is_empty() {
         return Err("El nombre del combo es obligatorio".into());
     }
+    validate_combo_fields(input.price_cents, &input.items)?;
     let mut conn = state.db.lock();
+    check_barcode_not_used_by_product(&conn, &input.barcode)?;
     let tx = conn.transaction().map_err(err)?;
     tx.execute(
         "INSERT INTO combos (name, barcode, price_cents, notes, active, updated_at)
@@ -158,7 +196,11 @@ pub fn update_combo(id: i64, input: NewCombo, state: State<AppState>) -> CmdResu
     if input.name.trim().is_empty() {
         return Err("El nombre del combo es obligatorio".into());
     }
+    validate_combo_fields(input.price_cents, &input.items)?;
     let mut conn = state.db.lock();
+    // El propio combo puede quedarse con el mismo código que ya tenía -- solo
+    // hay colisión si ese código pertenece a un PRODUCTO.
+    check_barcode_not_used_by_product(&conn, &input.barcode)?;
     let tx = conn.transaction().map_err(err)?;
     tx.execute(
         "UPDATE combos SET name=?1, barcode=?2, price_cents=?3, notes=?4, updated_at=CURRENT_TIMESTAMP WHERE id=?5",
@@ -199,6 +241,21 @@ pub fn toggle_combo(id: i64, state: State<AppState>) -> CmdResult<Combo> {
 #[tauri::command]
 pub fn delete_combo(id: i64, state: State<AppState>) -> CmdResult<()> {
     let conn = state.db.lock();
+    // Encontrado en la auditoría: a diferencia del resto del catálogo (que
+    // usa soft-delete), esto era un DELETE real e irreversible -- si el combo
+    // ya se había vendido, los reportes que lo referencian por combo_id fallan
+    // en silencio después. Si ya tiene ventas, se desactiva en vez de borrarse.
+    let has_sales: bool = conn
+        .query_row("SELECT 1 FROM sale_items WHERE combo_id=?1 LIMIT 1", params![id], |_| Ok(()))
+        .is_ok();
+    if has_sales {
+        conn.execute(
+            "UPDATE combos SET active=0, updated_at=CURRENT_TIMESTAMP WHERE id=?1",
+            params![id],
+        )
+        .map_err(err)?;
+        return Ok(());
+    }
     conn.execute("DELETE FROM combos WHERE id=?1", params![id])
         .map_err(err)?;
     Ok(())

@@ -18,12 +18,30 @@ const REASONS = [
 
 interface ReturnLine {
   product_id: number | null;
+  combo_id: number | null;
   barcode: string | null;
   name: string;
   unit_price_cents: number;
   qty: number;
   maxQty: number;
   alreadyReturned: number;
+  // Subtotal y cantidad ORIGINALES de la venta (ya con descuento aplicado)
+  // para poder previsualizar en la UI el mismo monto proporcional que va a
+  // calcular el servidor -- no para enviarlos (el backend ignora estos datos
+  // y recalcula todo desde sale_items).
+  soldSubtotalCents: number;
+  soldQty: number;
+}
+
+// Misma clave que usa el backend para agrupar líneas del mismo producto/combo
+// dentro de una venta: por product_id si está, si no por combo_id, si no por
+// el nombre. Sirve acá solo para estimar en la UI cuánto queda disponible
+// para devolver -- la validación real (y el monto final) los recalcula el
+// servidor a partir de los sale_items de verdad.
+function lineKey(productId: number | null, comboId: number | null, name: string): string {
+  if (productId != null) return `p${productId}`;
+  if (comboId != null) return `c${comboId}`;
+  return name;
 }
 
 export default function Devoluciones() {
@@ -120,23 +138,26 @@ export default function Devoluciones() {
       for (const ret of saleReturns) {
         const rw = await api.getReturnWithItems(ret.id);
         for (const item of rw.items) {
-          const key = item.product_id != null ? `p${item.product_id}` : item.name;
+          const key = lineKey(item.product_id, item.combo_id, item.name);
           returnedQty[key] = (returnedQty[key] || 0) + item.qty;
         }
       }
 
       setSaleData(sw);
       setLines(sw.items.map((item) => {
-        const key = item.product_id != null ? `p${item.product_id}` : item.name;
+        const key = lineKey(item.product_id, item.combo_id, item.name);
         const alreadyReturned = returnedQty[key] || 0;
         return {
           product_id: item.product_id,
+          combo_id: item.combo_id,
           barcode: item.barcode,
           name: item.name,
           unit_price_cents: item.unit_price_cents,
           qty: 0,
           maxQty: Math.max(0, item.qty - alreadyReturned),
           alreadyReturned,
+          soldSubtotalCents: item.subtotal_cents,
+          soldQty: item.qty,
         };
       }));
     } catch {
@@ -165,7 +186,12 @@ export default function Devoluciones() {
   }
 
   const selectedLines = lines.filter((l) => l.qty > 0);
-  const totalReturn = selectedLines.reduce((s, l) => s + l.unit_price_cents * l.qty, 0);
+  // Estimación en base al subtotal real de la venta (ya con descuento) --
+  // el monto final que se factura/registra lo recalcula el servidor.
+  const totalReturn = selectedLines.reduce(
+    (s, l) => s + (l.soldQty > 0 ? Math.round(l.soldSubtotalCents * (l.qty / l.soldQty)) : 0),
+    0
+  );
 
   async function handleSubmit() {
     if (selectedLines.length === 0) return;
@@ -177,6 +203,7 @@ export default function Devoluciones() {
     try {
       const items: NewReturnItem[] = selectedLines.map((l) => ({
         product_id: l.product_id,
+        combo_id: l.combo_id,
         barcode: l.barcode,
         name: l.name,
         unit_price_cents: l.unit_price_cents,
@@ -188,7 +215,11 @@ export default function Devoluciones() {
         reason,
         notes: notes.trim() || null,
       });
-      let msg = `Devolución #${ret.id} registrada. Se devolvieron ${items.length} ítem(s) al stock.`;
+      // Se usa ret.total_cents (calculado por el servidor a partir del
+      // subtotal real de la venta, ya con descuento aplicado) en vez del
+      // totalReturn estimado en el cliente -- antes la nota de crédito se
+      // emitía por el precio SIN descuento, sobrefacturándola.
+      let msg = `Devolución #${ret.id} registrada por ${centsToARS(ret.total_cents)}. Se devolvieron ${items.length} ítem(s) al stock.`;
 
       // Si la venta original tiene una factura ARCA vigente, la devolución
       // tiene que quedar reflejada ahí también -- si no, el comercio queda
@@ -197,7 +228,7 @@ export default function Devoluciones() {
       if (saleInvoice) {
         setNcState("issuing");
         try {
-          const nc = await api.issueCreditNote(saleInvoice.id, totalReturn, ret.id);
+          const nc = await api.issueCreditNote(saleInvoice.id, ret.total_cents, ret.id);
           if (nc.status === "autorizada") {
             setNcState("done");
             msg += ` Nota de crédito ${nc.invoice_type} emitida por ${centsToARS(nc.total_cents)}.`;

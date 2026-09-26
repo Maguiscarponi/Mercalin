@@ -4,8 +4,9 @@ use crate::AppState;
 use rusqlite::params;
 use tauri::State;
 
-// Separada para poder testearla sin un tauri::State real.
-fn validate_new_stock(new_stock: f64) -> CmdResult<()> {
+// Separada para poder testearla sin un tauri::State real. pub(crate) porque
+// apply_inventory_count (mismo archivo) y ningún otro módulo la necesitan.
+pub(crate) fn validate_new_stock(new_stock: f64) -> CmdResult<()> {
     if !new_stock.is_finite() || new_stock < 0.0 {
         return Err(format!("Stock inválido: {}", new_stock));
     }
@@ -388,6 +389,13 @@ pub fn apply_inventory_count(
     user_id: Option<i64>,
     state: State<AppState>,
 ) -> CmdResult<i64> {
+    // Encontrado en la auditoría: a diferencia del ajuste manual de un producto
+    // puntual, aplicar un conteo físico completo no rechazaba valores negativos,
+    // NaN o infinitos si se llamaba directo al comando.
+    for adj in &adjustments {
+        validate_new_stock(adj.counted_qty)?;
+    }
+
     let mut conn = state.db.lock();
     let tx = conn.transaction().map_err(err)?;
     let mut count = 0i64;

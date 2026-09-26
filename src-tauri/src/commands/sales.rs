@@ -98,6 +98,37 @@ pub fn create_sale(input: SaleInput, state: State<AppState>) -> CmdResult<Sale> 
     let mut conn = state.db.lock();
     let tx = conn.transaction().map_err(err)?;
 
+    // Encontrado en la auditoría: un combo con un componente desactivado (ej.
+    // discontinuado) seguía vendiéndose con normalidad, restando stock de un
+    // producto ya invisible en el catálogo -- puede volverse negativo sin que
+    // nadie se entere. Se valida siempre, no solo cuando el seguimiento de
+    // stock está activado (esto es sobre el catálogo, no sobre el stock).
+    for item in &input.items {
+        if let Some(cid) = item.combo_id {
+            let combo_active: bool = tx
+                .query_row("SELECT active FROM combos WHERE id=?1", params![cid], |r| r.get::<_, i64>(0))
+                .map(|v| v != 0)
+                .unwrap_or(false);
+            if !combo_active {
+                return Err("Ese combo ya no está activo".to_string());
+            }
+            let inactive_component: Option<String> = tx
+                .query_row(
+                    "SELECT p.name FROM combo_items ci JOIN products p ON p.id = ci.product_id
+                     WHERE ci.combo_id = ?1 AND p.active = 0 LIMIT 1",
+                    params![cid],
+                    |r| r.get(0),
+                )
+                .ok();
+            if let Some(name) = inactive_component {
+                return Err(format!(
+                    "El combo tiene un componente desactivado (\"{}\"). Reactivalo o quitalo del combo antes de venderlo.",
+                    name
+                ));
+            }
+        }
+    }
+
     // Validar stock disponible antes de tocar nada, para no descontar la mitad
     // de un carrito grande si un ítem del final no tiene stock suficiente.
     // Se salta por completo si el negocio apagó el seguimiento de stock (no
@@ -436,6 +467,7 @@ pub fn get_sale_with_items(id: i64, state: State<AppState>) -> CmdResult<SaleWit
                 id: row.get("id")?,
                 sale_id: row.get("sale_id")?,
                 product_id: row.get("product_id")?,
+                combo_id: row.get("combo_id")?,
                 barcode: row.get("barcode")?,
                 name: row.get("name")?,
                 unit_price_cents: unit_price,

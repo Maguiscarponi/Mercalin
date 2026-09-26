@@ -78,8 +78,24 @@ pub fn list_expiring_lots(days: i64, state: State<AppState>) -> CmdResult<Vec<Ex
     Ok(out)
 }
 
+// Encontrado en la auditoría: a diferencia del ajuste manual de stock (que
+// valida con validate_new_stock), sumar un lote no validaba nada -- una
+// cantidad negativa restaba stock real (quedando registrada como un
+// "ingreso" positivo, lo que corrompe el historial), y un costo negativo
+// dejaba el costo del producto en negativo.
+fn validate_new_lot(qty: f64, cost_cents: i64) -> CmdResult<()> {
+    if !qty.is_finite() || qty <= 0.0 {
+        return Err(format!("Cantidad inválida para el lote: {}", qty));
+    }
+    if cost_cents < 0 {
+        return Err("El costo del lote no puede ser negativo".to_string());
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub fn add_product_lot(input: NewProductLot, user_id: Option<i64>, state: State<AppState>) -> CmdResult<ProductLot> {
+    validate_new_lot(input.qty, input.cost_cents)?;
     let mut conn = state.db.lock();
     let tx = conn.transaction().map_err(err)?;
 

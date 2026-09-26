@@ -101,6 +101,7 @@ pub struct SaleItem {
     pub id: i64,
     pub sale_id: i64,
     pub product_id: Option<i64>,
+    pub combo_id: Option<i64>,
     pub barcode: Option<String>,
     pub name: String,
     pub unit_price_cents: i64,
@@ -551,6 +552,7 @@ pub struct ReturnItem {
     pub id: i64,
     pub return_id: i64,
     pub product_id: Option<i64>,
+    pub combo_id: Option<i64>,
     pub barcode: Option<String>,
     pub name: String,
     pub unit_price_cents: i64,
@@ -566,6 +568,7 @@ pub struct ReturnWithItems {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NewReturnItem {
     pub product_id: Option<i64>,
+    pub combo_id: Option<i64>,
     pub barcode: Option<String>,
     pub name: String,
     pub unit_price_cents: i64,

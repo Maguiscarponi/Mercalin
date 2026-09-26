@@ -108,8 +108,20 @@ pub fn get_client(id: i64, state: State<AppState>) -> CmdResult<Client> {
     stmt.query_row(params![id], row_to_client).map_err(err)
 }
 
+// Encontrado en la auditoría: un límite de crédito negativo se guardaba tal
+// cual, y create_sale lo interpreta como "sin límite" (solo bloquea si
+// credit_limit > 0) -- un límite negativo cargado por error dejaba a ese
+// cliente con fiado ilimitado sin que nadie se diera cuenta.
+fn validate_credit_limit(credit_limit_cents: i64) -> CmdResult<()> {
+    if credit_limit_cents < 0 {
+        return Err("El límite de cuenta corriente no puede ser negativo".to_string());
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub fn create_client(client: NewClient, state: State<AppState>) -> CmdResult<Client> {
+    validate_credit_limit(client.credit_limit_cents)?;
     let conn = state.db.lock();
     let is_ri = client.condicion_iva == "responsable_inscripto";
     conn.execute(
@@ -137,6 +149,7 @@ pub fn create_client(client: NewClient, state: State<AppState>) -> CmdResult<Cli
 
 #[tauri::command]
 pub fn update_client(client: Client, state: State<AppState>) -> CmdResult<Client> {
+    validate_credit_limit(client.credit_limit_cents)?;
     let conn = state.db.lock();
     let is_ri = client.condicion_iva == "responsable_inscripto";
     conn.execute(
@@ -212,6 +225,12 @@ pub fn register_client_payment(
     input: ClientPaymentInput,
     state: State<AppState>,
 ) -> CmdResult<Client> {
+    // Encontrado en la auditoría: un monto negativo acá no se rechazaba y
+    // funcionaba como un cargo encubierto (sube la deuda) disfrazado de pago
+    // en el historial de cuenta corriente.
+    if input.amount_cents <= 0 {
+        return Err("El monto del pago debe ser mayor a cero".to_string());
+    }
     let conn = state.db.lock();
     conn.execute(
         "INSERT INTO client_account (client_id, amount_cents, movement_type, concept)

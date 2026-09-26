@@ -59,6 +59,24 @@ fn validate_product_fields(
     Ok(())
 }
 
+// Encontrado en la auditoría: el código de barras es UNIQUE dentro de products
+// y, por separado, dentro de combos -- pero nada impedía que un combo y un
+// producto compartieran el mismo código. El que se crea segundo queda
+// permanentemente inalcanzable por escaneo en Caja (siempre encuentra primero
+// al otro), sin ningún error al crearlo.
+fn check_barcode_not_used_by_combo(conn: &Connection, barcode: &Option<String>) -> CmdResult<()> {
+    if let Some(bc) = barcode {
+        if bc.trim().is_empty() { return Ok(()); }
+        let exists: bool = conn
+            .query_row("SELECT 1 FROM combos WHERE barcode=?1", params![bc], |_| Ok(()))
+            .is_ok();
+        if exists {
+            return Err("Ese código de barras ya lo usa un combo.".to_string());
+        }
+    }
+    Ok(())
+}
+
 fn row_to_product(row: &Row) -> rusqlite::Result<Product> {
     Ok(Product {
         id: row.get("id")?,
@@ -158,6 +176,7 @@ pub fn create_product(product: NewProduct, user_id: Option<i64>, state: State<Ap
         product.cost_cents, product.stock, product.min_stock,
     )?;
     let conn = state.db.lock();
+    check_barcode_not_used_by_combo(&conn, &product.barcode)?;
     conn.execute(
         "INSERT INTO products
             (barcode, name, price_cents, price2_cents, price3_cents, cost_cents, stock, min_stock, category, brand, is_weighable, unit, active, is_ghost, supplier_id, expires_at, image_path)
@@ -196,6 +215,7 @@ pub fn update_product(product: Product, user_id: Option<i64>, state: State<AppSt
         product.cost_cents, product.stock, product.min_stock,
     )?;
     let conn = state.db.lock();
+    check_barcode_not_used_by_combo(&conn, &product.barcode)?;
     // Un fantasma se "activa" solo con cargarle un precio de venta — no hace falta que
     // nadie marque un checkbox aparte. Una vez activado no vuelve a ser fantasma.
     let activating = product.is_ghost && product.price_cents > 0;
@@ -625,10 +645,13 @@ pub fn preview_bulk_update_prices(
             name: row.get("name")?,
             category: row.get("category")?,
             old_price_cents: old_price,
-            new_price_cents: (old_price as f64 * price_mult).round() as i64,
+            // Encontrado en la auditoría: un % negativo (ej. -150% en vez de -15%)
+            // no tenía piso y daba precios negativos -- a diferencia de crear/editar
+            // un producto a mano, que sí rechaza precios negativos.
+            new_price_cents: ((old_price as f64 * price_mult).round() as i64).max(0),
             old_cost_cents: old_cost,
             new_cost_cents: if input.cost_pct.is_some() {
-                (old_cost as f64 * cost_mult).round() as i64
+                ((old_cost as f64 * cost_mult).round() as i64).max(0)
             } else { old_cost },
         })
     };
@@ -682,8 +705,8 @@ pub fn apply_bulk_update_prices(
 
     let mut count = 0i64;
     for (id, old_price, old_cost) in ids {
-        let new_price = (old_price as f64 * price_mult).round() as i64;
-        let new_cost  = if update_cost { (old_cost as f64 * cost_mult).round() as i64 } else { old_cost };
+        let new_price = ((old_price as f64 * price_mult).round() as i64).max(0);
+        let new_cost  = if update_cost { ((old_cost as f64 * cost_mult).round() as i64).max(0) } else { old_cost };
         conn.execute(
             "UPDATE products SET price_cents=?1, cost_cents=?2, updated_at=CURRENT_TIMESTAMP WHERE id=?3",
             params![new_price, new_cost, id],

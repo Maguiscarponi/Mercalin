@@ -452,6 +452,12 @@ fn open_and_migrate_inner(path: &Path) -> Result<Connection> {
     // duplicarla) sin bloquear otras devoluciones parciales de la misma venta.
     let _ = conn.execute_batch("ALTER TABLE electronic_invoices ADD COLUMN return_id INTEGER REFERENCES returns(id);");
 
+    // Para poder devolver un ítem que se vendió como parte de un combo y
+    // reponerle el stock a sus componentes (antes se perdía el dato: una
+    // devolución de combo quedaba con product_id=NULL y combo_id=NULL, sin
+    // forma de saber a qué componentes reponerles stock).
+    let _ = conn.execute_batch("ALTER TABLE return_items ADD COLUMN combo_id INTEGER REFERENCES combos(id);");
+
     // Etiquetas de paquete pesado: al imprimir la etiqueta de un producto pesable
     // con un peso puntual cargado (ej. una bolsa de queso rallado de 560g), se
     // genera un código de barras único para ESE paquete, con el peso y el precio

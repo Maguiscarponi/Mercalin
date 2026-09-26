@@ -26,6 +26,15 @@ fn row_to_weighed_label(row: &Row) -> rusqlite::Result<WeighedLabel> {
 // empieza así, así que nunca choca con un barcode de verdad.
 #[tauri::command]
 pub fn create_weighed_label(input: NewWeighedLabel, user_id: Option<i64>, state: State<AppState>) -> CmdResult<WeighedLabel> {
+    // Encontrado en la auditoría: no se validaba nada acá -- un peso negativo
+    // o cero, o un precio negativo, generaban un código de barras real que al
+    // escanearse en Caja cobraba un monto negativo (un descuento oculto).
+    if !input.weight_kg.is_finite() || input.weight_kg <= 0.0 {
+        return Err(format!("Peso/cantidad inválido: {}", input.weight_kg));
+    }
+    if input.unit_price_cents < 0 {
+        return Err("El precio no puede ser negativo".to_string());
+    }
     let conn = state.db.lock();
     let total_price_cents = (input.unit_price_cents as f64 * input.weight_kg).round() as i64;
 

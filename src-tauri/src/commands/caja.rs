@@ -191,10 +191,15 @@ pub fn get_session_sales_total(
     state: State<AppState>,
 ) -> CmdResult<i64> {
     let conn = state.db.lock();
-    // Solo ventas en efectivo suman al saldo físico de caja
+    // Encontrado en la auditoría: a diferencia del reporte histórico (range_report),
+    // acá no se excluían las ventas anuladas -- anular una venta en efectivo durante
+    // el turno devolvía el stock pero el saldo esperado EN VIVO seguía sumando esa
+    // plata como cobrada, dejando una diferencia fantasma al cerrar caja.
     let efectivo: i64 = conn
         .query_row(
-            "SELECT COALESCE(SUM(total_cents), 0) FROM sales WHERE session_id = ?1 AND payment_method = 'efectivo'",
+            "SELECT COALESCE(SUM(total_cents), 0) FROM sales
+             WHERE session_id = ?1 AND payment_method = 'efectivo'
+               AND (notes IS NULL OR notes NOT LIKE '%[ANULADA]%')",
             params![session_id],
             |r| r.get(0),
         )
@@ -202,7 +207,8 @@ pub fn get_session_sales_total(
     // Todas las ventas (para info)
     let todas: i64 = conn
         .query_row(
-            "SELECT COALESCE(SUM(total_cents), 0) FROM sales WHERE session_id = ?1",
+            "SELECT COALESCE(SUM(total_cents), 0) FROM sales
+             WHERE session_id = ?1 AND (notes IS NULL OR notes NOT LIKE '%[ANULADA]%')",
             params![session_id],
             |r| r.get(0),
         )
@@ -221,7 +227,8 @@ pub fn get_session_all_sales_total(
     let conn = state.db.lock();
     let total: i64 = conn
         .query_row(
-            "SELECT COALESCE(SUM(total_cents), 0) FROM sales WHERE session_id = ?1",
+            "SELECT COALESCE(SUM(total_cents), 0) FROM sales
+             WHERE session_id = ?1 AND (notes IS NULL OR notes NOT LIKE '%[ANULADA]%')",
             params![session_id],
             |r| r.get(0),
         )
