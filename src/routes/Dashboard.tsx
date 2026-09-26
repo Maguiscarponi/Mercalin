@@ -10,7 +10,7 @@ import { api } from "@/lib/api";
 import { centsToARS, dateToLocalISO } from "@/lib/format";
 import { useEscapeToClose } from "@/lib/useEscapeToClose";
 import OnboardingChecklist from "@/components/OnboardingChecklist";
-import { AllInsightsModal, InsightRow, LEVEL_LABEL } from "@/components/InsightsPanel";
+import { AllInsightsModal, InsightRow, LEVEL_LABEL, BADGE_CLASS } from "@/components/InsightsPanel";
 import { useInsightsStore } from "@/stores/insights";
 import type { DashboardData, Insight, CriticalStockItem, ExpiringAlertItem, OverdueAccountItem } from "@/types";
 
@@ -602,12 +602,7 @@ export default function Dashboard() {
                   insightLevelCounts[lvl] ? (
                     <span
                       key={lvl}
-                      className={clsx(
-                        "text-[10px] font-bold px-2 py-0.5 rounded-full",
-                        lvl === "urgente" ? "bg-orange-100 text-orange-600" :
-                        lvl === "importante" ? "bg-amber-100 text-amber-600" :
-                        lvl === "consejo" ? "bg-red-100 text-red-600" : "bg-stone-100 text-stone-500"
-                      )}
+                      className={clsx("text-[10px] font-bold px-2 py-0.5 rounded-full", BADGE_CLASS[lvl])}
                     >
                       {insightLevelCounts[lvl]} {LEVEL_LABEL[lvl].toLowerCase()}
                     </span>

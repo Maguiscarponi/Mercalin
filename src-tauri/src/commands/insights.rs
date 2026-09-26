@@ -58,8 +58,14 @@ pub fn get_insights(state: State<AppState>) -> CmdResult<Vec<Insight>> {
     let current_dow = now.weekday().num_days_from_monday(); // 0=Lun, 6=Dom
     let tomorrow_dow = (current_dow + 1) % 7;
 
+    // Encontrado en el análisis: varios consejos de acá abajo (stock crítico,
+    // recompra en 7 días) mostraban alertas de stock aunque el negocio hubiera
+    // apagado el seguimiento de stock -- con ese número sin mantenerse al día,
+    // "se agota en X días" es un dato falso que solo genera desconfianza.
+    let stock_tracking = crate::db::stock_tracking_enabled(&conn);
+
     // ── 1. Stock crítico: agotamiento en < 3 días ────────────────────────────
-    {
+    if stock_tracking {
         let mut stmt = conn.prepare(
             "SELECT p.id, p.name, p.stock, COALESCE(SUM(si.qty), 0) / 30.0 as vel
              FROM products p
@@ -274,7 +280,7 @@ pub fn get_insights(state: State<AppState>) -> CmdResult<Vec<Insight>> {
 
     // ── 8. Sugerencia de stock mínimo desactualizado ─────────────────────────
     // (nada si el negocio apagó el seguimiento de stock)
-    if crate::db::stock_tracking_enabled(&conn) {
+    if stock_tracking {
         let mut stmt = conn.prepare(
             "SELECT p.name, p.min_stock,
                     CAST(COALESCE(SUM(si.qty), 0) / 30.0 AS REAL) as vel
@@ -442,7 +448,7 @@ pub fn get_insights(state: State<AppState>) -> CmdResult<Vec<Insight>> {
     }
 
     // ── 14. Recomprar próximos 7 días ─────────────────────────────────────────
-    {
+    if stock_tracking {
         let mut stmt = conn.prepare(
             "SELECT p.name, p.stock, COALESCE(SUM(si.qty),0)/30.0 as vel
              FROM products p
@@ -869,6 +875,40 @@ pub fn get_insights(state: State<AppState>) -> CmdResult<Vec<Insight>> {
                         None, None, Some("/dashboard".to_string())
                     );
                 }
+            }
+        }
+    }
+
+    // ── G. Caja abierta hace demasiado tiempo (turno olvidado) ────────────────
+    // Encontrado en el análisis de "Consejo del día": no había NINGÚN aviso de
+    // esto -- olvidarse una caja abierta es uno de los errores más comunes y
+    // más caros de un kiosco (el arqueo del día siguiente arranca mal, y en
+    // Multicaja bloquea a esa misma terminal para abrir un turno nuevo).
+    {
+        let rows: Vec<(i64, i64)> = {
+            let mut stmt = conn.prepare(
+                "SELECT id, CAST((julianday('now','localtime') - julianday(opened_at,'localtime')) * 24 AS INTEGER) as hours_open
+                 FROM cash_sessions WHERE closed_at IS NULL",
+            ).map_err(err)?;
+            let x: Vec<(i64, i64)> = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)))
+                .map_err(err)?.filter_map(|r| r.ok()).collect();
+            x
+        };
+        for (session_id, h) in rows {
+            if h >= 14 {
+                push!(out,
+                    format!("caja_abierta_{}", session_id), "Caja", "urgente",
+                    format!("Hay una caja abierta hace {} horas — ¿te olvidaste de cerrarla?", h),
+                    Some("Un turno abierto por tanto tiempo suele ser un olvido, no una venta real en curso".to_string()),
+                    Some("Ir a Caja".to_string()), Some("/caja-gestion".to_string())
+                );
+            } else if h >= 10 {
+                push!(out,
+                    format!("caja_abierta_{}", session_id), "Caja", "importante",
+                    format!("Hay una caja abierta hace {} horas", h),
+                    Some("Si ya terminaste el turno, cerrala para que el arqueo de mañana no arranque desalineado".to_string()),
+                    Some("Ir a Caja".to_string()), Some("/caja-gestion".to_string())
+                );
             }
         }
     }
