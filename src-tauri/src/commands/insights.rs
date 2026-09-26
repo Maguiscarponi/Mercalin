@@ -75,6 +75,15 @@ pub fn get_insights(state: State<AppState>) -> CmdResult<Vec<Insight>> {
     // "se agota en X días" es un dato falso que solo genera desconfianza.
     let stock_tracking = crate::db::stock_tracking_enabled(&conn);
 
+    // Encontrado en el análisis: un mismo producto podía aparecer el mismo
+    // día en 3-4 consejos distintos (stock crítico + recompra + co-venta +
+    // mínimo desactualizado) diciendo variantes de "cuidado con el stock" --
+    // no es que estuviera mal cada uno por separado, pero con el tiempo hace
+    // que se empiecen a ignorar los avisos, que es lo peor que puede pasar en
+    // un sistema que se supone que avisa de todo. Los de menor prioridad se
+    // saltan un producto que ya salió en uno de mayor prioridad ese mismo día.
+    let mut stock_alerted: HashSet<i64> = HashSet::new();
+
     // ── 1. Stock crítico: agotamiento en < 3 días ────────────────────────────
     if stock_tracking {
         let mut stmt = conn.prepare(
@@ -95,6 +104,7 @@ pub fn get_insights(state: State<AppState>) -> CmdResult<Vec<Insight>> {
         }).map_err(err)?.filter_map(|r| r.ok()).collect();
         for (id, name, stock, vel) in rows {
             let days = stock as f64 / vel;
+            stock_alerted.insert(id);
             push!(out,
                 format!("stock_critico_{}", id), "Stock", "urgente",
                 format!("{} se agota en ~{:.1} días al ritmo actual", name, days),
@@ -293,7 +303,7 @@ pub fn get_insights(state: State<AppState>) -> CmdResult<Vec<Insight>> {
     // (nada si el negocio apagó el seguimiento de stock)
     if stock_tracking {
         let mut stmt = conn.prepare(
-            "SELECT p.name, p.min_stock,
+            "SELECT p.id, p.name, p.min_stock,
                     CAST(COALESCE(SUM(si.qty), 0) / 30.0 AS REAL) as vel
              FROM products p
              LEFT JOIN sale_items si ON p.id = si.product_id
@@ -307,11 +317,13 @@ pub fn get_insights(state: State<AppState>) -> CmdResult<Vec<Insight>> {
              ORDER BY (CAST(vel * 3 AS INTEGER) - p.min_stock) DESC
              LIMIT 3",
         ).map_err(err)?;
-        let rows: Vec<(String, i64, f64)> = stmt.query_map([], |r| {
-            Ok((r.get(0)?, r.get(1)?, r.get(2)?))
-        }).map_err(err)?.filter_map(|r| r.ok()).collect();
+        let rows: Vec<(i64, String, i64, f64)> = stmt.query_map([], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+        }).map_err(err)?.filter_map(|r| r.ok())
+          .filter(|(id, ..)| !stock_alerted.contains(id))
+          .collect();
         if !rows.is_empty() {
-            let names: Vec<String> = rows.iter().map(|(n, min, vel)| {
+            let names: Vec<String> = rows.iter().map(|(_, n, min, vel)| {
                 let sugerido = (vel * 3.0) as i64;
                 format!("{} (mínimo actual: {}, sugerido: {})", n, min, sugerido)
             }).collect();
@@ -595,7 +607,7 @@ pub fn get_insights(state: State<AppState>) -> CmdResult<Vec<Insight>> {
         if let Some((top_id, top_name)) = top_today {
             // Paso 2: compañeros frecuentes de ese producto con stock bajo/crítico
             let mut stmt = conn.prepare(
-                "SELECT si2.name, COUNT(*) as co_count, p2.stock, p2.min_stock
+                "SELECT si2.product_id, si2.name, COUNT(*) as co_count, p2.stock, p2.min_stock
                  FROM sale_items si1
                  JOIN sale_items si2 ON si1.sale_id = si2.sale_id AND si1.product_id != si2.product_id
                  JOIN products p2 ON si2.product_id = p2.id
@@ -608,11 +620,13 @@ pub fn get_insights(state: State<AppState>) -> CmdResult<Vec<Insight>> {
                  HAVING co_count >= 3
                  ORDER BY co_count DESC LIMIT 3",
             ).map_err(err)?;
-            let companions: Vec<(String, i64, i64)> = stmt.query_map(params![top_id], |r| {
-                Ok((r.get::<_,String>(0)?, r.get::<_,i64>(2)?, r.get::<_,i64>(3)?))
-            }).map_err(err)?.filter_map(|r| r.ok()).collect();
+            let companions: Vec<(i64, String, i64, i64)> = stmt.query_map(params![top_id], |r| {
+                Ok((r.get::<_,i64>(0)?, r.get::<_,String>(1)?, r.get::<_,i64>(3)?, r.get::<_,i64>(4)?))
+            }).map_err(err)?.filter_map(|r| r.ok())
+              .filter(|(id, ..)| !stock_alerted.contains(id))
+              .collect();
             if !companions.is_empty() {
-                let names: Vec<String> = companions.iter().map(|(n, s, _)| format!("{} ({} un.)", n, s)).collect();
+                let names: Vec<String> = companions.iter().map(|(_, n, s, _)| format!("{} ({} un.)", n, s)).collect();
                 push!(out,
                     "co_ventas", "Stock", "importante",
                     format!("Hoy se está vendiendo bien {}. Sus productos complementarios tienen stock bajo: {}", top_name, names.join(", ")),
@@ -919,6 +933,223 @@ pub fn get_insights(state: State<AppState>) -> CmdResult<Vec<Insight>> {
                     format!("Hay una caja abierta hace {} horas", h),
                     Some("Si ya terminaste el turno, cerrala para que el arqueo de mañana no arranque desalineado".to_string()),
                     Some("Ir a Caja".to_string()), Some("/caja-gestion".to_string())
+                );
+            }
+        }
+    }
+
+    // ── H. Facturas ARCA con error o pendientes de reintentar ────────────────
+    // Encontrado en el análisis: existe reintentar una factura desde
+    // Facturación, pero nada avisa proactivamente que hay algo para reintentar.
+    {
+        let rows: Vec<(i64, String)> = {
+            let mut stmt = conn.prepare(
+                "SELECT COUNT(*), status FROM electronic_invoices WHERE status IN ('error','pendiente') GROUP BY status",
+            ).map_err(err)?;
+            let x: Vec<(i64, String)> = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+                .map_err(err)?.filter_map(|r| r.ok()).collect();
+            x
+        };
+        let errores: i64 = rows.iter().filter(|(_, s)| s == "error").map(|(c, _)| c).sum();
+        let pendientes: i64 = rows.iter().filter(|(_, s)| s == "pendiente").map(|(c, _)| c).sum();
+        if errores > 0 {
+            push!(out,
+                "facturas_arca_error", "Facturación", "urgente",
+                format!("{} factura{} de ARCA con error — revisalas y reintentalas", errores, if errores>1{"s"}else{""}),
+                Some("Un rechazo real de ARCA no se arregla solo con reintentar sin cambiar nada".to_string()),
+                Some("Ver Facturación".to_string()), Some("/facturacion".to_string())
+            );
+        }
+        if pendientes > 0 {
+            push!(out,
+                "facturas_arca_pendientes", "Facturación", "importante",
+                format!("{} factura{} de ARCA pendiente{} por un corte de conexión — reintentalas cuando puedas",
+                    pendientes, if pendientes>1{"s"}else{""}, if pendientes>1{"s"}else{""}),
+                None,
+                Some("Ver Facturación".to_string()), Some("/facturacion".to_string())
+            );
+        }
+    }
+
+    // ── I. Backup desactualizado o nunca hecho ───────────────────────────────
+    {
+        let last_backup: Option<String> = conn.query_row(
+            "SELECT value FROM config WHERE key='auto_backup_last_at'", [], |r| r.get(0)
+        ).ok();
+        let days_since = last_backup.as_deref().and_then(|v| {
+            chrono::DateTime::parse_from_rfc3339(v).ok()
+                .map(|d| (chrono::Utc::now() - d.with_timezone(&chrono::Utc)).num_days())
+        });
+        match days_since {
+            None => {
+                push!(out,
+                    "backup_nunca", "Sistema", "urgente",
+                    "Nunca se hizo un backup de tu base de datos".to_string(),
+                    Some("Si se rompe o se pierde la compu, se pierde todo el historial: ventas, clientes, stock".to_string()),
+                    Some("Ir a Configuración".to_string()), Some("/configuracion".to_string())
+                );
+            }
+            Some(d) if d >= 14 => {
+                push!(out,
+                    "backup_viejo", "Sistema", "urgente",
+                    format!("Hace {} días que no se hace un backup", d),
+                    None,
+                    Some("Ir a Configuración".to_string()), Some("/configuracion".to_string())
+                );
+            }
+            Some(d) if d >= 5 => {
+                push!(out,
+                    "backup_viejo", "Sistema", "importante",
+                    format!("Hace {} días que no se hace un backup", d),
+                    None,
+                    Some("Ir a Configuración".to_string()), Some("/configuracion".to_string())
+                );
+            }
+            _ => {}
+        }
+    }
+
+    // ── J. Clientes cerca del límite de cuenta corriente ─────────────────────
+    {
+        let rows: Vec<(String, i64, i64)> = {
+            let mut stmt = conn.prepare(
+                "SELECT c.name, c.credit_limit_cents,
+                        COALESCE((SELECT SUM(CASE WHEN ca.movement_type='cargo' THEN ca.amount_cents ELSE -ca.amount_cents END)
+                                  FROM client_account ca WHERE ca.client_id=c.id), 0) as balance
+                 FROM clients c
+                 WHERE c.active=1 AND c.credit_limit_cents > 0",
+            ).map_err(err)?;
+            let x: Vec<(String, i64, i64)> = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+                .map_err(err)?.filter_map(|r| r.ok())
+                .filter(|(_, limit, balance)| *balance as f64 >= *limit as f64 * 0.85)
+                .collect();
+            x
+        };
+        if !rows.is_empty() {
+            let names: Vec<String> = rows.iter().take(3).map(|(n, limit, balance)| {
+                format!("{} ({} de {})", n, fmt_cents(*balance), fmt_cents(*limit))
+            }).collect();
+            let extra = if rows.len() > 3 { format!(" y {} más", rows.len() - 3) } else { String::new() };
+            push!(out,
+                "clientes_limite_credito", "Clientes", "importante",
+                format!("{} cliente{} {} cerca o en el límite de su cuenta corriente",
+                    rows.len(), if rows.len()>1{"s"}else{""}, if rows.len()>1{"están"}else{"está"}),
+                Some(format!("{}{}", names.join(", "), extra)),
+                Some("Ver Clientes".to_string()), Some("/clientes".to_string())
+            );
+        }
+    }
+
+    // ── K. Promociones mal configuradas ──────────────────────────────────────
+    // Fechas invertidas: bloqueado al guardar desde este arreglo en adelante,
+    // pero puede quedar una vieja así de antes. Apunta a un producto/categoría
+    // que ya no existe o está inactivo: nunca se va a poder aplicar.
+    {
+        let invertidas: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM promotions
+             WHERE active=1 AND starts_at IS NOT NULL AND ends_at IS NOT NULL AND starts_at > ends_at",
+            [], |r| r.get(0)
+        ).unwrap_or(0);
+        if invertidas > 0 {
+            push!(out,
+                "promos_fechas_invertidas", "Promociones", "importante",
+                format!("{} promoción{} con fecha de fin anterior a la de inicio — nunca se van a aplicar",
+                    invertidas, if invertidas>1{"es"}else{""}),
+                None,
+                Some("Ver Promociones".to_string()), Some("/promociones".to_string())
+            );
+        }
+        let colgadas: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM promotions p
+             WHERE p.active=1 AND p.applies_to='product' AND p.target_id IS NOT NULL
+               AND p.target_id NOT IN (SELECT id FROM products WHERE active=1)",
+            [], |r| r.get(0)
+        ).unwrap_or(0);
+        if colgadas > 0 {
+            push!(out,
+                "promos_producto_inactivo", "Promociones", "consejo",
+                format!("{} promoción{} activa{} apunta{} a un producto desactivado o eliminado",
+                    colgadas, if colgadas>1{"es"}else{""}, if colgadas>1{"s"}else{""}, if colgadas>1{"n"}else{""}),
+                Some("Nunca se van a aplicar en Caja mientras el producto siga desactivado".to_string()),
+                Some("Ver Promociones".to_string()), Some("/promociones".to_string())
+            );
+        }
+    }
+
+    // ── L. Combo con un componente desactivado ───────────────────────────────
+    {
+        let names: Vec<String> = {
+            let mut stmt = conn.prepare(
+                "SELECT DISTINCT c.name FROM combos c
+                 JOIN combo_items ci ON ci.combo_id = c.id
+                 JOIN products p ON p.id = ci.product_id
+                 WHERE c.active=1 AND p.active=0",
+            ).map_err(err)?;
+            let x: Vec<String> = stmt.query_map([], |r| r.get::<_, String>(0))
+                .map_err(err)?.filter_map(|r| r.ok()).collect();
+            x
+        };
+        if !names.is_empty() {
+            push!(out,
+                "combos_componente_inactivo", "Combos", "importante",
+                format!("{} combo{} {} un componente desactivado — ya no se pueden vender hasta que lo reactives o los edites",
+                    names.len(), if names.len()>1{"s"}else{""}, if names.len()>1{"tienen"}else{"tiene"}),
+                Some(names.join(", ")),
+                Some("Ver Combos".to_string()), Some("/combos".to_string())
+            );
+        }
+    }
+
+    // ── M. Un solo administrador activo ──────────────────────────────────────
+    {
+        let admins: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM users WHERE role='admin' AND active=1", [], |r| r.get(0)
+        ).unwrap_or(0);
+        if admins == 1 {
+            push!(out,
+                "un_solo_admin", "Usuarios", "importante",
+                "Tenés un solo usuario administrador activo".to_string(),
+                Some("Si esa persona pierde el acceso, nadie más puede entrar a Usuarios ni a Configuración. Considerá tener un segundo admin de respaldo".to_string()),
+                Some("Ver Usuarios".to_string()), Some("/usuarios".to_string())
+            );
+        }
+    }
+
+    // ── N. Licencia de prueba por vencer ──────────────────────────────────────
+    {
+        if let Ok(app_dir) = crate::commands::device::app_dir_of(&state) {
+            let cfg = crate::commands::device::read_device_config(&app_dir);
+            if let Some(key) = cfg.license_key {
+                if let Ok(info) = crate::commands::device::parse_and_verify_license_key(&key) {
+                    if info.kind == "trial" {
+                        if let Some(exp) = info.expires_at {
+                            let days_left = (exp - chrono::Utc::now().timestamp()) / 86400;
+                            if days_left >= 0 && days_left <= 5 {
+                                push!(out,
+                                    "licencia_por_vencer", "Sistema", if days_left <= 1 { "urgente" } else { "importante" },
+                                    format!("Tu prueba de Mercalin vence en {} día{}", days_left, if days_left != 1 {"s"} else {""}),
+                                    Some("Activá la licencia completa para no perder acceso al sistema".to_string()),
+                                    None, None
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ── O. Terminal desconectada hace rato (Multicaja) ───────────────────────
+    {
+        let offline_since = *state.offline_since.lock();
+        if let Some(since) = offline_since {
+            let hours = (chrono::Utc::now().timestamp() - since) / 3600;
+            if hours >= 2 {
+                push!(out,
+                    "terminal_offline", "Sistema", "importante",
+                    format!("Esta caja está sin conexión con el servidor hace {} horas", hours),
+                    Some("Sigue vendiendo con sus propios datos, pero nada se sincroniza mientras no vuelva la conexión".to_string()),
+                    None, None
                 );
             }
         }

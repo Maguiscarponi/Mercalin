@@ -213,6 +213,7 @@ pub fn run_sync_worker(
     db: Arc<Mutex<Connection>>,
     queue: Arc<Mutex<Connection>>,
     status: Arc<Mutex<String>>,
+    offline_since: Arc<Mutex<Option<i64>>>,
     server_addr: String,
     token: String,
 ) {
@@ -227,8 +228,17 @@ pub fn run_sync_worker(
                 resync_light(&db, &server_addr, &token);
             }
             set_status(&app, &status, "online");
+            *offline_since.lock() = None;
         } else {
             set_status(&app, &status, "offline");
+            // Pedido en el análisis de "Consejo del día": no alcanza con saber
+            // que está offline AHORA, importa hace cuánto -- esto guarda el
+            // momento en que se detectó por primera vez, sin pisarlo mientras
+            // siga offline.
+            let mut since = offline_since.lock();
+            if since.is_none() {
+                *since = Some(chrono::Utc::now().timestamp());
+            }
         }
 
         std::thread::sleep(POLL_INTERVAL);

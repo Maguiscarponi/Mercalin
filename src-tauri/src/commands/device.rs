@@ -111,7 +111,7 @@ fn write_device_config(app_dir: &Path, cfg: &DeviceConfig) -> CmdResult<()> {
     std::fs::write(config_path(app_dir), json).map_err(err)
 }
 
-fn app_dir_of(state: &State<AppState>) -> CmdResult<std::path::PathBuf> {
+pub(crate) fn app_dir_of(state: &State<AppState>) -> CmdResult<std::path::PathBuf> {
     state
         .db_path
         .parent()
@@ -229,10 +229,10 @@ pub fn disconnect_client(state: State<AppState>) -> CmdResult<()> {
 // usuario en Windows, y el secret LICENSE_SECRET en GitHub Actions para CI.
 const LICENSE_SECRET: &str = env!("LICENSE_SECRET", "Definí la variable de entorno LICENSE_SECRET antes de compilar");
 
-struct LicenseInfo {
-    kind: String,             // "trial" | "full"
-    email: String,
-    expires_at: Option<i64>,  // epoch segundos; None == full, no vence
+pub(crate) struct LicenseInfo {
+    pub(crate) kind: String,             // "trial" | "full"
+    pub(crate) email: String,
+    pub(crate) expires_at: Option<i64>,  // epoch segundos; None == full, no vence
 }
 
 fn build_payload(kind: &str, email: &str, expires_at: i64) -> String {
@@ -258,7 +258,7 @@ fn make_license_key(kind: &str, email: &str, expires_at: i64) -> String {
     format!("{}.{}", B64.encode(payload.as_bytes()), B64.encode(sig))
 }
 
-fn parse_and_verify_license_key(raw_key: &str) -> Result<LicenseInfo, String> {
+pub(crate) fn parse_and_verify_license_key(raw_key: &str) -> Result<LicenseInfo, String> {
     // Quita espacios/saltos de línea que se cuelan al copiar/pegar una clave
     // larga desde un mail (algunos clientes de correo la parten en dos líneas).
     let cleaned: String = raw_key.chars().filter(|c| !c.is_whitespace()).collect();

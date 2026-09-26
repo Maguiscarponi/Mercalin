@@ -21,6 +21,10 @@ pub struct AppState {
     pub sync_queue: Arc<Mutex<Connection>>,
     // "online" | "offline" | "syncing" -- solo relevante en modo cliente.
     pub sync_status: Arc<Mutex<String>>,
+    // Epoch segundos de cuándo se detectó offline por última vez (None si
+    // está online o nunca estuvo offline) -- para poder avisar "hace cuánto"
+    // en Consejo del día, no solo el estado actual (ver commands::insights).
+    pub offline_since: Arc<Mutex<Option<i64>>>,
     // Sesiones de login activas (ver commands::session) -- en memoria del
     // proceso, se pierden al reiniciar la app (hay que volver a loguearse).
     pub sessions: commands::session::SessionStore,
@@ -478,6 +482,9 @@ pub fn run() {
             let sync_status_arc = Arc::new(Mutex::new(
                 if device_config.mode == "client" { "offline".to_string() } else { "online".to_string() }
             ));
+            let offline_since_arc: Arc<Mutex<Option<i64>>> = Arc::new(Mutex::new(
+                if device_config.mode == "client" { Some(chrono::Utc::now().timestamp()) } else { None }
+            ));
 
             // Iniciar servidor de red si está habilitado el modo tablet (solo lectura)
             // o el modo servidor de multicaja (lectura + escritura vía RPC)
@@ -511,8 +518,9 @@ pub fn run() {
                     let db_clone = Arc::clone(&db_arc);
                     let queue_clone = Arc::clone(&sync_queue_arc);
                     let status_clone = Arc::clone(&sync_status_arc);
+                    let offline_since_clone = Arc::clone(&offline_since_arc);
                     let token = device_config.network_token.clone().unwrap_or_default();
-                    sync_worker::run_sync_worker(app_handle, db_clone, queue_clone, status_clone, server_addr, token);
+                    sync_worker::run_sync_worker(app_handle, db_clone, queue_clone, status_clone, offline_since_clone, server_addr, token);
                 }
             }
 
@@ -523,6 +531,7 @@ pub fn run() {
                 catalog_import_running: Arc::new(AtomicBool::new(false)),
                 sync_queue: sync_queue_arc,
                 sync_status: sync_status_arc,
+                offline_since: offline_since_arc,
                 sessions: commands::session::new_session_store(),
             });
 
