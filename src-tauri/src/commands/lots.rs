@@ -27,7 +27,7 @@ pub fn list_product_lots(product_id: i64, state: State<AppState>) -> CmdResult<V
              FROM product_lots pl
              JOIN products p ON pl.product_id = p.id
              WHERE pl.product_id = ?1 AND pl.qty > 0
-             ORDER BY CASE WHEN pl.expires_at IS NULL THEN 1 ELSE 0 END, pl.expires_at ASC",
+             ORDER BY CASE WHEN pl.expires_at IS NULL THEN 1 ELSE 0 END, pl.expires_at ASC, pl.id ASC",
         )
         .map_err(err)?;
 

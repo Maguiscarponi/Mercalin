@@ -331,7 +331,9 @@ pub fn create_sale(input: SaleInput, state: State<AppState>) -> CmdResult<Sale> 
                     "UPDATE products SET stock=stock-?1, updated_at=CURRENT_TIMESTAMP WHERE id=?2",
                     params![total_qty, pid],
                 ).map_err(err)?;
-                let qty_after = (qty_before - total_qty).max(0.0);
+                // Mismo criterio que en la rama de producto simple: el historial
+                // tiene que reflejar el stock real, aunque sea negativo.
+                let qty_after = qty_before - total_qty;
                 tx.execute(
                     "INSERT INTO stock_movements (product_id, movement_type, qty_change, qty_before, qty_after, notes)
                      VALUES (?1, 'venta', ?2, ?3, ?4, ?5)",
@@ -341,7 +343,7 @@ pub fn create_sale(input: SaleInput, state: State<AppState>) -> CmdResult<Sale> 
                 let lots: Vec<(i64, f64)> = {
                     let mut s = tx.prepare(
                         "SELECT id, qty FROM product_lots WHERE product_id=?1 AND qty>0
-                         ORDER BY CASE WHEN expires_at IS NULL THEN 1 ELSE 0 END, expires_at ASC",
+                         ORDER BY CASE WHEN expires_at IS NULL THEN 1 ELSE 0 END, expires_at ASC, id ASC",
                     ).map_err(err)?;
                     let x: Vec<(i64, f64)> = s.query_map(params![pid], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, f64>(1)?)))
                         .map_err(err)?
@@ -370,7 +372,11 @@ pub fn create_sale(input: SaleInput, state: State<AppState>) -> CmdResult<Sale> 
             )
             .map_err(err)?;
 
-            let qty_after = (qty_before - item.qty).max(0.0);
+            // Encontrado en la auditoría: acá se clampeaba a 0 el qty_after
+            // registrado en el historial, aunque el stock real (arriba) sí
+            // puede quedar negativo cuando el seguimiento de stock está
+            // desactivado -- el historial mentía sobre el resultado real.
+            let qty_after = qty_before - item.qty;
             tx.execute(
                 "INSERT INTO stock_movements (product_id, movement_type, qty_change, qty_before, qty_after)
                  VALUES (?1, 'venta', ?2, ?3, ?4)",
@@ -383,7 +389,7 @@ pub fn create_sale(input: SaleInput, state: State<AppState>) -> CmdResult<Sale> 
                 let mut s = tx.prepare(
                     "SELECT id, qty FROM product_lots
                      WHERE product_id=?1 AND qty>0
-                     ORDER BY CASE WHEN expires_at IS NULL THEN 1 ELSE 0 END, expires_at ASC",
+                     ORDER BY CASE WHEN expires_at IS NULL THEN 1 ELSE 0 END, expires_at ASC, id ASC",
                 ).map_err(err)?;
                 let x = s.query_map(params![pid], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, f64>(1)?)))
                     .map_err(err)?

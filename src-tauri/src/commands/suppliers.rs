@@ -508,16 +508,24 @@ pub fn get_purchase_projections(state: State<AppState>) -> CmdResult<Vec<Purchas
              AND (sv.notes IS NULL OR sv.notes NOT LIKE '%[ANULADA]%')
          WHERE p.active = 1
          GROUP BY p.id
-         HAVING daily_velocity > 0
-            AND (p.stock / daily_velocity) <= 7
-         ORDER BY (p.stock / daily_velocity) ASC
+         -- Encontrado en la auditoría: un producto sin ninguna venta en los últimos 30
+         -- días (por ejemplo, recién cargado con poco stock inicial) quedaba totalmente
+         -- afuera de esta lista aunque estuviera por agotarse, porque exigía velocidad
+         -- de venta > 0. Ahora también entra si no tiene velocidad pero ya está en o por
+         -- debajo de su stock mínimo configurado (señal independiente de las ventas).
+         HAVING (daily_velocity > 0 AND (p.stock / daily_velocity) <= 7)
+             OR (daily_velocity = 0 AND p.min_stock > 0 AND p.stock <= p.min_stock)
+         ORDER BY CASE WHEN daily_velocity > 0 THEN (p.stock / daily_velocity) ELSE 0 END ASC
          LIMIT 50",
     ).map_err(err)?;
 
     let rows = stmt.query_map([], |row| {
         let stock: f64 = row.get("stock")?;
         let velocity: f64 = row.get("daily_velocity").unwrap_or(0.0);
-        let days_rem = if velocity > 0.0 { stock / velocity } else { 999.0 };
+        // Sin velocidad de venta (producto nuevo o sin movimiento), la única
+        // señal disponible es que ya está en el mínimo -- se marca como
+        // urgente (0) en vez de mostrar un "999 días" que no significa nada.
+        let days_rem = if velocity > 0.0 { stock / velocity } else { 0.0 };
         let min_stock: f64 = row.get("min_stock")?;
         let suggested = ((min_stock * 2.0) - stock).max(1.0);
         Ok(PurchaseProjection {

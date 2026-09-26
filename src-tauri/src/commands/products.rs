@@ -836,6 +836,34 @@ pub fn import_products_csv(
     let mut skipped = 0i64;
     let mut errors: Vec<String> = Vec::new();
 
+    // Encontrado en la auditoría: importar por CSV validaba mucho menos que
+    // el alta manual (solo nombre vacío y precio negativo) -- stock/costo
+    // negativos, NaN o absurdamente grandes se colaban sin ningún error.
+    // Se reusa la misma validación que ya usa create_product/update_product.
+    //
+    // También, para no duplicar categorías/marcas por una diferencia de
+    // mayúsculas o espacios (ej. "bebidas" vs "Bebidas" ya existente), se
+    // "encajan" contra las que ya existen -- mismo criterio que ya usa el
+    // alta manual en el frontend (snapToExisting), acá del lado del servidor
+    // para que también alcance a la importación.
+    let existing_categories: Vec<String> = {
+        let mut s = conn.prepare("SELECT DISTINCT category FROM products WHERE category IS NOT NULL
+                                   UNION SELECT name FROM categories").map_err(err)?;
+        let x: Vec<String> = s.query_map([], |r| r.get::<_, String>(0)).map_err(err)?.filter_map(|r| r.ok()).collect();
+        x
+    };
+    let existing_brands: Vec<String> = {
+        let mut s = conn.prepare("SELECT DISTINCT brand FROM products WHERE brand IS NOT NULL").map_err(err)?;
+        let x: Vec<String> = s.query_map([], |r| r.get::<_, String>(0)).map_err(err)?.filter_map(|r| r.ok()).collect();
+        x
+    };
+    fn snap_to_existing(value: &Option<String>, existing: &[String]) -> Option<String> {
+        let trimmed = value.as_deref()?.trim();
+        if trimmed.is_empty() { return None; }
+        let found = existing.iter().find(|e| e.eq_ignore_ascii_case(trimmed) || e.to_lowercase() == trimmed.to_lowercase());
+        Some(found.cloned().unwrap_or_else(|| trimmed.to_string()))
+    }
+
     for (i, row) in rows.iter().enumerate() {
         let line = i + 1;
         if row.name.trim().is_empty() {
@@ -843,13 +871,22 @@ pub fn import_products_csv(
             skipped += 1;
             continue;
         }
-        if row.price_cents < 0 {
-            errors.push(format!("Fila {line}: precio negativo en '{}'", row.name));
+        if let Err(e) = validate_product_fields(
+            &row.name, row.price_cents, row.price2_cents, row.price3_cents,
+            row.cost_cents, row.stock, row.min_stock,
+        ) {
+            errors.push(format!("Fila {line} '{}': {}", row.name, e));
             skipped += 1;
             continue;
         }
 
-        // Si tiene código de barras, buscar existente
+        let category = snap_to_existing(&row.category, &existing_categories);
+        let brand = snap_to_existing(&row.brand, &existing_brands);
+
+        // Si tiene código de barras, buscar existente por código; si no,
+        // encontrado en la auditoría: importar el mismo archivo sin códigos
+        // dos veces duplicaba el catálogo entero sin avisar -- se usa nombre
+        // + categoría como señal de posible duplicado entre importaciones.
         let existing_id: Option<i64> = if let Some(ref bc) = row.barcode {
             conn.query_row(
                 "SELECT id FROM products WHERE barcode=?1 LIMIT 1",
@@ -857,7 +894,12 @@ pub fn import_products_csv(
                 |r| r.get(0),
             ).ok()
         } else {
-            None
+            conn.query_row(
+                "SELECT id FROM products WHERE barcode IS NULL AND lower(trim(name))=lower(trim(?1))
+                 AND ((category IS NULL AND ?2 IS NULL) OR lower(trim(category))=lower(trim(?2))) LIMIT 1",
+                params![row.name, category],
+                |r| r.get(0),
+            ).ok()
         };
 
         // supplier_id explícito gana; si no vino, resolver por nombre (para quien no
@@ -881,14 +923,14 @@ pub fn import_products_csv(
                  min_stock=?7, category=?8, brand=?9, supplier_id=?10, is_weighable=?11, unit=?12, expires_at=?13,
                  updated_at=CURRENT_TIMESTAMP WHERE id=?14",
                 params![row.name, row.price_cents, row.price2_cents, row.price3_cents, row.cost_cents, row.stock,
-                        row.min_stock, row.category, row.brand, supplier_id, row.is_weighable as i64, row.unit, row.expires_at, id],
+                        row.min_stock, category, brand, supplier_id, row.is_weighable as i64, row.unit, row.expires_at, id],
             )
         } else {
             conn.execute(
                 "INSERT INTO products (barcode,name,price_cents,price2_cents,price3_cents,cost_cents,stock,min_stock,category,brand,supplier_id,is_weighable,unit,expires_at,active)
                  VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,1)",
                 params![row.barcode, row.name, row.price_cents, row.price2_cents, row.price3_cents, row.cost_cents, row.stock,
-                        row.min_stock, row.category, row.brand, supplier_id, row.is_weighable as i64, row.unit, row.expires_at],
+                        row.min_stock, category, brand, supplier_id, row.is_weighable as i64, row.unit, row.expires_at],
             )
         };
 
