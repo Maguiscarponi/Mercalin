@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
-import { centsToARS, formatDateTime } from "@/lib/format";
+import { centsToARS, formatDateTime, dateToLocalISO, todayISO } from "@/lib/format";
 import type { AuditEntry, CashMovement, CashSession, Product, ReturnWithItems, SaleWithItems } from "@/types";
 import { useEscapeToClose } from "@/lib/useEscapeToClose";
 import ModalCloseButton from "@/components/ui/ModalCloseButton";
 import TicketPrint from "@/components/TicketPrint";
+import { exportStyledExcel } from "@/lib/excelExport";
+import { showToast } from "@/stores/dialogs";
 import clsx from "clsx";
 
 const METHOD_LABELS: Record<string, string> = {
@@ -112,6 +114,12 @@ export default function Auditoria() {
   const [limit, setLimit] = useState(200);
   const [search, setSearch] = useState("");
   const [viewing, setViewing] = useState<AuditEntry | null>(null);
+  // Encontrado en la auditoría: no había forma de acotar por fecha ni de
+  // exportar -- para reconstruir qué pasó en una semana puntual, o entregarle
+  // algo a un contador, solo se podía mirar en pantalla.
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+  const [exporting, setExporting] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -132,16 +140,51 @@ export default function Auditoria() {
   }
 
   const entityFiltered = entityFilter === "todos" ? entries : entries.filter((e) => matchesGroup(e, entityFilter));
+  const dateFiltered = (!fromDate && !toDate) ? entityFiltered : entityFiltered.filter((e) => {
+    const d = dateToLocalISO(new Date(e.created_at));
+    if (fromDate && d < fromDate) return false;
+    if (toDate && d > toDate) return false;
+    return true;
+  });
   const q = search.trim().toLowerCase();
   const filtered = q
-    ? entityFiltered.filter((e) =>
+    ? dateFiltered.filter((e) =>
         e.detail?.toLowerCase().includes(q) ||
         actionLabel(e.action).toLowerCase().includes(q) ||
         entityLabel(e.entity).toLowerCase().includes(q) ||
         (e.user_name ?? "").toLowerCase().includes(q) ||
         String(e.entity_id ?? "").includes(q)
       )
-    : entityFiltered;
+    : dateFiltered;
+
+  async function exportExcel() {
+    setExporting(true);
+    try {
+      await exportStyledExcel([{
+        name: "Auditoría",
+        columns: [
+          { header: "Fecha", key: "date", width: 18 },
+          { header: "Usuario", key: "user", width: 20 },
+          { header: "Acción", key: "action", width: 20 },
+          { header: "Entidad", key: "entity", width: 16 },
+          { header: "Detalle", key: "detail", width: 40 },
+        ],
+        rows: filtered.map((e) => ({
+          date: formatDateTime(e.created_at),
+          user: e.user_name ?? "Sistema",
+          action: actionLabel(e.action),
+          entity: entityLabel(e.entity),
+          detail: e.detail ?? "",
+        })),
+      }], `auditoria_${todayISO()}.xlsx`);
+      showToast({ message: "Auditoría exportada a Excel", tone: "success" });
+    } catch (e) {
+      console.error(e);
+      showToast({ message: "No se pudo exportar la auditoría", tone: "danger" });
+    } finally {
+      setExporting(false);
+    }
+  }
 
   return (
     <div className="h-full flex flex-col p-4 gap-4">
@@ -157,6 +200,8 @@ export default function Auditoria() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
+          <input type="date" className="input w-auto text-sm" value={fromDate} onChange={(e) => setFromDate(e.target.value)} title="Desde" />
+          <input type="date" className="input w-auto text-sm" value={toDate} onChange={(e) => setToDate(e.target.value)} title="Hasta" />
           <select
             className="input w-auto text-sm"
             value={limit}
@@ -169,6 +214,9 @@ export default function Auditoria() {
           </select>
           <button onClick={load} className="btn btn-secondary text-sm">
             Actualizar
+          </button>
+          <button onClick={exportExcel} disabled={exporting || filtered.length === 0} className="btn btn-secondary text-sm disabled:opacity-50">
+            {exporting ? "Exportando…" : "📊 Exportar Excel"}
           </button>
         </div>
       </div>

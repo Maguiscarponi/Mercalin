@@ -678,6 +678,16 @@ export default function Reportes() {
               Sin datos para el período seleccionado
             </div>
           )}
+          {/* Encontrado en la auditoría: margin_report siempre trae una fila
+              por cada producto activo del catálogo (tenga o no ventas), así
+              que esta pestaña nunca podía mostrar realmente "sin ventas en
+              este período" -- se veía igual que un período con ventas, solo
+              que todo en $0, sin ninguna aclaración de qué significaba eso. */}
+          {!loadingMargins && marginProducts.length > 0 && !marginProducts.some((p) => p.units_sold > 0) && (
+            <div className="card p-4 text-sm text-amber-800 bg-amber-50 border border-amber-200">
+              No hubo ventas en el período seleccionado — la tabla de abajo muestra el catálogo de referencia, no ganancia real de este período.
+            </div>
+          )}
           {!loadingMargins && marginCategories.length > 0 && (() => {
             const totRev = marginCategories.reduce((a, c) => a + c.revenue_cents, 0);
             const totProfit = marginCategories.reduce((a, c) => a + c.profit_cents, 0);
