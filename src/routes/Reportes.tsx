@@ -205,6 +205,13 @@ export default function Reportes() {
       // pide todo el período de nuevo sin límite para que el Excel no quede truncado
       // en meses con muchas ventas.
       const allSales = await api.listSalesRange(fromDate, toDate, 1000000);
+      // Encontrado en la auditoría: esto arma el archivo entero en memoria sin
+      // ningún aviso previo -- con un rango de años en un negocio de mucha
+      // rotación, puede tardar bastante y pedir bastante memoria. No se
+      // trunca (se preferiría lento a incompleto), pero al menos se avisa.
+      if (allSales.length > 20000) {
+        showToast({ message: `Exportando ${allSales.length.toLocaleString("es-AR")} ventas -- puede tardar un momento.` });
+      }
       const userNameById = new Map(byUser.map((u) => [u.user_id, u.user_name]));
       const sheets: ExcelSheet[] = [
         {
