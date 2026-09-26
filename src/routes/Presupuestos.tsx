@@ -231,6 +231,17 @@ function QuoteDetailModal({
   // Los precios quedan congelados tal como se los presupuestó (no se
   // re-cotizan contra el catálogo actual).
   async function handleConvert() {
+    // Encontrado en la auditoría: un presupuesto vencido se convertía en
+    // venta sin ningún aviso, con los precios congelados de cuando se hizo
+    // -- puede ser exactamente lo que se quiere (respetar el precio viejo),
+    // pero merece una confirmación explícita en vez de pasar en silencio.
+    if (displayStatus(quote) === "vencido") {
+      const ok = await confirmAction(
+        "Este presupuesto venció. Se va a cobrar igual con los precios de cuando se armó (no los de hoy).",
+        { title: "¿Convertir un presupuesto vencido?", confirmLabel: "Convertir igual" }
+      );
+      if (!ok) return;
+    }
     if (cart.items.length > 0) {
       const ok = await confirmAction(
         "El carrito de Caja ya tiene productos cargados. Se van a reemplazar por los de este presupuesto.",

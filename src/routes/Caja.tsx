@@ -290,8 +290,17 @@ export default function Caja() {
     if (p.time_start || p.time_end) {
       const now = new Date();
       const hm = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-      if (p.time_start && hm < p.time_start) return false;
-      if (p.time_end && hm > p.time_end) return false;
+      // Encontrado en la auditoría: una promo tipo "22:00 a 02:00" (cruza la
+      // medianoche) daba siempre inactiva después de las 00:00 -- comparar
+      // "hm < inicio" y "hm > fin" por separado asume que el rango nunca
+      // cruza el día. Si inicio > fin, es un rango nocturno: está activa si
+      // ya pasó el inicio O todavía no llegó al fin (en vez de las dos a la vez).
+      if (p.time_start && p.time_end && p.time_start > p.time_end) {
+        if (hm < p.time_start && hm > p.time_end) return false;
+      } else {
+        if (p.time_start && hm < p.time_start) return false;
+        if (p.time_end && hm > p.time_end) return false;
+      }
     }
     return true;
   }

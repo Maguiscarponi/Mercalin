@@ -38,8 +38,21 @@ pub fn list_promotions(state: State<AppState>) -> CmdResult<Vec<Promotion>> {
     Ok(out)
 }
 
+// Encontrado en la auditoría: nada impedía guardar una promoción con fecha
+// de fin anterior a la de inicio -- quedaba guardada pero permanentemente
+// inactiva, sin que nadie entendiera por qué nunca se aplicaba.
+fn validate_promo_dates(starts_at: &Option<String>, ends_at: &Option<String>) -> CmdResult<()> {
+    if let (Some(s), Some(e)) = (starts_at, ends_at) {
+        if !s.is_empty() && !e.is_empty() && s > e {
+            return Err("La fecha de fin no puede ser anterior a la de inicio".to_string());
+        }
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub fn create_promotion(promo: NewPromotion, actor_id: Option<i64>, state: State<AppState>) -> CmdResult<Promotion> {
+    validate_promo_dates(&promo.starts_at, &promo.ends_at)?;
     let conn = state.db.lock();
     require_role(&conn, actor_id, "supervisor")?;
     conn.execute(
@@ -69,6 +82,7 @@ pub fn create_promotion(promo: NewPromotion, actor_id: Option<i64>, state: State
 
 #[tauri::command]
 pub fn update_promotion(promo: Promotion, actor_id: Option<i64>, state: State<AppState>) -> CmdResult<Promotion> {
+    validate_promo_dates(&promo.starts_at, &promo.ends_at)?;
     let conn = state.db.lock();
     require_role(&conn, actor_id, "supervisor")?;
     conn.execute(

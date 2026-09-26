@@ -463,6 +463,15 @@ fn open_and_migrate_inner(path: &Path) -> Result<Connection> {
     // actual para esas, igual que antes, no se puede reconstruir el pasado.
     let _ = conn.execute_batch("ALTER TABLE sale_items ADD COLUMN cost_cents_at_sale INTEGER;");
 
+    // Encontrado en la auditoría: las contraseñas se guardaban con SHA-256
+    // simple, sin sal -- si se llegara a filtrar o copiar mal el archivo de
+    // la base (ej. un backup mal resguardado), contraseñas simples típicas
+    // de un comercio son triviales de recuperar con tablas precalculadas.
+    // NULL = hash viejo sin sal (instalaciones de antes de este cambio); se
+    // sigue verificando igual que antes para esas, y se migra sola a un hash
+    // con sal la próxima vez que esa persona haga login (ver users.rs).
+    let _ = conn.execute_batch("ALTER TABLE users ADD COLUMN password_salt TEXT;");
+
     // Multicaja: identifica qué terminal física abrió cada sesión, para poder
     // permitir varias cajas abiertas en simultáneo (una por terminal) sin
     // dejar de frenar el doble-click que abre dos sesiones en la MISMA

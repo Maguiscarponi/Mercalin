@@ -2,14 +2,53 @@ use crate::commands::audit::log_action;
 use crate::commands::{err, require_admin, CmdResult};
 use crate::models::{NewUser, User};
 use crate::AppState;
+use hmac::{Hmac, Mac};
 use rusqlite::{params, Connection};
 use sha2::{Digest, Sha256};
 use tauri::State;
 
-fn hash_password(pw: &str) -> String {
+type HmacSha256 = Hmac<Sha256>;
+
+// Esquema viejo (sin sal) -- se conserva SOLO para poder seguir verificando
+// contraseñas de instalaciones de antes de este cambio. Nunca se usa para
+// generar un hash nuevo.
+fn hash_password_legacy(pw: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(pw.as_bytes());
     hex::encode(hasher.finalize())
+}
+
+fn generate_salt() -> String {
+    use rand::RngCore;
+    let mut bytes = [0u8; 16];
+    rand::thread_rng().fill_bytes(&mut bytes);
+    hex::encode(bytes)
+}
+
+// HMAC-SHA256 con una sal random por usuario -- mismo tipo de construcción
+// (Hmac<Sha256>) que ya usa este proyecto para el token de red en device.rs,
+// sin sumar una dependencia nueva. Devuelve (hash, sal); la sal se guarda
+// junto al hash en password_salt.
+fn hash_password_new(pw: &str) -> (String, String) {
+    let salt = generate_salt();
+    let hash = hmac_hash(pw, &salt);
+    (hash, salt)
+}
+
+fn hmac_hash(pw: &str, salt: &str) -> String {
+    let mut mac = HmacSha256::new_from_slice(salt.as_bytes()).expect("HMAC acepta cualquier tamaño de clave");
+    mac.update(pw.as_bytes());
+    hex::encode(mac.finalize().into_bytes())
+}
+
+// Verifica una contraseña contra lo guardado, sin importar si es un hash
+// viejo (sin sal) o uno nuevo (con sal) -- así una instalación existente no
+// se queda afuera de golpe al actualizar.
+fn verify_password(pw: &str, stored_hash: &str, salt: Option<&str>) -> bool {
+    match salt {
+        Some(s) if !s.is_empty() => hmac_hash(pw, s) == stored_hash,
+        _ => hash_password_legacy(pw) == stored_hash,
+    }
 }
 
 // Cuántos admins activos hay, sin contar (opcionalmente) uno en particular —
@@ -60,12 +99,18 @@ pub fn list_users(state: State<AppState>) -> CmdResult<Vec<User>> {
 
 #[tauri::command]
 pub fn create_user(user: NewUser, actor_id: Option<i64>, state: State<AppState>) -> CmdResult<User> {
+    // Encontrado en la auditoría: change_password sí exigía un mínimo de
+    // caracteres, pero crear un usuario nuevo no -- se podía dar de alta con
+    // una contraseña de un solo carácter.
+    if user.password.len() < 4 {
+        return Err("La contraseña debe tener al menos 4 caracteres".to_string());
+    }
     let conn = state.db.lock();
     require_admin(&conn, actor_id)?;
-    let hash = hash_password(&user.password);
+    let (hash, salt) = hash_password_new(&user.password);
     conn.execute(
-        "INSERT INTO users (username,full_name,password_hash,role) VALUES (?1,?2,?3,?4)",
-        params![user.username, user.full_name, hash, user.role],
+        "INSERT INTO users (username,full_name,password_hash,password_salt,role) VALUES (?1,?2,?3,?4,?5)",
+        params![user.username, user.full_name, hash, salt, user.role],
     )
     .map_err(friendly_username_error)?;
     let id = conn.last_insert_rowid();
@@ -131,10 +176,10 @@ pub fn change_password(
     if actor_id != Some(user_id) {
         require_admin(&conn, actor_id)?;
     }
-    let hash = hash_password(&new_password);
+    let (hash, salt) = hash_password_new(&new_password);
     conn.execute(
-        "UPDATE users SET password_hash=?1 WHERE id=?2",
-        params![hash, user_id],
+        "UPDATE users SET password_hash=?1, password_salt=?2 WHERE id=?3",
+        params![hash, salt, user_id],
     )
     .map_err(err)?;
     log_action(&conn, actor_id, "cambiar_password", "usuario", Some(user_id), None);
@@ -173,7 +218,7 @@ pub fn claim_admin_account(email: String, password: String, state: State<AppStat
         return Err("La contraseña debe tener al menos 4 caracteres".to_string());
     }
     let conn = state.db.lock();
-    let hash = hash_password(&password);
+    let (hash, salt) = hash_password_new(&password);
     let normalized_email = email.trim().to_lowercase();
 
     let existing: Option<i64> = conn
@@ -181,19 +226,19 @@ pub fn claim_admin_account(email: String, password: String, state: State<AppStat
         .ok();
 
     let user_id = if let Some(id) = existing {
-        conn.execute("UPDATE users SET password_hash=?1 WHERE id=?2", params![hash, id]).map_err(err)?;
+        conn.execute("UPDATE users SET password_hash=?1, password_salt=?2 WHERE id=?3", params![hash, salt, id]).map_err(err)?;
         id
     } else {
         let renamed = conn.execute(
-            "UPDATE users SET username=?1, password_hash=?2 WHERE username='admin' AND role='admin'",
-            params![normalized_email, hash],
+            "UPDATE users SET username=?1, password_hash=?2, password_salt=?3 WHERE username='admin' AND role='admin'",
+            params![normalized_email, hash, salt],
         ).map_err(err)?;
         if renamed > 0 {
             conn.query_row("SELECT id FROM users WHERE username=?1", params![normalized_email], |r| r.get(0)).map_err(err)?
         } else {
             conn.execute(
-                "INSERT INTO users (username,full_name,password_hash,role) VALUES (?1,?2,?3,'admin')",
-                params![normalized_email, "Administrador", hash],
+                "INSERT INTO users (username,full_name,password_hash,password_salt,role) VALUES (?1,?2,?3,?4,'admin')",
+                params![normalized_email, "Administrador", hash, salt],
             ).map_err(err)?;
             conn.last_insert_rowid()
         }
@@ -208,11 +253,68 @@ pub fn claim_admin_account(email: String, password: String, state: State<AppStat
 #[tauri::command]
 pub fn login(username: String, password: String, state: State<AppState>) -> CmdResult<User> {
     let conn = state.db.lock();
-    let hash = hash_password(&password);
-    conn.query_row(
-        "SELECT id,username,full_name,role,active,created_at FROM users WHERE username=?1 AND password_hash=?2 AND active=1",
-        params![username, hash],
-        row_to_user,
-    )
-    .map_err(|_| "Usuario o contraseña incorrectos".to_string())
+    // No se puede comparar el hash directo en el WHERE como antes: con sal
+    // por usuario, el hash esperado depende de la fila, así que primero se
+    // trae la fila por username y se verifica en Rust.
+    let row: Option<(i64, String, Option<String>)> = conn
+        .query_row(
+            "SELECT id, password_hash, password_salt FROM users WHERE username=?1 AND active=1",
+            params![username],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .ok();
+
+    let (id, stored_hash, salt) = row.ok_or_else(|| "Usuario o contraseña incorrectos".to_string())?;
+    if !verify_password(&password, &stored_hash, salt.as_deref()) {
+        return Err("Usuario o contraseña incorrectos".to_string());
+    }
+
+    // Migración transparente: si esta cuenta todavía tenía el hash viejo sin
+    // sal, se la pasa a uno nuevo con sal en este mismo login (ya se tiene
+    // la contraseña en texto plano en este momento, es la única oportunidad
+    // de hacerlo sin pedirle a nadie que la cambie a mano).
+    if salt.as_deref().map(|s| s.is_empty()).unwrap_or(true) {
+        let (new_hash, new_salt) = hash_password_new(&password);
+        let _ = conn.execute(
+            "UPDATE users SET password_hash=?1, password_salt=?2 WHERE id=?3",
+            params![new_hash, new_salt, id],
+        );
+    }
+
+    let mut stmt = conn
+        .prepare("SELECT id,username,full_name,role,active,created_at FROM users WHERE id=?1")
+        .map_err(err)?;
+    stmt.query_row(params![id], row_to_user).map_err(err)
+}
+
+#[cfg(test)]
+mod password_tests {
+    use super::*;
+
+    #[test]
+    fn hash_nuevo_incluye_sal_y_verifica_ok() {
+        let (hash, salt) = hash_password_new("1234");
+        assert!(!salt.is_empty());
+        assert!(verify_password("1234", &hash, Some(&salt)));
+        assert!(!verify_password("otra", &hash, Some(&salt)));
+    }
+
+    #[test]
+    fn dos_hashes_de_la_misma_contrasena_no_son_iguales() {
+        // Cada usuario tiene su propia sal random -- dos cuentas con la misma
+        // contraseña no deben terminar con el mismo hash guardado.
+        let (hash_a, salt_a) = hash_password_new("1234");
+        let (hash_b, salt_b) = hash_password_new("1234");
+        assert_ne!(salt_a, salt_b);
+        assert_ne!(hash_a, hash_b);
+    }
+
+    #[test]
+    fn sigue_verificando_el_hash_viejo_sin_sal() {
+        // Este es el caso real de una instalación de antes de este cambio:
+        // password_salt es NULL, y el hash guardado es SHA-256 simple.
+        let legacy_hash = hash_password_legacy("admin");
+        assert!(verify_password("admin", &legacy_hash, None));
+        assert!(!verify_password("otra", &legacy_hash, None));
+    }
 }
