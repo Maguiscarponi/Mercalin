@@ -1,6 +1,35 @@
 use crate::commands::{err, CmdResult};
 use crate::AppState;
+use std::io::Write;
 use tauri::State;
+
+// Encontrado en la auditoría: backup/restore no dejaban NINGÚN rastro en
+// Auditoría -- y aunque lo dejaran, un restore reemplaza la propia tabla
+// audit_log. Se guarda en un archivo de texto plano al lado de la base, que
+// sobrevive intacto a un restore (restore solo toca kiosco.db, no este
+// archivo), para que después de restaurar un backup viejo quede registro de
+// que pasó, cuándo y quién lo hizo.
+fn backup_log_path(state: &AppState) -> std::path::PathBuf {
+    state
+        .db_path
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new("."))
+        .join("backup_audit.log")
+}
+
+fn append_backup_log(state: &AppState, actor_id: Option<i64>, action: &str, detail: &str) {
+    let path = backup_log_path(state);
+    let line = format!(
+        "{} | actor_id={} | {} | {}\n",
+        chrono::Local::now().to_rfc3339(),
+        actor_id.map(|id| id.to_string()).unwrap_or_else(|| "?".to_string()),
+        action,
+        detail
+    );
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+        let _ = f.write_all(line.as_bytes());
+    }
+}
 
 #[derive(serde::Serialize, Clone)]
 pub struct BackupInfo {
@@ -75,7 +104,7 @@ fn prune_old_backups(backup_dir: &std::path::Path, keep: usize) {
 }
 
 #[tauri::command]
-pub fn backup_database(state: State<AppState>) -> CmdResult<String> {
+pub fn backup_database(actor_id: Option<i64>, state: State<AppState>) -> CmdResult<String> {
     let keep = get_keep_count(&state);
     let db_path = state.db_path.clone();
     let backup_dir = backup_dir(&state);
@@ -95,6 +124,7 @@ pub fn backup_database(state: State<AppState>) -> CmdResult<String> {
     }
 
     prune_old_backups(&backup_dir, keep);
+    append_backup_log(&state, actor_id, "backup_creado", &filename);
     Ok(filename)
 }
 
@@ -123,7 +153,7 @@ pub fn list_backups(state: State<AppState>) -> CmdResult<Vec<BackupInfo>> {
 }
 
 #[tauri::command]
-pub fn delete_backup(name: String, state: State<AppState>) -> CmdResult<()> {
+pub fn delete_backup(name: String, actor_id: Option<i64>, state: State<AppState>) -> CmdResult<()> {
     if !name.starts_with("kiosco_backup_") || !name.ends_with(".db") || name.contains('/') || name.contains('\\') {
         return Err("Nombre de backup inválido".into());
     }
@@ -131,6 +161,7 @@ pub fn delete_backup(name: String, state: State<AppState>) -> CmdResult<()> {
     if path.exists() {
         std::fs::remove_file(&path).map_err(err)?;
     }
+    append_backup_log(&state, actor_id, "backup_borrado", &name);
     Ok(())
 }
 
@@ -144,7 +175,35 @@ pub fn delete_backup(name: String, state: State<AppState>) -> CmdResult<()> {
 // por una en memoria) antes de copiar. Después de esto, el frontend tiene
 // que reiniciar la app (relaunch) para que abra la base ya restaurada desde
 // cero -- no se intenta seguir usando la conexión vieja en caliente.
-fn do_restore(src: &std::path::Path, state: &AppState) -> CmdResult<()> {
+// Encontrado en la auditoría: si había una sesión de caja abierta, restaurar
+// no avisaba nada específico -- se podía perder un turno entero de ventas en
+// curso sin saber cuánto. Devuelve el monto vendido en la sesión abierta (si
+// hay una) para que el frontend lo muestre en la confirmación.
+#[tauri::command]
+pub fn get_open_session_warning(state: State<AppState>) -> CmdResult<Option<i64>> {
+    let conn = state.db.lock();
+    let session_id: Option<i64> = conn
+        .query_row("SELECT id FROM cash_sessions WHERE closed_at IS NULL ORDER BY opened_at DESC LIMIT 1", [], |r| r.get(0))
+        .ok();
+    let Some(sid) = session_id else { return Ok(None) };
+    let total: i64 = conn
+        .query_row(
+            "SELECT COALESCE(SUM(total_cents), 0) FROM sales WHERE session_id=?1 AND (notes IS NULL OR notes NOT LIKE '%[ANULADA]%')",
+            rusqlite::params![sid], |r| r.get(0),
+        )
+        .unwrap_or(0);
+    Ok(Some(total))
+}
+
+// Encontrado en la auditoría: esto reemplazaba kiosco.db con un fs::copy
+// directo en el lugar -- si se cortaba la luz o se cerraba la app a mitad de
+// la copia, el archivo quedaba truncado y open_and_migrate directamente
+// entra en pánico al abrir la app de nuevo, sin ningún camino de vuelta.
+// Ahora se copia primero a un archivo temporal EN EL MISMO DISCO y recién al
+// final se hace un fs::rename (una sola operación del sistema de archivos,
+// atómica: o el destino queda completo, o no se toca en absoluto -- nunca
+// un estado intermedio a medio escribir).
+fn do_restore(src: &std::path::Path, state: &AppState, actor_id: Option<i64>) -> CmdResult<()> {
     if !src.exists() {
         return Err("El archivo no existe.".to_string());
     }
@@ -159,6 +218,21 @@ fn do_restore(src: &std::path::Path, state: &AppState) -> CmdResult<()> {
     }
 
     let db_path = state.db_path.clone();
+    let tmp_path = db_path.with_extension("db.restoring");
+
+    // Copiar y volver a abrir el temporal ANTES de tocar la conexión viva --
+    // si el archivo de origen estuviera corrupto o incompleto, esto falla
+    // acá, con la base real todavía intacta y la app sin haberse enterado.
+    std::fs::copy(src, &tmp_path).map_err(err)?;
+    {
+        let verify = rusqlite::Connection::open(&tmp_path).map_err(err)?;
+        verify
+            .query_row("SELECT COUNT(*) FROM config", [], |_| Ok(()))
+            .map_err(|e| { let _ = std::fs::remove_file(&tmp_path); err(e) })?;
+    }
+
+    append_backup_log(state, actor_id, "restore", &format!("{}", src.display()));
+
     {
         let mut conn_guard = state.db.lock();
         *conn_guard = rusqlite::Connection::open_in_memory().map_err(err)?;
@@ -166,26 +240,26 @@ fn do_restore(src: &std::path::Path, state: &AppState) -> CmdResult<()> {
     let _ = std::fs::remove_file(format!("{}-wal", db_path.display()));
     let _ = std::fs::remove_file(format!("{}-shm", db_path.display()));
 
-    std::fs::copy(src, &db_path).map_err(err)?;
+    std::fs::rename(&tmp_path, &db_path).map_err(err)?;
     Ok(())
 }
 
 // Restaurar desde un archivo elegido a mano (típicamente en otra compu, sin
 // historial local de backups todavía).
 #[tauri::command]
-pub fn restore_backup(file_path: String, state: State<AppState>) -> CmdResult<()> {
-    do_restore(std::path::Path::new(&file_path), &state)
+pub fn restore_backup(file_path: String, actor_id: Option<i64>, state: State<AppState>) -> CmdResult<()> {
+    do_restore(std::path::Path::new(&file_path), &state, actor_id)
 }
 
 // Restaurar uno de los backups que ya están en la lista de esta misma compu
 // -- no hace falta volver a elegir el archivo, ya se sabe dónde está.
 #[tauri::command]
-pub fn restore_backup_by_name(name: String, state: State<AppState>) -> CmdResult<()> {
+pub fn restore_backup_by_name(name: String, actor_id: Option<i64>, state: State<AppState>) -> CmdResult<()> {
     if !name.starts_with("kiosco_backup_") || !name.ends_with(".db") || name.contains('/') || name.contains('\\') {
         return Err("Nombre de backup inválido".into());
     }
     let path = backup_dir(&state).join(&name);
-    do_restore(&path, &state)
+    do_restore(&path, &state, actor_id)
 }
 
 #[tauri::command]

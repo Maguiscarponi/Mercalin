@@ -55,6 +55,8 @@ const ENTITY_LABELS: Record<string, string> = {
   return:          "Devolución",
   stock:           "Stock",
   etiqueta_pesada: "Etiqueta pesada",
+  arca_config:     "Config. ARCA",
+  configuracion:   "Configuración",
 };
 
 const ACTION_COLORS: Record<string, string> = {
@@ -92,6 +94,7 @@ const ENTITY_GROUPS: [id: string, label: string, entities: string[]][] = [
   ["caja",      "Caja",        ["caja"]],
   ["stock",     "Stock",       ["stock"]],
   ["usuario",   "Usuarios",    ["usuario"]],
+  ["sistema",   "Sistema",     ["arca_config", "configuracion"]],
 ];
 
 function entityLabel(entity: string): string {

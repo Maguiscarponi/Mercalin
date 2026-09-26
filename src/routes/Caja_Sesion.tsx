@@ -401,10 +401,15 @@ export function OpenCashForm({ onCancel, onOpened }: OpenFormProps) {
   async function submit() {
     setSaving(true);
     try {
+      // Multicaja: identifica esta terminal para que el chequeo de "¿ya hay
+      // una caja abierta?" del backend no cuente sesiones abiertas en OTRAS
+      // terminales (ver has_open_cash_session en caja.rs).
+      const deviceConfig = await api.getDeviceConfig().catch(() => null);
       const session = await api.openCashSession({
         opening_cents: arsStringToCents(amountStr),
         user_id: userId,
         notes: notes.trim() || null,
+        terminal_id: deviceConfig?.deviceId ?? null,
       });
       onOpened(session);
     } catch (e: unknown) {

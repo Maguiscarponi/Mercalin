@@ -128,7 +128,7 @@ pub fn reset_arca_data(actor_id: Option<i64>, state: State<AppState>) -> CmdResu
     // fiscal real.
     require_role(&conn, actor_id, "admin")?;
     let invoice_count: i64 = conn.query_row("SELECT COUNT(*) FROM electronic_invoices WHERE status='autorizada'", [], |r| r.get(0)).unwrap_or(0);
-    log_action(&conn, actor_id, "borrar", "arca_config", None, Some(&format!("Reseteo de ARCA: se perdió el historial de {} factura(s) autorizada(s)", invoice_count)));
+    log_action(&conn, actor_id, "eliminar", "arca_config", None, Some(&format!("Reseteo de ARCA: se perdió el historial de {} factura(s) autorizada(s)", invoice_count)));
     conn.execute("DELETE FROM electronic_invoices", []).map_err(err)?;
     conn.execute("DELETE FROM arca_config", []).map_err(err)?;
     Ok(())

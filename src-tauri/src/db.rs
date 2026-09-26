@@ -452,6 +452,12 @@ fn open_and_migrate_inner(path: &Path) -> Result<Connection> {
     // duplicarla) sin bloquear otras devoluciones parciales de la misma venta.
     let _ = conn.execute_batch("ALTER TABLE electronic_invoices ADD COLUMN return_id INTEGER REFERENCES returns(id);");
 
+    // Multicaja: identifica qué terminal física abrió cada sesión, para poder
+    // permitir varias cajas abiertas en simultáneo (una por terminal) sin
+    // dejar de frenar el doble-click que abre dos sesiones en la MISMA
+    // terminal. Ver device.rs (device_id) y caja.rs (has_open_cash_session).
+    let _ = conn.execute_batch("ALTER TABLE cash_sessions ADD COLUMN terminal_id TEXT;");
+
     // Para poder devolver un ítem que se vendió como parte de un combo y
     // reponerle el stock a sus componentes (antes se perdía el dato: una
     // devolución de combo quedaba con product_id=NULL y combo_id=NULL, sin

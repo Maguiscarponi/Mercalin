@@ -181,9 +181,9 @@ pub fn dispatch(app: &AppHandle, command: &str, body: Value) -> RpcResult {
 
         // Config
         "get_config" => crate::commands::config::get_config[key: String],
-        "set_config" => crate::commands::config::set_config[entry: crate::models::ConfigEntry],
+        "set_config" => crate::commands::config::set_config[entry: crate::models::ConfigEntry, actor_id: Option<i64>],
         "get_all_config" => crate::commands::config::get_all_config[],
-        "set_multiple_config" => crate::commands::config::set_multiple_config[entries: Vec<crate::models::ConfigEntry>],
+        "set_multiple_config" => crate::commands::config::set_multiple_config[entries: Vec<crate::models::ConfigEntry>, actor_id: Option<i64>],
 
         // Reportes / dashboard / insights
         "get_dashboard" => crate::commands::dashboard::get_dashboard[],
@@ -198,12 +198,13 @@ pub fn dispatch(app: &AppHandle, command: &str, body: Value) -> RpcResult {
 
         // Auditoría / backup
         "list_audit_log" => crate::commands::audit::list_audit_log[limit: i64],
-        "backup_database" => crate::commands::backup::backup_database[],
+        "backup_database" => crate::commands::backup::backup_database[actor_id: Option<i64>],
         "list_backups" => crate::commands::backup::list_backups[],
-        "delete_backup" => crate::commands::backup::delete_backup[name: String],
-        "restore_backup" => crate::commands::backup::restore_backup[file_path: String],
-        "restore_backup_by_name" => crate::commands::backup::restore_backup_by_name[name: String],
+        "delete_backup" => crate::commands::backup::delete_backup[name: String, actor_id: Option<i64>],
+        "restore_backup" => crate::commands::backup::restore_backup[file_path: String, actor_id: Option<i64>],
+        "restore_backup_by_name" => crate::commands::backup::restore_backup_by_name[name: String, actor_id: Option<i64>],
         "auto_backup_check" => crate::commands::backup::auto_backup_check[],
+        "get_open_session_warning" => crate::commands::backup::get_open_session_warning[],
 
         // ARCA / facturación electrónica
         "get_arca_config" => crate::commands::arca::get_arca_config[],

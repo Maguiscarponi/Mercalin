@@ -44,12 +44,38 @@ pub struct DeviceConfig {
     // el servidor (se completa al conectar, ver bootstrap_from_server).
     #[serde(default)]
     pub network_token: Option<String>,
+    // Identidad de ESTA máquina física, estable entre reinicios (vive en este
+    // archivo, no en la base, por el mismo motivo que mode/network_token: no
+    // debe perderse cuando esta caja reemplaza su base al conectarse como
+    // cliente). Encontrado en la auditoría: sin esto, el chequeo de "¿ya hay
+    // una caja abierta?" no tenía forma de distinguir "esta terminal" de
+    // "cualquier otra terminal", y contaba TODAS las sesiones abiertas de
+    // cualquier caja del comercio -- bloqueando abrir una segunda caja en
+    // simultáneo, que es justo el propósito de Multicaja.
+    #[serde(default)]
+    pub device_id: Option<String>,
 }
 
 impl Default for DeviceConfig {
     fn default() -> Self {
-        DeviceConfig { mode: "standalone".to_string(), server_addr: None, license_email: None, license_key: None, last_verified_at: None, network_token: None }
+        DeviceConfig { mode: "standalone".to_string(), server_addr: None, license_email: None, license_key: None, last_verified_at: None, network_token: None, device_id: None }
     }
+}
+
+// Mismo criterio que ensure_network_token: genera un identificador nuevo
+// solo si todavía no existe uno, para que sea estable en el tiempo.
+pub fn ensure_device_id(cfg: &mut DeviceConfig) -> String {
+    if let Some(id) = &cfg.device_id {
+        if !id.is_empty() {
+            return id.clone();
+        }
+    }
+    use rand::RngCore;
+    let mut bytes = [0u8; 16];
+    rand::thread_rng().fill_bytes(&mut bytes);
+    let id = hex::encode(bytes);
+    cfg.device_id = Some(id.clone());
+    id
 }
 
 // Genera un token nuevo si esta config todavía no tiene uno -- se llama al
@@ -95,7 +121,13 @@ fn app_dir_of(state: &State<AppState>) -> CmdResult<std::path::PathBuf> {
 
 #[tauri::command]
 pub fn get_device_config(state: State<AppState>) -> CmdResult<DeviceConfig> {
-    Ok(read_device_config(&app_dir_of(&state)?))
+    let app_dir = app_dir_of(&state)?;
+    let mut cfg = read_device_config(&app_dir);
+    if cfg.device_id.is_none() {
+        ensure_device_id(&mut cfg);
+        write_device_config(&app_dir, &cfg)?;
+    }
+    Ok(cfg)
 }
 
 #[tauri::command]

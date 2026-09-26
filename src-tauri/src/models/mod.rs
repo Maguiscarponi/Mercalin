@@ -154,6 +154,8 @@ pub struct OpenSessionInput {
     pub opening_cents: i64,
     pub user_id: Option<i64>,
     pub notes: Option<String>,
+    #[serde(default)]
+    pub terminal_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

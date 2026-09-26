@@ -26,6 +26,8 @@ import Combos from "./routes/Combos";
 import Facturacion from "./routes/Facturacion";
 import { useAuthStore } from "./stores/auth";
 import { usePosModeStore } from "./stores/posMode";
+import { useCart } from "./stores/cart";
+import { showToast } from "./stores/dialogs";
 import { ROUTE_MIN_ROLE, defaultRouteFor, hasAccess } from "./lib/navigation";
 import type { LicenseStatus, UserRole } from "./types";
 
@@ -55,6 +57,7 @@ function RequireRole({ path, children }: { path: string; children: React.ReactNo
 export default function App() {
   const user = useAuthStore((s) => s.user);
   const [licenseStatus, setLicenseStatus] = useState<LicenseStatus | null>(null);
+  const cartItemCount = useCart((s) => s.items.length);
 
   useEffect(() => {
     const NOT_ACTIVATED: LicenseStatus = { activated: false, email: null, kind: null, expiresAt: null, expired: false };
@@ -68,11 +71,31 @@ export default function App() {
     return () => clearInterval(id);
   }, []);
 
+  // Corre siempre, al abrir la app, sin depender de que alguien entre a
+  // Configuración -- antes el backup automático solo se disparaba si esa
+  // pantalla puntual llegaba a montarse.
+  useEffect(() => { api.autoBackupCheck().catch(console.error); }, []);
+
+  // Encontrado en la auditoría: el vencimiento de licencia se detectaba cada
+  // 60s incluso a mitad de una venta, reemplazando toda la pantalla (carrito
+  // incluido) por TrialExpired sin ningún margen. Si hay un carrito con
+  // ítems cuando se detecta el vencimiento, se da un margen para terminar esa
+  // venta -- se avisa una vez, pero no se corta el cobro en curso.
+  const [expiredGraceWarned, setExpiredGraceWarned] = useState(false);
+  const inGracePeriod = !!licenseStatus?.expired && cartItemCount > 0;
+  useEffect(() => {
+    if (inGracePeriod && !expiredGraceWarned) {
+      showToast({ message: "Tu prueba venció -- terminá esta venta, después de eso el sistema se bloquea.", tone: "danger" });
+      setExpiredGraceWarned(true);
+    }
+    if (!inGracePeriod && expiredGraceWarned) setExpiredGraceWarned(false);
+  }, [inGracePeriod, expiredGraceWarned]);
+
   // null = todavía no se chequeó (evita el flash de la pantalla de activación
   // en cada arranque, mientras se resuelve la promesa).
   if (licenseStatus === null) return <div className="h-screen bg-stone-100" />;
   if (!licenseStatus.activated) return <Activation onActivated={setLicenseStatus} />;
-  if (licenseStatus.expired) return <TrialExpired status={licenseStatus} onUnlocked={setLicenseStatus} />;
+  if (licenseStatus.expired && !inGracePeriod) return <TrialExpired status={licenseStatus} onUnlocked={setLicenseStatus} />;
 
   if (!user) return <Login />;
 

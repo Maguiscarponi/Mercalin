@@ -650,6 +650,7 @@ pub fn run() {
             commands::backup::restore_backup,
             commands::backup::restore_backup_by_name,
             commands::backup::auto_backup_check,
+            commands::backup::get_open_session_warning,
             // Dashboard
             commands::dashboard::get_dashboard,
             // Insights

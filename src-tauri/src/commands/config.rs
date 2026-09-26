@@ -1,8 +1,20 @@
-use crate::commands::{err, CmdResult};
+use crate::commands::{audit::log_action, err, CmdResult};
 use crate::models::ConfigEntry;
 use crate::AppState;
 use rusqlite::params;
 use tauri::State;
+
+// Valores que vale la pena poder auditar (quién cambió el CUIT/razón social
+// del negocio y cuándo, por ejemplo) sin llenar Auditoría de ruido por cada
+// toggle de sonido o cada tilde de "combos habilitados". No es un control de
+// acceso (eso sigue siendo <RequireRole> en el router de React) -- Activation.tsx
+// y algunos stores (stockTracking, combosEnabled) llaman a set_config sin un
+// usuario logueado todavía o desde pantallas que no son de admin, así que
+// exigir un rol acá rompería esos flujos legítimos. Ver Sistema en la auditoría.
+const SENSITIVE_CONFIG_KEYS: &[&str] = &[
+    "business_name", "business_address", "business_phone", "business_cuit",
+    "max_discount_pct_no_pin", "min_margin_pct",
+];
 
 #[tauri::command]
 pub fn get_config(key: String, state: State<AppState>) -> CmdResult<Option<String>> {
@@ -17,7 +29,7 @@ pub fn get_config(key: String, state: State<AppState>) -> CmdResult<Option<Strin
 }
 
 #[tauri::command]
-pub fn set_config(entry: ConfigEntry, state: State<AppState>) -> CmdResult<()> {
+pub fn set_config(entry: ConfigEntry, actor_id: Option<i64>, state: State<AppState>) -> CmdResult<()> {
     let conn = state.db.lock();
     conn.execute(
         "INSERT INTO config (key, value, updated_at) VALUES (?1, ?2, CURRENT_TIMESTAMP)
@@ -25,6 +37,9 @@ pub fn set_config(entry: ConfigEntry, state: State<AppState>) -> CmdResult<()> {
         params![entry.key, entry.value],
     )
     .map_err(err)?;
+    if SENSITIVE_CONFIG_KEYS.contains(&entry.key.as_str()) {
+        log_action(&conn, actor_id, "editar", "configuracion", None, Some(&format!("{} = {}", entry.key, entry.value)));
+    }
     Ok(())
 }
 
@@ -49,8 +64,9 @@ pub fn get_all_config(state: State<AppState>) -> CmdResult<Vec<ConfigEntry>> {
 }
 
 #[tauri::command]
-pub fn set_multiple_config(entries: Vec<ConfigEntry>, state: State<AppState>) -> CmdResult<()> {
+pub fn set_multiple_config(entries: Vec<ConfigEntry>, actor_id: Option<i64>, state: State<AppState>) -> CmdResult<()> {
     let conn = state.db.lock();
+    let mut changed_sensitive: Vec<String> = Vec::new();
     for entry in entries {
         conn.execute(
             "INSERT INTO config (key, value, updated_at) VALUES (?1, ?2, CURRENT_TIMESTAMP)
@@ -58,6 +74,12 @@ pub fn set_multiple_config(entries: Vec<ConfigEntry>, state: State<AppState>) ->
             params![entry.key, entry.value],
         )
         .map_err(err)?;
+        if SENSITIVE_CONFIG_KEYS.contains(&entry.key.as_str()) {
+            changed_sensitive.push(format!("{}={}", entry.key, entry.value));
+        }
+    }
+    if !changed_sensitive.is_empty() {
+        log_action(&conn, actor_id, "editar", "configuracion", None, Some(&changed_sensitive.join(", ")));
     }
     Ok(())
 }

@@ -248,14 +248,14 @@ export const api = {
   getConfig: (key: string) =>
     rpc<string | null>("get_config", { key }),
 
-  setConfig: (entry: ConfigEntry) =>
-    rpc<void>("set_config", { entry }),
+  setConfig: (entry: ConfigEntry, actorId: number | null = null) =>
+    rpc<void>("set_config", { entry, actorId }),
 
   getAllConfig: () =>
     rpc<ConfigEntry[]>("get_all_config"),
 
-  setMultipleConfig: (entries: ConfigEntry[]) =>
-    rpc<void>("set_multiple_config", { entries }),
+  setMultipleConfig: (entries: ConfigEntry[], actorId: number | null = null) =>
+    rpc<void>("set_multiple_config", { entries, actorId }),
 
   // ─── Usuarios ───────────────────────────────────────────────────────────────
   listUsers: () =>
@@ -345,23 +345,26 @@ export const api = {
     rpc<User>("login", { username, password }),
 
   // ─── Backup ─────────────────────────────────────────────────────────────────
-  backupDatabase: () =>
-    rpc<string>("backup_database"),
+  backupDatabase: (actorId: number | null) =>
+    rpc<string>("backup_database", { actorId }),
 
   listBackups: () =>
     rpc<BackupInfo[]>("list_backups"),
 
-  deleteBackup: (name: string) =>
-    rpc<void>("delete_backup", { name }),
+  deleteBackup: (name: string, actorId: number | null) =>
+    rpc<void>("delete_backup", { name, actorId }),
 
-  restoreBackup: (filePath: string) =>
-    rpc<void>("restore_backup", { filePath }),
+  restoreBackup: (filePath: string, actorId: number | null) =>
+    rpc<void>("restore_backup", { filePath, actorId }),
 
-  restoreBackupByName: (name: string) =>
-    rpc<void>("restore_backup_by_name", { name }),
+  restoreBackupByName: (name: string, actorId: number | null) =>
+    rpc<void>("restore_backup_by_name", { name, actorId }),
 
   autoBackupCheck: () =>
     rpc<boolean>("auto_backup_check"),
+
+  getOpenSessionWarning: () =>
+    rpc<number | null>("get_open_session_warning"),
 
   // ─── Dashboard ──────────────────────────────────────────────────────────────
   getDashboard: () =>

@@ -14,6 +14,7 @@ import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { getVersion } from "@tauri-apps/api/app";
 import { openSupportWhatsapp } from "@/lib/support";
+import { useAuthStore } from "@/stores/auth";
 import Field from "@/components/ui/Field";
 import clsx from "clsx";
 
@@ -27,6 +28,7 @@ const TABS: { id: Tab; label: string }[] = [
 ];
 
 export default function Configuracion() {
+  const actorId = useAuthStore((s) => s.user?.id ?? null);
   const location = useLocation();
   const initialTab = (location.state as { tab?: Tab } | null)?.tab;
   const [tab, setTab] = useState<Tab>(initialTab ?? "general");
@@ -120,7 +122,6 @@ export default function Configuracion() {
       setDeviceConfig(dc);
       if (dc.mode === "client") api.listPendingSyncOps().then(setPendingOps).catch(console.error);
     }).catch(console.error);
-    api.autoBackupCheck().catch(console.error);
     setLoading(false);
   }
 
@@ -185,7 +186,7 @@ export default function Configuracion() {
         .filter(([k]) => k !== "dept_buttons")
         .map(([key, value]) => ({ key, value }));
       entries.push({ key: "dept_buttons", value: JSON.stringify(deptButtons) });
-      await api.setMultipleConfig(entries);
+      await api.setMultipleConfig(entries, actorId);
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
       api.getNetworkInfo().then(setNetworkInfo).catch(console.error);
@@ -204,7 +205,7 @@ export default function Configuracion() {
   async function doBackup() {
     setBacking(true); setBackupMsg(null);
     try {
-      const name = await api.backupDatabase();
+      const name = await api.backupDatabase(actorId);
       setBackupMsg(`✓ Backup creado: ${name}`);
       api.listBackups().then(setBackups).catch(console.error);
     } catch (e) { setBackupMsg(`Error: ${e}`); }
@@ -221,13 +222,24 @@ export default function Configuracion() {
 
   async function doDeleteBackup(name: string) {
     if (!(await confirmAction("Esta acción no se puede deshacer.", { title: `¿Eliminar backup "${name}"?`, danger: true, confirmLabel: "Eliminar" }))) return;
-    try { await api.deleteBackup(name); setBackups((p) => p.filter((b) => b.name !== name)); showToast({ message: "Backup eliminado" }); }
+    try { await api.deleteBackup(name, actorId); setBackups((p) => p.filter((b) => b.name !== name)); showToast({ message: "Backup eliminado" }); }
     catch (e) { showToast({ message: `Error: ${e}`, tone: "danger" }); }
   }
 
   async function confirmRestore(): Promise<boolean> {
+    // Encontrado en la auditoría: restaurar no avisaba si había una caja
+    // abierta con ventas en curso -- se podía perder un turno entero sin
+    // saber cuánto. Se suma el monto vendido en la sesión abierta (si hay
+    // una) al mensaje de confirmación.
+    let openSessionWarning = "";
+    try {
+      const sold = await api.getOpenSessionWarning();
+      if (sold != null) {
+        openSessionWarning = ` Además, hay una caja ABIERTA ahora mismo con ${centsToARS(sold)} vendidos en este turno -- ese turno se va a perder.`;
+      }
+    } catch { /* si falla la consulta, seguir con el aviso genérico igual */ }
     return confirmAction(
-      "Todo lo que tenés cargado ahora (ventas, productos, clientes, configuración de ARCA) se va a REEMPLAZAR por lo que hay en ese backup. Esto no se puede deshacer.",
+      `Todo lo que tenés cargado ahora (ventas, productos, clientes, configuración de ARCA) se va a REEMPLAZAR por lo que hay en ese backup. Esto no se puede deshacer.${openSessionWarning}`,
       { title: "¿Restaurar este backup?", danger: true, confirmLabel: "Restaurar y reiniciar" }
     );
   }
@@ -240,7 +252,7 @@ export default function Configuracion() {
   async function doRestoreByName(name: string) {
     if (!(await confirmRestore())) return;
     setRestoring(true);
-    try { await api.restoreBackupByName(name); await afterRestore(); }
+    try { await api.restoreBackupByName(name, actorId); await afterRestore(); }
     catch (e) { showToast({ message: `Error: ${e}`, tone: "danger" }); setRestoring(false); }
   }
 
@@ -249,7 +261,7 @@ export default function Configuracion() {
     if (typeof selected !== "string") return;
     if (!(await confirmRestore())) return;
     setRestoring(true);
-    try { await api.restoreBackup(selected); await afterRestore(); }
+    try { await api.restoreBackup(selected, actorId); await afterRestore(); }
     catch (e) { showToast({ message: `Error: ${e}`, tone: "danger" }); setRestoring(false); }
   }
 

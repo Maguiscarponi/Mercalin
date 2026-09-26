@@ -9,10 +9,26 @@ use tauri::State;
 // Separada para poder testearla con una Connection en memoria (tauri::State
 // no se puede construir a mano fuera de una app real). Ver el comentario en
 // open_cash_session sobre por qué existe este chequeo.
-fn has_open_cash_session(conn: &Connection) -> CmdResult<bool> {
-    let count: i64 = conn
-        .query_row("SELECT COUNT(*) FROM cash_sessions WHERE closed_at IS NULL", [], |r| r.get(0))
-        .map_err(err)?;
+//
+// Encontrado en la auditoría: antes contaba TODAS las sesiones abiertas sin
+// importar la terminal, así que en Multicaja bastaba con que UNA caja
+// estuviera abierta para que ninguna otra pudiera abrir la suya -- lo
+// contrario del propósito de Multicaja (varias cajas vendiendo a la vez).
+// Ahora, si se conoce la terminal que pide abrir (terminal_id), solo cuenta
+// sesiones abiertas de ESA MISMA terminal. Si no se conoce (terminal_id
+// None: instalaciones viejas sin device_id todavía, o modo standalone puro),
+// se mantiene el chequeo global anterior, para no perder la protección
+// contra el doble-click en ese caso.
+fn has_open_cash_session(conn: &Connection, terminal_id: Option<&str>) -> CmdResult<bool> {
+    let count: i64 = match terminal_id {
+        Some(tid) => conn.query_row(
+            "SELECT COUNT(*) FROM cash_sessions WHERE closed_at IS NULL AND terminal_id = ?1",
+            params![tid], |r| r.get(0),
+        ).map_err(err)?,
+        None => conn
+            .query_row("SELECT COUNT(*) FROM cash_sessions WHERE closed_at IS NULL", [], |r| r.get(0))
+            .map_err(err)?,
+    };
     Ok(count > 0)
 }
 
@@ -45,13 +61,13 @@ pub fn open_cash_session(
     // Encontrado en la auditoría: no había ningún chequeo acá, así que un
     // doble click (o dos llamados concurrentes) abría dos sesiones de caja al
     // mismo tiempo, con el lío de reconciliación de efectivo que eso implica.
-    if has_open_cash_session(&conn)? {
+    if has_open_cash_session(&conn, input.terminal_id.as_deref())? {
         return Err("Ya hay una sesión de caja abierta en este equipo. Cerrala antes de abrir otra.".to_string());
     }
 
     conn.execute(
-        "INSERT INTO cash_sessions (user_id, opening_cents, notes, opened_at) VALUES (?1, ?2, ?3, datetime('now'))",
-        params![input.user_id, input.opening_cents, input.notes],
+        "INSERT INTO cash_sessions (user_id, opening_cents, notes, terminal_id, opened_at) VALUES (?1, ?2, ?3, ?4, datetime('now'))",
+        params![input.user_id, input.opening_cents, input.notes, input.terminal_id],
     )
     .map_err(err)?;
 
@@ -276,7 +292,7 @@ mod tests {
     #[test]
     fn detecta_sesion_abierta() {
         let conn = crate::db::open_and_migrate(Path::new(":memory:")).unwrap();
-        assert!(!has_open_cash_session(&conn).unwrap());
+        assert!(!has_open_cash_session(&conn, None).unwrap());
 
         conn.execute(
             "INSERT INTO cash_sessions (opening_cents, opened_at) VALUES (1000, datetime('now'))",
@@ -285,7 +301,32 @@ mod tests {
 
         // Este es el bug real: antes no había ningún chequeo, así que un doble
         // click abría dos sesiones de caja al mismo tiempo.
-        assert!(has_open_cash_session(&conn).unwrap());
+        assert!(has_open_cash_session(&conn, None).unwrap());
+    }
+
+    #[test]
+    fn multicaja_permite_terminales_distintas_en_simultaneo() {
+        // Este es el bug real de la auditoría: antes de esto, tener una caja
+        // abierta en la terminal A bloqueaba abrir una en la terminal B --
+        // justo lo contrario del propósito de Multicaja.
+        let conn = crate::db::open_and_migrate(Path::new(":memory:")).unwrap();
+        conn.execute(
+            "INSERT INTO cash_sessions (opening_cents, opened_at, terminal_id) VALUES (1000, datetime('now'), 'terminal-a')",
+            [],
+        ).unwrap();
+
+        assert!(has_open_cash_session(&conn, Some("terminal-a")).unwrap());
+        assert!(!has_open_cash_session(&conn, Some("terminal-b")).unwrap());
+    }
+
+    #[test]
+    fn sin_terminal_id_conocido_usa_el_chequeo_global_como_antes() {
+        let conn = crate::db::open_and_migrate(Path::new(":memory:")).unwrap();
+        conn.execute(
+            "INSERT INTO cash_sessions (opening_cents, opened_at, terminal_id) VALUES (1000, datetime('now'), 'terminal-a')",
+            [],
+        ).unwrap();
+        assert!(has_open_cash_session(&conn, None).unwrap());
     }
 
     #[test]
@@ -296,6 +337,6 @@ mod tests {
              VALUES (1000, datetime('now'), datetime('now'), 1000)",
             [],
         ).unwrap();
-        assert!(!has_open_cash_session(&conn).unwrap());
+        assert!(!has_open_cash_session(&conn, None).unwrap());
     }
 }

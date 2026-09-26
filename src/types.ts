@@ -229,6 +229,7 @@ export interface OpenSessionInput {
   opening_cents: number;
   user_id: Id | null;
   notes: string | null;
+  terminal_id?: string | null;
 }
 
 export interface CloseSessionInput {
@@ -561,6 +562,7 @@ export interface DeviceConfig {
   licenseEmail: string | null;
   licenseKey: string | null;
   networkToken?: string | null;
+  deviceId?: string | null;
 }
 
 export interface LicenseStatus {
