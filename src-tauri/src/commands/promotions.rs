@@ -51,10 +51,10 @@ fn validate_promo_dates(starts_at: &Option<String>, ends_at: &Option<String>) ->
 }
 
 #[tauri::command]
-pub fn create_promotion(promo: NewPromotion, actor_id: Option<i64>, state: State<AppState>) -> CmdResult<Promotion> {
+pub fn create_promotion(promo: NewPromotion, session_token: Option<String>, state: State<AppState>) -> CmdResult<Promotion> {
     validate_promo_dates(&promo.starts_at, &promo.ends_at)?;
     let conn = state.db.lock();
-    require_role(&conn, actor_id, "supervisor")?;
+    require_role(&conn, &state.sessions, session_token.as_deref(), "supervisor")?;
     conn.execute(
         "INSERT INTO promotions (name,promo_type,value,applies_to,target_id,target_name,active,
                                   starts_at,ends_at,days_of_week,time_start,time_end,min_qty)
@@ -81,10 +81,10 @@ pub fn create_promotion(promo: NewPromotion, actor_id: Option<i64>, state: State
 }
 
 #[tauri::command]
-pub fn update_promotion(promo: Promotion, actor_id: Option<i64>, state: State<AppState>) -> CmdResult<Promotion> {
+pub fn update_promotion(promo: Promotion, session_token: Option<String>, state: State<AppState>) -> CmdResult<Promotion> {
     validate_promo_dates(&promo.starts_at, &promo.ends_at)?;
     let conn = state.db.lock();
-    require_role(&conn, actor_id, "supervisor")?;
+    require_role(&conn, &state.sessions, session_token.as_deref(), "supervisor")?;
     conn.execute(
         "UPDATE promotions SET name=?1,promo_type=?2,value=?3,applies_to=?4,
          target_id=?5,target_name=?6,active=?7,starts_at=?8,ends_at=?9,
@@ -113,9 +113,9 @@ pub fn update_promotion(promo: Promotion, actor_id: Option<i64>, state: State<Ap
 }
 
 #[tauri::command]
-pub fn toggle_promotion(id: i64, actor_id: Option<i64>, state: State<AppState>) -> CmdResult<Promotion> {
+pub fn toggle_promotion(id: i64, session_token: Option<String>, state: State<AppState>) -> CmdResult<Promotion> {
     let conn = state.db.lock();
-    require_role(&conn, actor_id, "supervisor")?;
+    require_role(&conn, &state.sessions, session_token.as_deref(), "supervisor")?;
     conn.execute(
         "UPDATE promotions SET active = CASE WHEN active=1 THEN 0 ELSE 1 END WHERE id=?1",
         params![id],
@@ -126,9 +126,9 @@ pub fn toggle_promotion(id: i64, actor_id: Option<i64>, state: State<AppState>) 
 }
 
 #[tauri::command]
-pub fn delete_promotion(id: i64, actor_id: Option<i64>, state: State<AppState>) -> CmdResult<()> {
+pub fn delete_promotion(id: i64, session_token: Option<String>, state: State<AppState>) -> CmdResult<()> {
     let conn = state.db.lock();
-    require_role(&conn, actor_id, "supervisor")?;
+    require_role(&conn, &state.sessions, session_token.as_deref(), "supervisor")?;
     conn.execute("DELETE FROM promotions WHERE id=?1", params![id])
         .map_err(err)?;
     Ok(())

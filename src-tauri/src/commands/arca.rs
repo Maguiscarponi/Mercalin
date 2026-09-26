@@ -86,14 +86,14 @@ pub fn get_arca_config(state: State<AppState>) -> CmdResult<Option<ArcaConfig>> 
 }
 
 #[tauri::command]
-pub fn save_arca_config(input: ArcaConfigInput, actor_id: Option<i64>, state: State<AppState>) -> CmdResult<()> {
+pub fn save_arca_config(input: ArcaConfigInput, session_token: Option<String>, state: State<AppState>) -> CmdResult<()> {
     let conn = state.db.lock();
     // Encontrado en la auditoría: guardar la configuración de ARCA (CUIT,
     // razón social, punto de venta, condición de IVA del negocio) no
     // requería ningún rol del lado del servidor ni quedaba registrado en
     // Auditoría, pese a ser uno de los datos más sensibles del sistema
     // (de acá depende qué factura se emite y a nombre de quién).
-    require_role(&conn, actor_id, "supervisor")?;
+    let actor_id = Some(require_role(&conn, &state.sessions, session_token.as_deref(), "supervisor")?);
     conn.execute(
         "INSERT INTO arca_config (id, cuit, razon_social, punto_venta, environment, condicion_iva, domicilio, ingresos_brutos, inicio_actividades, updated_at)
          VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, CURRENT_TIMESTAMP)
@@ -119,14 +119,14 @@ pub fn save_arca_config(input: ArcaConfigInput, actor_id: Option<i64>, state: St
 // nada del lado de ARCA (eso es imposible de todos modos): solo borra lo
 // que hay guardado localmente en esta base.
 #[tauri::command]
-pub fn reset_arca_data(actor_id: Option<i64>, state: State<AppState>) -> CmdResult<()> {
+pub fn reset_arca_data(session_token: Option<String>, state: State<AppState>) -> CmdResult<()> {
     let conn = state.db.lock();
     // Encontrado en la auditoría: borra TODO el historial real de facturas
     // autorizadas (CAE incluido) sin ningún control de rol ni de auditoría --
     // se exige admin específicamente (más estricto que el resto de ARCA, que
     // alcanza con supervisor) por ser irreversible y perder trazabilidad
     // fiscal real.
-    require_role(&conn, actor_id, "admin")?;
+    let actor_id = Some(require_role(&conn, &state.sessions, session_token.as_deref(), "admin")?);
     let invoice_count: i64 = conn.query_row("SELECT COUNT(*) FROM electronic_invoices WHERE status='autorizada'", [], |r| r.get(0)).unwrap_or(0);
     log_action(&conn, actor_id, "eliminar", "arca_config", None, Some(&format!("Reseteo de ARCA: se perdió el historial de {} factura(s) autorizada(s)", invoice_count)));
     conn.execute("DELETE FROM electronic_invoices", []).map_err(err)?;

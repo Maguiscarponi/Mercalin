@@ -1,6 +1,7 @@
 use crate::commands::audit::log_action;
-use crate::commands::{err, require_admin, CmdResult};
-use crate::models::{NewUser, User};
+use crate::commands::session::{create_session, invalidate_session};
+use crate::commands::{current_actor, err, require_admin, CmdResult};
+use crate::models::{LoginResult, NewUser, User};
 use crate::AppState;
 use hmac::{Hmac, Mac};
 use rusqlite::{params, Connection};
@@ -98,7 +99,7 @@ pub fn list_users(state: State<AppState>) -> CmdResult<Vec<User>> {
 }
 
 #[tauri::command]
-pub fn create_user(user: NewUser, actor_id: Option<i64>, state: State<AppState>) -> CmdResult<User> {
+pub fn create_user(user: NewUser, session_token: Option<String>, state: State<AppState>) -> CmdResult<User> {
     // Encontrado en la auditoría: change_password sí exigía un mínimo de
     // caracteres, pero crear un usuario nuevo no -- se podía dar de alta con
     // una contraseña de un solo carácter.
@@ -106,7 +107,7 @@ pub fn create_user(user: NewUser, actor_id: Option<i64>, state: State<AppState>)
         return Err("La contraseña debe tener al menos 4 caracteres".to_string());
     }
     let conn = state.db.lock();
-    require_admin(&conn, actor_id)?;
+    let actor_id = Some(require_admin(&conn, &state.sessions, session_token.as_deref())?);
     let (hash, salt) = hash_password_new(&user.password);
     conn.execute(
         "INSERT INTO users (username,full_name,password_hash,password_salt,role) VALUES (?1,?2,?3,?4,?5)",
@@ -122,9 +123,9 @@ pub fn create_user(user: NewUser, actor_id: Option<i64>, state: State<AppState>)
 }
 
 #[tauri::command]
-pub fn update_user(user: User, actor_id: Option<i64>, state: State<AppState>) -> CmdResult<User> {
+pub fn update_user(user: User, session_token: Option<String>, state: State<AppState>) -> CmdResult<User> {
     let conn = state.db.lock();
-    require_admin(&conn, actor_id)?;
+    let actor_id = Some(require_admin(&conn, &state.sessions, session_token.as_deref())?);
 
     // Si esta persona es admin activo hoy y el cambio la degrada o desactiva,
     // no dejar que sea el último — se quedaría sin nadie que pueda entrar a
@@ -162,7 +163,7 @@ pub fn update_user(user: User, actor_id: Option<i64>, state: State<AppState>) ->
 pub fn change_password(
     user_id: i64,
     new_password: String,
-    actor_id: Option<i64>,
+    session_token: Option<String>,
     state: State<AppState>,
 ) -> CmdResult<()> {
     if new_password.len() < 4 {
@@ -173,8 +174,11 @@ pub fn change_password(
     // podía cambiarle la contraseña a CUALQUIER usuario (incluido un admin)
     // con solo pasar otro user_id, tomando control total de la cuenta. Se
     // permite cambiar la propia sin ser admin (caso normal de todos los días).
-    if actor_id != Some(user_id) {
-        require_admin(&conn, actor_id)?;
+    // Ahora "la propia" se decide por el token de sesión real, no por un
+    // user_id que el propio llamador podía elegir.
+    let (actor_id, _role) = current_actor(&conn, &state.sessions, session_token.as_deref())?;
+    if actor_id != user_id {
+        require_admin(&conn, &state.sessions, session_token.as_deref())?;
     }
     let (hash, salt) = hash_password_new(&new_password);
     conn.execute(
@@ -182,14 +186,14 @@ pub fn change_password(
         params![hash, salt, user_id],
     )
     .map_err(err)?;
-    log_action(&conn, actor_id, "cambiar_password", "usuario", Some(user_id), None);
+    log_action(&conn, Some(actor_id), "cambiar_password", "usuario", Some(user_id), None);
     Ok(())
 }
 
 #[tauri::command]
-pub fn delete_user(id: i64, actor_id: Option<i64>, state: State<AppState>) -> CmdResult<()> {
+pub fn delete_user(id: i64, session_token: Option<String>, state: State<AppState>) -> CmdResult<()> {
     let conn = state.db.lock();
-    require_admin(&conn, actor_id)?;
+    let actor_id = Some(require_admin(&conn, &state.sessions, session_token.as_deref())?);
 
     let current_role: Option<String> = conn
         .query_row("SELECT role FROM users WHERE id=?1 AND active=1", params![id], |r| r.get(0))
@@ -213,7 +217,7 @@ pub fn delete_user(id: i64, actor_id: Option<i64>, state: State<AppState>) -> Cm
 // de todos los días es con su mail, no con credenciales genéricas que cualquiera
 // que instale la app conoce de antemano.
 #[tauri::command]
-pub fn claim_admin_account(email: String, password: String, state: State<AppState>) -> CmdResult<User> {
+pub fn claim_admin_account(email: String, password: String, state: State<AppState>) -> CmdResult<LoginResult> {
     if password.len() < 4 {
         return Err("La contraseña debe tener al menos 4 caracteres".to_string());
     }
@@ -247,11 +251,13 @@ pub fn claim_admin_account(email: String, password: String, state: State<AppStat
     let mut stmt = conn
         .prepare("SELECT id,username,full_name,role,active,created_at FROM users WHERE id=?1")
         .map_err(err)?;
-    stmt.query_row(params![user_id], row_to_user).map_err(err)
+    let user = stmt.query_row(params![user_id], row_to_user).map_err(err)?;
+    let session_token = create_session(&state.sessions, user.id, &user.role);
+    Ok(LoginResult { user, session_token })
 }
 
 #[tauri::command]
-pub fn login(username: String, password: String, state: State<AppState>) -> CmdResult<User> {
+pub fn login(username: String, password: String, state: State<AppState>) -> CmdResult<LoginResult> {
     let conn = state.db.lock();
     // No se puede comparar el hash directo en el WHERE como antes: con sal
     // por usuario, el hash esperado depende de la fila, así que primero se
@@ -284,7 +290,15 @@ pub fn login(username: String, password: String, state: State<AppState>) -> CmdR
     let mut stmt = conn
         .prepare("SELECT id,username,full_name,role,active,created_at FROM users WHERE id=?1")
         .map_err(err)?;
-    stmt.query_row(params![id], row_to_user).map_err(err)
+    let user = stmt.query_row(params![id], row_to_user).map_err(err)?;
+    let session_token = create_session(&state.sessions, user.id, &user.role);
+    Ok(LoginResult { user, session_token })
+}
+
+#[tauri::command]
+pub fn logout(session_token: String, state: State<AppState>) -> CmdResult<()> {
+    invalidate_session(&state.sessions, &session_token);
+    Ok(())
 }
 
 #[cfg(test)]

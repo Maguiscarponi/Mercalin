@@ -13,7 +13,7 @@ import type { LicenseStatus } from "@/types";
 // que cualquiera que instale la app conoce de antemano — y deja logueada a la
 // persona en el mismo paso, sin una segunda pantalla de login redundante.
 export default function Activation({ onActivated }: { onActivated: (status: LicenseStatus) => void }) {
-  const setUser = useAuthStore((s) => s.setUser);
+  const setSession = useAuthStore((s) => s.setSession);
   const [businessName, setBusinessName] = useState("");
   const [email, setEmail] = useState("");
   const [key, setKey] = useState("");
@@ -28,11 +28,11 @@ export default function Activation({ onActivated }: { onActivated: (status: Lice
     setError(null);
     try {
       const status = await api.activateLicense(email.trim(), key.trim());
-      const user = await api.claimAdminAccount(email.trim(), password);
+      const result = await api.claimAdminAccount(email.trim(), password);
       // El nombre del negocio se guarda después de activar/loguear a propósito: si
       // la clave resulta inválida, no queremos haber tocado nada todavía.
       await api.setConfig({ key: "business_name", value: businessName.trim() });
-      setUser(user);
+      setSession(result);
       onActivated(status);
     } catch (err) {
       setError(String(err));

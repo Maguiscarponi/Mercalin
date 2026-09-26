@@ -7,6 +7,15 @@ import { useAuthStore } from "@/stores/auth";
 function currentUserId(): number | null {
   return useAuthStore.getState().user?.id ?? null;
 }
+// Encontrado en la auditoría: las acciones de admin/supervisor confiaban en
+// un actorId que la propia pantalla elegía (el user.id del store) -- ahora
+// se manda el token de sesión real que devolvió login/claim_admin_account,
+// y el backend lo resuelve contra la sesión que él mismo emitió (ver
+// commands::session en el backend). Se inyecta acá, igual que currentUserId,
+// para no tener que pasarlo a mano desde cada pantalla.
+function currentSessionToken(): string | null {
+  return useAuthStore.getState().sessionToken ?? null;
+}
 import type {
   DeviceConfig, PendingSyncOp, LicenseStatus,
   ArcaConfig, ArcaConfigInput, ElectronicInvoice, InvoiceInput,
@@ -32,7 +41,7 @@ import type {
   Quote, QuoteWithItems, NewQuote,
   Sale, SaleInput, SaleWithItems, SalesByUser, SupplierLeadTime, TopProduct,
   Supplier, NewSupplier,
-  User, NewUser,
+  User, NewUser, LoginResult,
   NewReturn, ReturnRecord, ReturnWithItems,
   MarginProduct, MarginCategory,
 } from "@/types";
@@ -261,17 +270,17 @@ export const api = {
   listUsers: () =>
     rpc<User[]>("list_users"),
 
-  createUser: (user: NewUser, actorId: number | null) =>
-    rpc<User>("create_user", { user, actorId }),
+  createUser: (user: NewUser) =>
+    rpc<User>("create_user", { user, sessionToken: currentSessionToken() }),
 
-  updateUser: (user: User, actorId: number | null) =>
-    rpc<User>("update_user", { user, actorId }),
+  updateUser: (user: User) =>
+    rpc<User>("update_user", { user, sessionToken: currentSessionToken() }),
 
-  changePassword: (userId: number, newPassword: string, actorId: number | null) =>
-    rpc<void>("change_password", { userId, newPassword, actorId }),
+  changePassword: (userId: number, newPassword: string) =>
+    rpc<void>("change_password", { userId, newPassword, sessionToken: currentSessionToken() }),
 
-  deleteUser: (id: number, actorId: number | null) =>
-    rpc<void>("delete_user", { id, actorId }),
+  deleteUser: (id: number) =>
+    rpc<void>("delete_user", { id, sessionToken: currentSessionToken() }),
 
   // ─── Reportes adicionales ────────────────────────────────────────────────────
   salesByUser: (fromDate: string, toDate: string) =>
@@ -285,17 +294,17 @@ export const api = {
   listPromotions: () =>
     rpc<Promotion[]>("list_promotions"),
 
-  createPromotion: (promo: NewPromotion, actorId: number | null) =>
-    rpc<Promotion>("create_promotion", { promo, actorId }),
+  createPromotion: (promo: NewPromotion) =>
+    rpc<Promotion>("create_promotion", { promo, sessionToken: currentSessionToken() }),
 
-  updatePromotion: (promo: Promotion, actorId: number | null) =>
-    rpc<Promotion>("update_promotion", { promo, actorId }),
+  updatePromotion: (promo: Promotion) =>
+    rpc<Promotion>("update_promotion", { promo, sessionToken: currentSessionToken() }),
 
-  togglePromotion: (id: number, actorId: number | null) =>
-    rpc<Promotion>("toggle_promotion", { id, actorId }),
+  togglePromotion: (id: number) =>
+    rpc<Promotion>("toggle_promotion", { id, sessionToken: currentSessionToken() }),
 
-  deletePromotion: (id: number, actorId: number | null) =>
-    rpc<void>("delete_promotion", { id, actorId }),
+  deletePromotion: (id: number) =>
+    rpc<void>("delete_promotion", { id, sessionToken: currentSessionToken() }),
 
   // ─── Devoluciones ───────────────────────────────────────────────────────────
   createReturn: (input: NewReturn) =>
@@ -324,17 +333,17 @@ export const api = {
   getQuoteWithItems: (id: number) =>
     rpc<QuoteWithItems>("get_quote_with_items", { id }),
 
-  createQuote: (quote: NewQuote, actorId: number | null) =>
-    rpc<Quote>("create_quote", { quote, actorId }),
+  createQuote: (quote: NewQuote) =>
+    rpc<Quote>("create_quote", { quote, sessionToken: currentSessionToken() }),
 
-  updateQuote: (id: number, quote: NewQuote, actorId: number | null) =>
-    rpc<Quote>("update_quote", { id, quote, actorId }),
+  updateQuote: (id: number, quote: NewQuote) =>
+    rpc<Quote>("update_quote", { id, quote, sessionToken: currentSessionToken() }),
 
-  updateQuoteStatus: (id: number, status: string, actorId: number | null) =>
-    rpc<Quote>("update_quote_status", { id, status, actorId }),
+  updateQuoteStatus: (id: number, status: string) =>
+    rpc<Quote>("update_quote_status", { id, status, sessionToken: currentSessionToken() }),
 
-  deleteQuote: (id: number, actorId: number | null) =>
-    rpc<void>("delete_quote", { id, actorId }),
+  deleteQuote: (id: number) =>
+    rpc<void>("delete_quote", { id, sessionToken: currentSessionToken() }),
 
   // ─── Proveedores (auto-orders) ───────────────────────────────────────────────
   generateAutoOrders: () =>
@@ -342,7 +351,10 @@ export const api = {
 
   // ─── Autenticación ───────────────────────────────────────────────────────────
   login: (username: string, password: string) =>
-    rpc<User>("login", { username, password }),
+    rpc<LoginResult>("login", { username, password }),
+
+  logout: (sessionToken: string) =>
+    rpc<void>("logout", { sessionToken }),
 
   // ─── Backup ─────────────────────────────────────────────────────────────────
   backupDatabase: (actorId: number | null) =>
@@ -507,7 +519,7 @@ export const api = {
     invoke<LicenseStatus>("activate_license", { email, key }),
 
   claimAdminAccount: (email: string, password: string) =>
-    invoke<User>("claim_admin_account", { email, password }),
+    invoke<LoginResult>("claim_admin_account", { email, password }),
 
   getSyncStatus: () =>
     invoke<"online" | "offline" | "syncing">("get_sync_status"),
@@ -519,11 +531,11 @@ export const api = {
   getArcaConfig: () =>
     rpc<ArcaConfig | null>("get_arca_config"),
 
-  saveArcaConfig: (input: ArcaConfigInput, actorId: number | null) =>
-    rpc<void>("save_arca_config", { input, actorId }),
+  saveArcaConfig: (input: ArcaConfigInput) =>
+    rpc<void>("save_arca_config", { input, sessionToken: currentSessionToken() }),
 
-  resetArcaData: (actorId: number | null) =>
-    rpc<void>("reset_arca_data", { actorId }),
+  resetArcaData: () =>
+    rpc<void>("reset_arca_data", { sessionToken: currentSessionToken() }),
 
   generateArcaKeypair: () =>
     rpc<string>("generate_arca_keypair"),

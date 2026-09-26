@@ -1348,8 +1348,13 @@ function SupervisorApprovalModal({
     setChecking(true);
     setError(null);
     try {
+      // Esto solo verifica la credencial de un supervisor/admin para
+      // autorizar el descuento -- no cambia la sesión activa de quien está
+      // cobrando. La sesión que devuelve login() no se necesita para nada
+      // más, así que se invalida enseguida en vez de dejarla acumulada.
       const authorizer = await api.login(username.trim(), password);
-      if (authorizer.role !== "supervisor" && authorizer.role !== "admin") {
+      api.logout(authorizer.session_token).catch(() => { /* best-effort */ });
+      if (authorizer.user.role !== "supervisor" && authorizer.user.role !== "admin") {
         setError("Ese usuario no tiene permiso para autorizar descuentos.");
         return;
       }

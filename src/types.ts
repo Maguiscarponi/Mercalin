@@ -386,6 +386,11 @@ export interface User {
   created_at: string;
 }
 
+export interface LoginResult {
+  user: User;
+  session_token: string;
+}
+
 export interface NewUser {
   username: string;
   full_name: string;

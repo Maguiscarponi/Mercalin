@@ -506,6 +506,15 @@ pub struct User {
     pub created_at: String,
 }
 
+// Resultado de login: el token es lo que autoriza después las acciones de
+// admin/supervisor (ver commands::session) -- reemplaza pasar el user_id
+// tal cual como "actor_id" en cada comando sensible.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoginResult {
+    pub user: User,
+    pub session_token: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NewUser {
     pub username: String,

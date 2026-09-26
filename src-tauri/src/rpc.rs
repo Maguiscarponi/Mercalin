@@ -125,18 +125,18 @@ pub fn dispatch(app: &AppHandle, command: &str, body: Value) -> RpcResult {
 
         // Promociones
         "list_promotions" => crate::commands::promotions::list_promotions[],
-        "create_promotion" => crate::commands::promotions::create_promotion[promo: crate::models::NewPromotion, actor_id: Option<i64>],
-        "update_promotion" => crate::commands::promotions::update_promotion[promo: crate::models::Promotion, actor_id: Option<i64>],
-        "toggle_promotion" => crate::commands::promotions::toggle_promotion[id: i64, actor_id: Option<i64>],
-        "delete_promotion" => crate::commands::promotions::delete_promotion[id: i64, actor_id: Option<i64>],
+        "create_promotion" => crate::commands::promotions::create_promotion[promo: crate::models::NewPromotion, session_token: Option<String>],
+        "update_promotion" => crate::commands::promotions::update_promotion[promo: crate::models::Promotion, session_token: Option<String>],
+        "toggle_promotion" => crate::commands::promotions::toggle_promotion[id: i64, session_token: Option<String>],
+        "delete_promotion" => crate::commands::promotions::delete_promotion[id: i64, session_token: Option<String>],
 
         // Presupuestos
         "list_quotes" => crate::commands::quotes::list_quotes[],
         "get_quote_with_items" => crate::commands::quotes::get_quote_with_items[id: i64],
-        "create_quote" => crate::commands::quotes::create_quote[quote: crate::models::NewQuote, actor_id: Option<i64>],
-        "update_quote" => crate::commands::quotes::update_quote[id: i64, quote: crate::models::NewQuote, actor_id: Option<i64>],
-        "update_quote_status" => crate::commands::quotes::update_quote_status[id: i64, status: String, actor_id: Option<i64>],
-        "delete_quote" => crate::commands::quotes::delete_quote[id: i64, actor_id: Option<i64>],
+        "create_quote" => crate::commands::quotes::create_quote[quote: crate::models::NewQuote, session_token: Option<String>],
+        "update_quote" => crate::commands::quotes::update_quote[id: i64, quote: crate::models::NewQuote, session_token: Option<String>],
+        "update_quote_status" => crate::commands::quotes::update_quote_status[id: i64, status: String, session_token: Option<String>],
+        "delete_quote" => crate::commands::quotes::delete_quote[id: i64, session_token: Option<String>],
 
         // Devoluciones
         "create_return" => crate::commands::returns::create_return[input: crate::models::NewReturn],
@@ -173,11 +173,12 @@ pub fn dispatch(app: &AppHandle, command: &str, body: Value) -> RpcResult {
 
         // Usuarios
         "list_users" => crate::commands::users::list_users[],
-        "create_user" => crate::commands::users::create_user[user: crate::models::NewUser, actor_id: Option<i64>],
-        "update_user" => crate::commands::users::update_user[user: crate::models::User, actor_id: Option<i64>],
-        "change_password" => crate::commands::users::change_password[user_id: i64, new_password: String, actor_id: Option<i64>],
-        "delete_user" => crate::commands::users::delete_user[id: i64, actor_id: Option<i64>],
+        "create_user" => crate::commands::users::create_user[user: crate::models::NewUser, session_token: Option<String>],
+        "update_user" => crate::commands::users::update_user[user: crate::models::User, session_token: Option<String>],
+        "change_password" => crate::commands::users::change_password[user_id: i64, new_password: String, session_token: Option<String>],
+        "delete_user" => crate::commands::users::delete_user[id: i64, session_token: Option<String>],
         "login" => crate::commands::users::login[username: String, password: String],
+        "logout" => crate::commands::users::logout[session_token: String],
 
         // Config
         "get_config" => crate::commands::config::get_config[key: String],
@@ -208,8 +209,8 @@ pub fn dispatch(app: &AppHandle, command: &str, body: Value) -> RpcResult {
 
         // ARCA / facturación electrónica
         "get_arca_config" => crate::commands::arca::get_arca_config[],
-        "save_arca_config" => crate::commands::arca::save_arca_config[input: crate::models::ArcaConfigInput, actor_id: Option<i64>],
-        "reset_arca_data" => crate::commands::arca::reset_arca_data[actor_id: Option<i64>],
+        "save_arca_config" => crate::commands::arca::save_arca_config[input: crate::models::ArcaConfigInput, session_token: Option<String>],
+        "reset_arca_data" => crate::commands::arca::reset_arca_data[session_token: Option<String>],
         "generate_arca_keypair" => crate::commands::arca::generate_arca_keypair[],
         "load_arca_certificate" => crate::commands::arca::load_arca_certificate[cert_pem: String],
         "test_arca_connection" => crate::commands::arca::test_arca_connection[],

@@ -20,41 +20,18 @@ pub mod quotes;
 pub mod reports;
 pub mod returns;
 pub mod sales;
+pub mod session;
 pub mod stock;
 pub mod suppliers;
 pub mod users;
 pub mod weighed_labels;
 
+use session::SessionStore;
+
 pub type CmdResult<T> = Result<T, String>;
 
 pub fn err<E: std::fmt::Display>(e: E) -> String {
     format!("{}", e)
-}
-
-// Encontrado en la auditoría de seguridad: comandos como crear/editar/borrar
-// usuarios o cambiar una contraseña ajena no verificaban en ningún lado que
-// quien los llama sea realmente admin -- eso solo se ocultaba en el frontend
-// (no se mostraba el botón). Cualquier llamada directa (consola del navegador,
-// o el RPC de red) podía crear un admin nuevo sin ser admin. Esto NO es una
-// autenticación real (no hay token de sesión: `actor_id` sigue siendo un
-// argumento que el llamador elige) -- cierra el caso más simple de explotar
-// (alguien sin sesión de admin abriendo devtools), no el de alguien que ya
-// conoce o adivina el id de un admin real. Una solución completa necesitaría
-// sesiones con token, que es un cambio de arquitectura más grande.
-pub fn require_admin(conn: &rusqlite::Connection, actor_id: Option<i64>) -> CmdResult<()> {
-    let role: Option<String> = actor_id.and_then(|id| {
-        conn.query_row(
-            "SELECT role FROM users WHERE id=?1 AND active=1",
-            rusqlite::params![id],
-            |r| r.get(0),
-        )
-        .ok()
-    });
-    if role.as_deref() == Some("admin") {
-        Ok(())
-    } else {
-        Err("Esta acción requiere permisos de administrador.".to_string())
-    }
 }
 
 fn role_rank(role: &str) -> i32 {
@@ -66,23 +43,44 @@ fn role_rank(role: &str) -> i32 {
     }
 }
 
-// Encontrado en la auditoría: Promociones y Presupuestos no tenían NINGÚN
-// control de rol en el backend (peor que Usuarios) -- el acceso existía
-// solo como <RequireRole> en el router de React, totalmente evitable con un
-// invoke directo. Mismo límite documentado en require_admin: no hay sesión
-// real con token, actor_id sigue siendo un argumento que el llamador elige.
-pub fn require_role(conn: &rusqlite::Connection, actor_id: Option<i64>, min_role: &str) -> CmdResult<()> {
-    let role: Option<String> = actor_id.and_then(|id| {
-        conn.query_row(
-            "SELECT role FROM users WHERE id=?1 AND active=1",
-            rusqlite::params![id],
-            |r| r.get(0),
-        )
-        .ok()
-    });
-    let ok = role.as_deref().map(|r| role_rank(r) >= role_rank(min_role)).unwrap_or(false);
-    if ok {
-        Ok(())
+// Encontrado en la auditoría de seguridad: comandos como crear/editar/borrar
+// usuarios, Promociones, Presupuestos o la config de ARCA confiaban en un
+// `actor_id` que el propio llamador elegía como argumento -- cualquiera con
+// acceso a la consola del navegador (o al RPC de red de Multicaja) podía
+// pasar el id de un admin real y actuar como si lo fuera. Ahora se exige un
+// `session_token` real, generado por el servidor recién en `login` después
+// de validar la contraseña (ver session.rs) -- ya no alcanza con adivinar o
+// inventar un id. Además de resolver el token, se revalida `active` contra
+// la base por si a esa persona la desactivaron después de loguearse.
+//
+// Devuelve el user_id ya resuelto (no el que mandó el llamador) para que
+// quien llama pueda usarlo con confianza en log_action.
+pub fn current_actor(conn: &rusqlite::Connection, sessions: &SessionStore, session_token: Option<&str>) -> CmdResult<(i64, String)> {
+    let info = session::resolve_session(sessions, session_token)
+        .ok_or_else(|| "Esta acción requiere haber iniciado sesión.".to_string())?;
+    let still_active: bool = conn
+        .query_row("SELECT active FROM users WHERE id=?1", rusqlite::params![info.user_id], |r| r.get::<_, i64>(0))
+        .map(|v| v != 0)
+        .unwrap_or(false);
+    if !still_active {
+        return Err("Esta sesión ya no es válida.".to_string());
+    }
+    Ok((info.user_id, info.role))
+}
+
+pub fn require_admin(conn: &rusqlite::Connection, sessions: &SessionStore, session_token: Option<&str>) -> CmdResult<i64> {
+    let (user_id, role) = current_actor(conn, sessions, session_token)?;
+    if role == "admin" {
+        Ok(user_id)
+    } else {
+        Err("Esta acción requiere permisos de administrador.".to_string())
+    }
+}
+
+pub fn require_role(conn: &rusqlite::Connection, sessions: &SessionStore, session_token: Option<&str>, min_role: &str) -> CmdResult<i64> {
+    let (user_id, role) = current_actor(conn, sessions, session_token)?;
+    if role_rank(&role) >= role_rank(min_role) {
+        Ok(user_id)
     } else {
         Err(format!("Esta acción requiere permisos de {}.", if min_role == "admin" { "administrador" } else { "supervisor o administrador" }))
     }
@@ -90,7 +88,7 @@ pub fn require_role(conn: &rusqlite::Connection, actor_id: Option<i64>, min_role
 
 #[cfg(test)]
 mod require_role_tests {
-    use super::require_role;
+    use super::{require_role, session};
     use std::path::Path;
 
     fn insert_user(conn: &rusqlite::Connection, role: &str) -> i64 {
@@ -105,41 +103,60 @@ mod require_role_tests {
     fn cajero_no_alcanza_para_supervisor() {
         let conn = crate::db::open_and_migrate(Path::new(":memory:")).unwrap();
         let id = insert_user(&conn, "cajero");
-        assert!(require_role(&conn, Some(id), "supervisor").is_err());
+        let store = session::new_session_store();
+        let token = session::create_session(&store, id, "cajero");
+        assert!(require_role(&conn, &store, Some(&token), "supervisor").is_err());
     }
 
     #[test]
     fn supervisor_alcanza_para_supervisor() {
         let conn = crate::db::open_and_migrate(Path::new(":memory:")).unwrap();
         let id = insert_user(&conn, "supervisor");
-        assert!(require_role(&conn, Some(id), "supervisor").is_ok());
+        let store = session::new_session_store();
+        let token = session::create_session(&store, id, "supervisor");
+        assert!(require_role(&conn, &store, Some(&token), "supervisor").is_ok());
     }
 
     #[test]
     fn admin_alcanza_para_cualquier_nivel() {
         let conn = crate::db::open_and_migrate(Path::new(":memory:")).unwrap();
         let id = insert_user(&conn, "admin");
-        assert!(require_role(&conn, Some(id), "supervisor").is_ok());
-        assert!(require_role(&conn, Some(id), "admin").is_ok());
+        let store = session::new_session_store();
+        let token = session::create_session(&store, id, "admin");
+        assert!(require_role(&conn, &store, Some(&token), "supervisor").is_ok());
+        assert!(require_role(&conn, &store, Some(&token), "admin").is_ok());
     }
 
     #[test]
     fn supervisor_no_alcanza_para_admin() {
         let conn = crate::db::open_and_migrate(Path::new(":memory:")).unwrap();
         let id = insert_user(&conn, "supervisor");
-        assert!(require_role(&conn, Some(id), "admin").is_err());
+        let store = session::new_session_store();
+        let token = session::create_session(&store, id, "supervisor");
+        assert!(require_role(&conn, &store, Some(&token), "admin").is_err());
     }
 
     #[test]
-    fn sin_actor_id_no_alcanza_para_nada() {
+    fn sin_token_no_alcanza_para_nada() {
         let conn = crate::db::open_and_migrate(Path::new(":memory:")).unwrap();
-        assert!(require_role(&conn, None, "supervisor").is_err());
+        let store = session::new_session_store();
+        assert!(require_role(&conn, &store, None, "supervisor").is_err());
+    }
+
+    #[test]
+    fn token_inventado_no_alcanza_para_nada() {
+        // Este es exactamente el hueco que esto cierra: antes bastaba con
+        // mandar el id de un admin real como argumento; ahora un token que
+        // el servidor nunca emitió no resuelve a ningún usuario.
+        let conn = crate::db::open_and_migrate(Path::new(":memory:")).unwrap();
+        let store = session::new_session_store();
+        assert!(require_role(&conn, &store, Some("token-inventado"), "cajero").is_err());
     }
 }
 
 #[cfg(test)]
 mod require_admin_tests {
-    use super::require_admin;
+    use super::{require_admin, session};
     use std::path::Path;
 
     fn insert_user(conn: &rusqlite::Connection, role: &str, active: bool) -> i64 {
@@ -151,38 +168,51 @@ mod require_admin_tests {
     }
 
     #[test]
-    fn rechaza_sin_actor_id() {
+    fn rechaza_sin_token() {
         let conn = crate::db::open_and_migrate(Path::new(":memory:")).unwrap();
-        assert!(require_admin(&conn, None).is_err());
+        let store = session::new_session_store();
+        assert!(require_admin(&conn, &store, None).is_err());
     }
 
     #[test]
     fn rechaza_cajero() {
         let conn = crate::db::open_and_migrate(Path::new(":memory:")).unwrap();
         let cajero_id = insert_user(&conn, "cajero", true);
+        let store = session::new_session_store();
+        let token = session::create_session(&store, cajero_id, "cajero");
         // Este es el bug real: antes de la corrección, cualquier user_id (o
         // ninguno) pasaba sin chequear el rol -- un cajero podía crear otro
         // admin, cambiarle la contraseña a cualquiera, etc.
-        assert!(require_admin(&conn, Some(cajero_id)).is_err());
+        assert!(require_admin(&conn, &store, Some(&token)).is_err());
     }
 
     #[test]
-    fn rechaza_admin_inactivo() {
+    fn rechaza_admin_desactivado_despues_de_loguearse() {
         let conn = crate::db::open_and_migrate(Path::new(":memory:")).unwrap();
-        let admin_id = insert_user(&conn, "admin", false);
-        assert!(require_admin(&conn, Some(admin_id)).is_err());
+        let admin_id = insert_user(&conn, "admin", true);
+        let store = session::new_session_store();
+        let token = session::create_session(&store, admin_id, "admin");
+        assert!(require_admin(&conn, &store, Some(&token)).is_ok());
+        conn.execute("UPDATE users SET active=0 WHERE id=?1", rusqlite::params![admin_id]).unwrap();
+        // La sesión sigue "viva" en el mapa, pero se revalida activo contra
+        // la base en cada chequeo -- desactivar a alguien corta el acceso
+        // incluso si ya tenía un token vigente.
+        assert!(require_admin(&conn, &store, Some(&token)).is_err());
     }
 
     #[test]
-    fn rechaza_id_inexistente() {
+    fn rechaza_token_inexistente() {
         let conn = crate::db::open_and_migrate(Path::new(":memory:")).unwrap();
-        assert!(require_admin(&conn, Some(999999)).is_err());
+        let store = session::new_session_store();
+        assert!(require_admin(&conn, &store, Some("no-existe")).is_err());
     }
 
     #[test]
     fn acepta_admin_activo() {
         let conn = crate::db::open_and_migrate(Path::new(":memory:")).unwrap();
         let admin_id = insert_user(&conn, "admin", true);
-        assert!(require_admin(&conn, Some(admin_id)).is_ok());
+        let store = session::new_session_store();
+        let token = session::create_session(&store, admin_id, "admin");
+        assert!(require_admin(&conn, &store, Some(&token)).is_ok());
     }
 }

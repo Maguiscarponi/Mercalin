@@ -4,7 +4,7 @@ import { useAuthStore } from "@/stores/auth";
 import mercalinLogo from "@/assets/mercalin-logo.svg";
 
 export default function Login() {
-  const setUser = useAuthStore((s) => s.setUser);
+  const setSession = useAuthStore((s) => s.setSession);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -16,8 +16,8 @@ export default function Login() {
     setLoading(true);
     setError(null);
     try {
-      const user = await api.login(username.trim(), password);
-      setUser(user);
+      const result = await api.login(username.trim(), password);
+      setSession(result);
     } catch (err) {
       setError(String(err));
     } finally {

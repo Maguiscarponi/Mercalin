@@ -21,6 +21,9 @@ pub struct AppState {
     pub sync_queue: Arc<Mutex<Connection>>,
     // "online" | "offline" | "syncing" -- solo relevante en modo cliente.
     pub sync_status: Arc<Mutex<String>>,
+    // Sesiones de login activas (ver commands::session) -- en memoria del
+    // proceso, se pierden al reiniciar la app (hay que volver a loguearse).
+    pub sessions: commands::session::SessionStore,
 }
 
 // ─── Servidor HTTP para modo tablet ──────────────────────────────────────────
@@ -520,6 +523,7 @@ pub fn run() {
                 catalog_import_running: Arc::new(AtomicBool::new(false)),
                 sync_queue: sync_queue_arc,
                 sync_status: sync_status_arc,
+                sessions: commands::session::new_session_store(),
             });
 
             Ok(())
@@ -620,6 +624,7 @@ pub fn run() {
             commands::users::change_password,
             commands::users::delete_user,
             commands::users::login,
+            commands::users::logout,
             commands::users::claim_admin_account,
             // Promociones
             commands::promotions::list_promotions,

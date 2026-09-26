@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { formatDate } from "@/lib/format";
 import { confirmAction, showToast } from "@/stores/dialogs";
-import { useAuthStore } from "@/stores/auth";
 import { usePosModeStore } from "@/stores/posMode";
 import Field from "@/components/ui/Field";
 import { useEscapeToClose } from "@/lib/useEscapeToClose";
@@ -23,7 +22,6 @@ const ROLE_COLORS: Record<UserRole, string> = {
 };
 
 export default function Usuarios() {
-  const actorId = useAuthStore((s) => s.user?.id ?? null);
   const posMode = usePosModeStore((s) => s.mode);
   const [users, setUsers] = useState<User[]>([]);
   const [editing, setEditing] = useState<Partial<User> | null>(null);
@@ -44,14 +42,14 @@ export default function Usuarios() {
   async function handleSave(u: Partial<User> & { password?: string }) {
     try {
       if (u.id) {
-        await api.updateUser(u as User, actorId);
+        await api.updateUser(u as User);
       } else {
         await api.createUser({
           username: u.username!,
           full_name: u.full_name!,
           password: u.password || "1234",
           role: u.role as UserRole,
-        } as NewUser, actorId);
+        } as NewUser);
       }
       setEditing(null);
       load();
@@ -65,7 +63,7 @@ export default function Usuarios() {
   async function handleDelete(id: number) {
     if (!(await confirmAction("La persona no va a poder iniciar sesión hasta que se reactive.", { title: "¿Desactivar este usuario?", danger: true, confirmLabel: "Desactivar" }))) return;
     try {
-      await api.deleteUser(id, actorId);
+      await api.deleteUser(id);
       load();
       showToast({ message: "Usuario desactivado" });
     } catch (e) {
@@ -77,7 +75,7 @@ export default function Usuarios() {
 
   async function handleReactivate(u: User) {
     try {
-      await api.updateUser({ ...u, active: true }, actorId);
+      await api.updateUser({ ...u, active: true });
       load();
       showToast({ message: "Usuario reactivado", tone: "success" });
     } catch (e) {
@@ -318,7 +316,6 @@ function UserForm({
 }
 
 function ChangePasswordModal({ user, onClose }: { user: User; onClose: () => void }) {
-  const actorId = useAuthStore((s) => s.user?.id ?? null);
   const [pw, setPw] = useState("");
   const [saving, setSaving] = useState(false);
   useEscapeToClose(onClose);
@@ -327,7 +324,7 @@ function ChangePasswordModal({ user, onClose }: { user: User; onClose: () => voi
     if (pw.length < 4) { showToast({ message: "Mínimo 4 caracteres", tone: "danger" }); return; }
     setSaving(true);
     try {
-      await api.changePassword(user.id, pw, actorId);
+      await api.changePassword(user.id, pw);
       onClose();
       showToast({ message: "Contraseña actualizada", tone: "success" });
     } catch (e) {

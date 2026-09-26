@@ -618,7 +618,6 @@ function NuevaFacturaModal({ arcaConfig, onClose, onIssued }: { arcaConfig: Arca
 // ── Wizard de configuración ARCA ────────────────────────────────────────────
 
 function ArcaSetup({ arcaConfig, onRefresh }: { arcaConfig: ArcaConfig | null; onRefresh: () => void }) {
-  const actorId = useAuthStore((s) => s.user?.id ?? null);
   const currentRole = useAuthStore((s) => s.user?.role ?? null);
   const [form, setForm] = useState<ArcaConfigInput>({
     cuit: arcaConfig?.cuit || "",
@@ -644,7 +643,7 @@ function ArcaSetup({ arcaConfig, onRefresh }: { arcaConfig: ArcaConfig | null; o
   async function saveCfg() {
     setSavingCfg(true);
     try {
-      await api.saveArcaConfig({ ...form, cuit: form.cuit.trim().replace(/-/g, "") }, actorId);
+      await api.saveArcaConfig({ ...form, cuit: form.cuit.trim().replace(/-/g, "") });
       onRefresh();
       showToast({ message: "Datos guardados", tone: "success" });
     } catch (e) { showToast({ message: `Error: ${e}`, tone: "danger" }); }
@@ -680,7 +679,7 @@ function ArcaSetup({ arcaConfig, onRefresh }: { arcaConfig: ArcaConfig | null; o
     if (!ok) return;
     setResetting(true);
     try {
-      await api.resetArcaData(actorId);
+      await api.resetArcaData();
       setActiveStep(1);
       onRefresh();
       showToast({ message: "Configuración de ARCA borrada", tone: "success" });
