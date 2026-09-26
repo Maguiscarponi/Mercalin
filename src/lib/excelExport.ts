@@ -20,7 +20,7 @@ export interface ExcelSheet {
   rows: Record<string, unknown>[];
 }
 
-const BRAND_FILL = "FF4F46E5"; // indigo-600, el mismo acento que ya usa el resto del sistema
+const BRAND_FILL = "FFDC2626"; // red-600, el mismo acento que ya usa el resto del sistema
 const HEADER_TEXT = "FFFFFFFF";
 const ZEBRA_FILL = "FFF4F4F5"; // stone-100
 

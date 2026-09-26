@@ -34,7 +34,7 @@ const STATUS_COLORS: Record<QuoteStatus, string> = {
   borrador: "bg-stone-100 text-stone-700",
   enviado: "bg-blue-100 text-blue-700",
   aprobado: "bg-emerald-100 text-emerald-700",
-  rechazado: "bg-red-100 text-red-700",
+  rechazado: "bg-orange-100 text-orange-700",
   vencido: "bg-amber-100 text-amber-700",
 };
 
@@ -93,7 +93,7 @@ export default function Presupuestos() {
           <div className="flex rounded-md border border-stone-200 overflow-hidden text-xs">
             <button
               onClick={() => setStatusFilter("")}
-              className={clsx("px-3 py-1.5", statusFilter === "" ? "bg-indigo-600 text-white" : "bg-white hover:bg-stone-50 text-stone-600")}
+              className={clsx("px-3 py-1.5", statusFilter === "" ? "bg-red-600 text-white" : "bg-white hover:bg-stone-50 text-stone-600")}
             >
               Todos ({quotes.length})
             </button>
@@ -104,7 +104,7 @@ export default function Presupuestos() {
                 <button
                   key={s}
                   onClick={() => setStatusFilter(s)}
-                  className={clsx("px-3 py-1.5", statusFilter === s ? "bg-indigo-600 text-white" : "bg-white hover:bg-stone-50 text-stone-600")}
+                  className={clsx("px-3 py-1.5", statusFilter === s ? "bg-red-600 text-white" : "bg-white hover:bg-stone-50 text-stone-600")}
                 >
                   {STATUS_LABELS[s]} ({count})
                 </button>
@@ -131,7 +131,7 @@ export default function Presupuestos() {
         {(search || fromDate || toDate) && (
           <button
             onClick={() => { setSearch(""); setFromDate(""); setToDate(""); }}
-            className="text-xs text-stone-400 hover:text-red-600"
+            className="text-xs text-stone-400 hover:text-orange-600"
           >
             Limpiar
           </button>
@@ -264,20 +264,20 @@ function QuoteDetailModal({
       <style>
         *{box-sizing:border-box}
         body{font-family:'Segoe UI',Arial,sans-serif;padding:32px;max-width:640px;margin:auto;color:#1c1917}
-        .header{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:4px solid #4F46E5;padding-bottom:14px;margin-bottom:22px}
-        .header h1{margin:0;font-size:22px;color:#312e81}
+        .header{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:4px solid #DC2626;padding-bottom:14px;margin-bottom:22px}
+        .header h1{margin:0;font-size:22px;color:#7f1d1d}
         .header .meta{text-align:right;color:#78716c;font-size:11px}
         .info{display:flex;gap:24px;margin-bottom:18px;font-size:13px}
-        .info div{background:#EEF2FF;border-radius:8px;padding:8px 14px}
-        .info b{color:#312e81}
+        .info div{background:#FEE2E2;border-radius:8px;padding:8px 14px}
+        .info b{color:#7f1d1d}
         table{width:100%;border-collapse:collapse;margin-top:8px}
         td,th{padding:8px 10px;border-bottom:1px solid #e7e5e4}
-        th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:#4338CA;background:#EEF2FF}
+        th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:#B91C1C;background:#FEE2E2}
         tbody tr:nth-child(even){background:#fafaf9}
         .right{text-align:right}
-        .discount{color:#dc2626}
+        .discount{color:#ea580c}
         .totalbox{margin-top:18px;display:flex;justify-content:flex-end}
-        .totalbox div{background:#4F46E5;color:#fff;border-radius:8px;padding:12px 20px;font-size:18px;font-weight:700}
+        .totalbox div{background:#DC2626;color:#fff;border-radius:8px;padding:12px 20px;font-size:18px;font-weight:700}
         .footer{margin-top:32px;padding-top:12px;border-top:1px solid #e7e5e4;color:#a8a29e;font-size:10px;text-align:center}
       </style>
       </head><body>
@@ -388,7 +388,7 @@ function QuoteDetailModal({
             <button onClick={printQuote} className="btn btn-secondary flex-1 text-sm">Imprimir</button>
             <button onClick={onClose} className="btn btn-secondary flex-1 text-sm">Cerrar</button>
           </div>
-          <button onClick={() => onDelete(quote.id)} className="w-full text-xs text-red-600 hover:underline">Eliminar presupuesto</button>
+          <button onClick={() => onDelete(quote.id)} className="w-full text-xs text-orange-600 hover:underline">Eliminar presupuesto</button>
         </div>
       </div>
     </div>
@@ -597,7 +597,7 @@ function QuoteForm({ initial, onCancel, onSaved }: { initial?: QuoteWithItems; o
                     value={item.discount_pct}
                     onChange={(e) => updateItem(i, "discount_pct", Number(e.target.value))}
                   />
-                  <button onClick={() => removeItem(i)} className="text-stone-400 hover:text-red-600 text-sm font-bold">×</button>
+                  <button onClick={() => removeItem(i)} className="text-stone-400 hover:text-orange-600 text-sm font-bold">×</button>
                 </div>
               ))}
             </div>

@@ -104,10 +104,10 @@ export default function CommandPalette() {
                   onMouseEnter={() => setIndex(i)}
                   className={clsx(
                     "w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-left transition-colors",
-                    i === index ? "bg-indigo-50 text-indigo-700" : "text-stone-700"
+                    i === index ? "bg-red-50 text-red-700" : "text-stone-700"
                   )}
                 >
-                  <Icon size={15} className={i === index ? "text-indigo-600" : "text-stone-400"} />
+                  <Icon size={15} className={i === index ? "text-red-600" : "text-stone-400"} />
                   <span className="font-medium">{item.label}</span>
                   <span className="ml-auto flex items-center gap-2">
                     {item.key && (

@@ -253,7 +253,7 @@ export default function Devoluciones() {
               onClick={() => setTab(t)}
               className={clsx(
                 "px-4 py-1.5",
-                tab === t ? "bg-indigo-600 text-white" : "bg-white hover:bg-stone-50 text-stone-600"
+                tab === t ? "bg-red-600 text-white" : "bg-white hover:bg-stone-50 text-stone-600"
               )}
             >
               {t === "nueva" ? "Nueva devolución" : "Historial"}
@@ -278,9 +278,9 @@ export default function Devoluciones() {
             </div>
           )}
           {error && (
-            <div className="bg-red-50 text-red-700 border border-red-200 rounded-lg px-4 py-3 text-sm flex items-center justify-between">
+            <div className="bg-orange-50 text-orange-700 border border-orange-200 rounded-lg px-4 py-3 text-sm flex items-center justify-between">
               <span>{error}</span>
-              <button onClick={() => setError(null)} className="text-red-400 hover:text-red-600 ml-3">×</button>
+              <button onClick={() => setError(null)} className="text-orange-400 hover:text-orange-600 ml-3">×</button>
             </div>
           )}
 
@@ -295,7 +295,7 @@ export default function Devoluciones() {
                     onClick={() => { setSearchMode(m); reset(); }}
                     className={clsx(
                       "px-3 py-1.5",
-                      searchMode === m ? "bg-indigo-600 text-white" : "bg-white hover:bg-stone-50 text-stone-600"
+                      searchMode === m ? "bg-red-600 text-white" : "bg-white hover:bg-stone-50 text-stone-600"
                     )}
                   >
                     {m === "numero" ? "Por número" : "Por cliente"}
@@ -338,7 +338,7 @@ export default function Devoluciones() {
                         <li key={c.id}>
                           <button
                             onClick={() => loadClientSales(c)}
-                            className="w-full text-left px-3 py-2 text-sm hover:bg-indigo-50"
+                            className="w-full text-left px-3 py-2 text-sm hover:bg-red-50"
                           >
                             <div className="font-medium">{c.name}</div>
                             {c.phone && <div className="text-xs text-stone-400">{c.phone}</div>}
@@ -366,7 +366,7 @@ export default function Devoluciones() {
                           <button
                             onClick={() => loadSale(s.id)}
                             disabled={loadingSearch}
-                            className="w-full text-left px-3 py-2.5 bg-stone-50 hover:bg-indigo-50 border border-stone-200 hover:border-indigo-200 rounded-lg text-sm transition-colors"
+                            className="w-full text-left px-3 py-2.5 bg-stone-50 hover:bg-red-50 border border-stone-200 hover:border-red-200 rounded-lg text-sm transition-colors"
                           >
                             <div className="flex justify-between items-center">
                               <span className="font-mono text-xs text-stone-400">Venta #{s.id}</span>
@@ -388,16 +388,16 @@ export default function Devoluciones() {
                   Venta #{saleData.sale.id} — {formatDateTime(saleData.sale.created_at)} — {centsToARS(saleData.sale.total_cents)}
                   {saleData.sale.client_name && <span className="ml-2 text-stone-400">({saleData.sale.client_name})</span>}
                   {saleInvoice && (
-                    <span className="ml-2 inline-flex items-center gap-1 text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full">
+                    <span className="ml-2 inline-flex items-center gap-1 text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">
                       🧾 Factura {saleInvoice.invoice_type} {String(saleInvoice.punto_venta).padStart(4, "0")}-{String(saleInvoice.cbte_nro ?? 0).padStart(8, "0")}
                     </span>
                   )}
                 </span>
-                <button onClick={reset} className="text-stone-400 hover:text-red-600 text-xs ml-2">Cambiar</button>
+                <button onClick={reset} className="text-stone-400 hover:text-orange-600 text-xs ml-2">Cambiar</button>
               </div>
             )}
             {saleInvoice && (
-              <p className="mt-2 text-xs text-indigo-600">
+              <p className="mt-2 text-xs text-red-600">
                 Esta venta tiene factura ARCA — al confirmar la devolución se emite automáticamente la nota de crédito correspondiente.
               </p>
             )}
@@ -543,7 +543,7 @@ export default function Devoluciones() {
                       <td className="px-4 py-2.5 font-mono text-xs text-stone-400">#{r.id}</td>
                       <td className="px-4 py-2.5 text-xs text-stone-500">{formatDateTime(r.created_at)}</td>
                       <td className="px-4 py-2.5 text-xs">
-                        {r.sale_id ? <span className="font-mono text-indigo-600">Venta #{r.sale_id}</span> : <span className="text-stone-400">—</span>}
+                        {r.sale_id ? <span className="font-mono text-red-600">Venta #{r.sale_id}</span> : <span className="text-stone-400">—</span>}
                       </td>
                       <td className="px-4 py-2.5 text-xs">{r.reason}</td>
                       <td className="px-4 py-2.5 text-right tabular font-medium text-emerald-700">{centsToARS(r.total_cents)}</td>

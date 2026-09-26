@@ -275,7 +275,7 @@ export default function Configuracion() {
                 className={clsx(
                   "px-4 py-2 text-sm font-medium border-b-2 transition-colors",
                   tab === t.id
-                    ? "border-indigo-600 text-indigo-700"
+                    ? "border-red-600 text-red-700"
                     : "border-transparent text-stone-500 hover:text-stone-800"
                 )}
               >
@@ -394,7 +394,7 @@ export default function Configuracion() {
                   <div key={i} className="grid grid-cols-[1fr_120px_32px] gap-2">
                     <input className="input text-sm" placeholder="Ej: Cigarrillo suelto" value={btn.label} onChange={(e) => updateDeptBtn(i, "label", e.target.value)} />
                     <input className="input text-sm tabular text-right" placeholder="Precio ($)" value={btn.price_cents > 0 ? (btn.price_cents / 100).toString() : ""} onChange={(e) => updateDeptBtn(i, "price_cents", e.target.value)} inputMode="numeric" />
-                    <button onClick={() => removeDeptBtn(i)} className="text-stone-400 hover:text-red-600 text-lg">×</button>
+                    <button onClick={() => removeDeptBtn(i)} className="text-stone-400 hover:text-orange-600 text-lg">×</button>
                   </div>
                 ))}
               </div>
@@ -523,7 +523,7 @@ export default function Configuracion() {
                 {backing ? "Guardando…" : "💾 Guardar copia ahora"}
               </button>
               {backupMsg && (
-                <p className={`mt-2 text-xs ${backupMsg.startsWith("✓") ? "text-emerald-700" : "text-red-600"}`}>{backupMsg}</p>
+                <p className={`mt-2 text-xs ${backupMsg.startsWith("✓") ? "text-emerald-700" : "text-orange-600"}`}>{backupMsg}</p>
               )}
 
               <div className="pt-4 mt-4 border-t border-stone-100">
@@ -620,7 +620,7 @@ export default function Configuracion() {
                           Restaurar
                         </button>
                         <button onClick={() => doDeleteBackup(b.name)}
-                          className="text-stone-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity text-lg leading-none">×</button>
+                          className="text-stone-300 hover:text-orange-500 opacity-0 group-hover:opacity-100 transition-opacity text-lg leading-none">×</button>
                       </div>
                     </div>
                   ))}
@@ -699,18 +699,18 @@ export default function Configuracion() {
                   <label className="relative inline-flex cursor-pointer">
                     <input type="checkbox" className="sr-only peer" checked={deviceConfig?.mode === "server"}
                       onChange={(e) => setServerMode(e.target.checked)} />
-                    <div className="w-9 h-5 bg-stone-200 peer-checked:bg-indigo-500 rounded-full transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:w-4 after:h-4 after:transition-all peer-checked:after:translate-x-4" />
+                    <div className="w-9 h-5 bg-stone-200 peer-checked:bg-red-500 rounded-full transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:w-4 after:h-4 after:transition-all peer-checked:after:translate-x-4" />
                   </label>
                 </div>
               )}
               {networkInfo?.enabled && deviceConfig?.mode === "server" && (
-                <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-lg mt-3">
-                  <p className="text-xs font-semibold text-indigo-800 mb-1">Servidor multicaja activo</p>
-                  <p className="font-mono text-sm text-indigo-700">{networkInfo.ip}:{networkInfo.port}</p>
+                <div className="p-3 bg-red-50 border border-red-200 rounded-lg mt-3">
+                  <p className="text-xs font-semibold text-red-800 mb-1">Servidor multicaja activo</p>
+                  <p className="font-mono text-sm text-red-700">{networkInfo.ip}:{networkInfo.port}</p>
                   {networkInfo.serverToken && (
-                    <p className="font-mono text-xs text-indigo-700 mt-1 break-all">Código: {networkInfo.serverToken}</p>
+                    <p className="font-mono text-xs text-red-700 mt-1 break-all">Código: {networkInfo.serverToken}</p>
                   )}
-                  <p className="text-xs text-indigo-600 mt-1">
+                  <p className="text-xs text-red-600 mt-1">
                     Usá esa dirección y ese código en las cajas "cliente" para conectarlas — sin el código no se pueden conectar.
                   </p>
                 </div>
@@ -726,17 +726,17 @@ export default function Configuracion() {
                     <div className={clsx(
                       "p-3 border rounded-lg",
                       syncStatus === "online" ? "bg-emerald-50 border-emerald-200" :
-                      syncStatus === "syncing" ? "bg-amber-50 border-amber-200" : "bg-red-50 border-red-200"
+                      syncStatus === "syncing" ? "bg-amber-50 border-amber-200" : "bg-orange-50 border-orange-200"
                     )}>
                       <p className={clsx(
                         "text-xs font-semibold mb-1",
-                        syncStatus === "online" ? "text-emerald-800" : syncStatus === "syncing" ? "text-amber-800" : "text-red-800"
+                        syncStatus === "online" ? "text-emerald-800" : syncStatus === "syncing" ? "text-amber-800" : "text-orange-800"
                       )}>
                         {syncStatus === "online" ? "Conectada como cliente" : syncStatus === "syncing" ? "Sincronizando…" : "Sin conexión con el servidor"}
                       </p>
                       <p className="font-mono text-sm text-stone-700">{deviceConfig.serverAddr}</p>
                       {syncStatus === "offline" && (
-                        <p className="text-xs text-red-600 mt-1">Esta caja sigue vendiendo con sus propios datos y va a sincronizar sola cuando vuelva la conexión.</p>
+                        <p className="text-xs text-orange-600 mt-1">Esta caja sigue vendiendo con sus propios datos y va a sincronizar sola cuando vuelva la conexión.</p>
                       )}
                       {pendingOps.length > 0 && (
                         <div className="mt-2 pt-2 border-t border-stone-200">
@@ -745,7 +745,7 @@ export default function Configuracion() {
                             {pendingOps.some((o) => o.status === "failed") && `, ${pendingOps.filter((o) => o.status === "failed").length} con error`}
                           </p>
                           {pendingOps.filter((o) => o.status === "failed").slice(0, 5).map((o) => (
-                            <p key={o.id} className="text-[11px] text-red-600 mt-0.5">{o.command}: {o.last_error}</p>
+                            <p key={o.id} className="text-[11px] text-orange-600 mt-0.5">{o.command}: {o.last_error}</p>
                           ))}
                         </div>
                       )}
@@ -773,7 +773,7 @@ export default function Configuracion() {
                     </div>
                   )}
                   {connectMsg && (
-                    <p className={clsx("text-xs mt-2", connectError ? "text-red-600" : "text-emerald-600")}>{connectMsg}</p>
+                    <p className={clsx("text-xs mt-2", connectError ? "text-orange-600" : "text-emerald-600")}>{connectMsg}</p>
                   )}
                 </div>
               )}
@@ -822,7 +822,7 @@ export default function Configuracion() {
                   )}
 
                   {licenseMsg && (
-                    <p className={clsx("text-xs mt-2", licenseMsgError ? "text-red-600" : "text-emerald-600")}>{licenseMsg}</p>
+                    <p className={clsx("text-xs mt-2", licenseMsgError ? "text-orange-600" : "text-emerald-600")}>{licenseMsg}</p>
                   )}
                 </>
               )}
@@ -862,7 +862,7 @@ export default function Configuracion() {
                   </p>
                 )}
                 {updater.error && (
-                  <p className="text-xs text-red-600 mt-2">No se pudo actualizar: {updater.error}</p>
+                  <p className="text-xs text-orange-600 mt-2">No se pudo actualizar: {updater.error}</p>
                 )}
                 {!updater.update && !updater.checking && !updater.installing && updater.lastCheckedAt && !updater.error && (
                   <p className="text-xs text-stone-400 mt-2">Estás usando la última versión.</p>
@@ -897,7 +897,7 @@ export default function Configuracion() {
                   </p>
                 )}
                 {catalogImport.errorMsg && (
-                  <p className="text-xs text-red-600 mt-2">{catalogImport.errorMsg}</p>
+                  <p className="text-xs text-orange-600 mt-2">{catalogImport.errorMsg}</p>
                 )}
               </section>
             )}

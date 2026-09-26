@@ -336,7 +336,7 @@ export default function Reportes() {
                 onClick={() => setPeriod(p.id)}
                 className={clsx(
                   "px-3 py-1.5 whitespace-nowrap",
-                  period === p.id ? "bg-indigo-600 text-white" : "bg-white hover:bg-stone-50 text-stone-600"
+                  period === p.id ? "bg-red-600 text-white" : "bg-white hover:bg-stone-50 text-stone-600"
                 )}
               >
                 {p.label}
@@ -351,7 +351,7 @@ export default function Reportes() {
                 onClick={() => setTab(t)}
                 className={clsx(
                   "px-3 py-1.5",
-                  tab === t ? "bg-indigo-600 text-white" : "bg-white hover:bg-stone-50 text-stone-600"
+                  tab === t ? "bg-red-600 text-white" : "bg-white hover:bg-stone-50 text-stone-600"
                 )}
               >
                 {t === "resumen" ? "Resumen"
@@ -396,7 +396,7 @@ export default function Reportes() {
             <input type="date" className="input w-auto text-sm" value={customTo} min={customFrom}
               onChange={(e) => setCustomTo(e.target.value)} />
             {customFrom > customTo && (
-              <span className="text-xs text-red-600">"Desde" es posterior a "Hasta" — no va a haber resultados</span>
+              <span className="text-xs text-orange-600">"Desde" es posterior a "Hasta" — no va a haber resultados</span>
             )}
           </div>
         )}
@@ -426,7 +426,7 @@ export default function Reportes() {
                 return (
                   <>
                     <div className="text-sm text-stone-500">vs período anterior ({prevReport.date})</div>
-                    <div className={clsx("flex items-center gap-2 font-semibold text-sm", up ? "text-emerald-700" : "text-red-600")}>
+                    <div className={clsx("flex items-center gap-2 font-semibold text-sm", up ? "text-emerald-700" : "text-orange-600")}>
                       <span>{up ? "▲" : "▼"} {Math.abs(pct).toFixed(1)}%</span>
                       <span className="font-normal text-stone-500">
                         ({up ? "+" : ""}{centsToARS(report.total_cents - prevReport.total_cents)})
@@ -618,7 +618,7 @@ export default function Reportes() {
                           <td className="px-4 py-2.5 text-right tabular font-medium">{centsToARS(s.total_cents)}</td>
                           <td className="px-4 py-2.5 text-center">
                             {cancelled
-                              ? <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-medium">Anulada</span>
+                              ? <span className="text-xs px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 font-medium">Anulada</span>
                               : <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-medium">OK</span>
                             }
                           </td>
@@ -690,7 +690,7 @@ export default function Reportes() {
                           "text-xs px-2 py-0.5 rounded-full font-medium",
                           c.margin_pct >= 30 ? "bg-emerald-100 text-emerald-700" :
                           c.margin_pct >= 15 ? "bg-yellow-100 text-yellow-700" :
-                          "bg-red-100 text-red-700"
+                          "bg-orange-100 text-orange-700"
                         )}>
                           {c.margin_pct.toFixed(1)}%
                         </span>
@@ -725,13 +725,13 @@ export default function Reportes() {
               <div className="space-y-4">
                 {/* Insight Pareto */}
                 {totalProfit > 0 && (
-                  <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4 flex items-start gap-3">
+                  <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3">
                     <span className="text-2xl">📊</span>
                     <div>
-                      <div className="font-semibold text-indigo-900 text-sm">
+                      <div className="font-semibold text-red-900 text-sm">
                         {paretoCount} producto{paretoCount !== 1 ? "s" : ""} generan el 80% de tu ganancia bruta
                       </div>
-                      <div className="text-xs text-indigo-700 mt-0.5">
+                      <div className="text-xs text-red-700 mt-0.5">
                         Los marcados con ⭐ son tus productos Pareto — priorizá su stock y reposición.
                       </div>
                     </div>
@@ -741,7 +741,7 @@ export default function Reportes() {
                 {(negativoCount > 0 || bajoCount > 0 || sinCosto.length > 0) && (
                   <div className="flex gap-3 flex-wrap">
                     {negativoCount > 0 && (
-                      <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm text-red-800 font-medium">
+                      <div className="bg-orange-50 border border-orange-200 rounded-lg px-3 py-2 text-sm text-orange-800 font-medium">
                         🔴 {negativoCount} producto{negativoCount !== 1 ? "s" : ""} con margen negativo
                       </div>
                     )}
@@ -772,7 +772,7 @@ export default function Reportes() {
                       {marginProducts.map((p, i) => {
                         const isPareto = p.product_id ? paretoIds.has(p.product_id) : false;
                         return (
-                          <tr key={i} className={clsx("border-t border-stone-50 hover:bg-stone-50", isPareto && "bg-indigo-50/30")}>
+                          <tr key={i} className={clsx("border-t border-stone-50 hover:bg-stone-50", isPareto && "bg-red-50/30")}>
                             <td className="py-2">
                               <span className="font-medium">{p.name}</span>
                               {isPareto && <span className="ml-1.5 text-[10px]">⭐</span>}
@@ -781,7 +781,7 @@ export default function Reportes() {
                             <td className="py-2 text-right tabular text-stone-500">{p.units_sold > 0 ? p.units_sold : "—"}</td>
                             <td className="py-2 text-right tabular font-medium">
                               {p.profit_cents > 0 ? <span className="text-emerald-700">{centsToARS(p.profit_cents)}</span>
-                               : p.profit_cents < 0 ? <span className="text-red-600">{centsToARS(p.profit_cents)}</span>
+                               : p.profit_cents < 0 ? <span className="text-orange-600">{centsToARS(p.profit_cents)}</span>
                                : <span className="text-stone-400">—</span>}
                             </td>
                             <td className="py-2 text-right tabular">
@@ -794,7 +794,7 @@ export default function Reportes() {
                                   "text-xs px-2 py-0.5 rounded-full font-medium",
                                   p.margin_pct >= 30 ? "bg-emerald-100 text-emerald-700" :
                                   p.margin_pct >= 15 ? "bg-yellow-100 text-yellow-700" :
-                                  "bg-red-100 text-red-700"
+                                  "bg-orange-100 text-orange-700"
                                 )}>
                                   {p.margin_pct.toFixed(1)}%
                                 </span>
@@ -909,7 +909,7 @@ export default function Reportes() {
                         {items.map((item) => (
                           <tr key={item.id} className="border-t border-stone-100 hover:bg-stone-50">
                             <td className="px-4 py-2.5 font-medium">{item.name}</td>
-                            <td className="px-4 py-2.5 text-right tabular text-red-600 font-semibold">{item.stock}</td>
+                            <td className="px-4 py-2.5 text-right tabular text-orange-600 font-semibold">{item.stock}</td>
                             <td className="px-4 py-2.5 text-right tabular text-stone-500">{item.min_stock}</td>
                             <td className="px-4 py-2.5 text-right tabular font-semibold text-amber-700">{item.need_qty}</td>
                             <td className="px-4 py-2.5 text-right tabular text-stone-600">{centsToARS(item.need_qty * item.cost_cents)}</td>
@@ -1059,7 +1059,7 @@ export default function Reportes() {
                           <td className="px-4 py-2 text-xs text-stone-500">{item.client_name ?? "—"}</td>
                           <td className="px-4 py-2 text-right tabular font-medium">{centsToARS(item.total_cents)}</td>
                           <td className="px-4 py-2 text-right tabular text-stone-600">{centsToARS(item.neto_cents)}</td>
-                          <td className="px-4 py-2 text-right tabular text-indigo-600">{centsToARS(item.iva_cents)}</td>
+                          <td className="px-4 py-2 text-right tabular text-red-600">{centsToARS(item.iva_cents)}</td>
                           <td className="px-4 py-2 text-center">
                             {item.is_invoiced ? (
                               <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-medium">Real (AFIP)</span>
@@ -1075,7 +1075,7 @@ export default function Reportes() {
                         <td colSpan={4} className="px-4 py-2.5">TOTAL</td>
                         <td className="px-4 py-2.5 text-right tabular">{centsToARS(totalBruto)}</td>
                         <td className="px-4 py-2.5 text-right tabular">{centsToARS(totalNeto)}</td>
-                        <td className="px-4 py-2.5 text-right tabular text-indigo-600">{centsToARS(totalIva)}</td>
+                        <td className="px-4 py-2.5 text-right tabular text-red-600">{centsToARS(totalIva)}</td>
                         <td />
                       </tr>
                     </tfoot>
@@ -1329,7 +1329,7 @@ function SaleDetailModal({ sw, onClose, onCancel, onReprint }: { sw: SaleWithIte
             <h2 className="font-semibold">Venta #{sale.id}</h2>
             <p className="text-xs text-stone-400 mt-0.5">{formatDateTime(sale.created_at)}</p>
           </div>
-          {cancelled && <span className="text-xs px-2 py-1 rounded-full bg-red-100 text-red-700 font-medium">ANULADA</span>}
+          {cancelled && <span className="text-xs px-2 py-1 rounded-full bg-orange-100 text-orange-700 font-medium">ANULADA</span>}
         </div>
         <div className="flex-1 overflow-y-auto p-5">
           <table className="w-full text-sm mb-4">
@@ -1381,7 +1381,7 @@ function SaleDetailModal({ sw, onClose, onCancel, onReprint }: { sw: SaleWithIte
         <div className="p-4 border-t border-stone-200 flex gap-2">
           <button onClick={onReprint} className="btn btn-secondary text-sm flex-1">🖨 Reimprimir ticket</button>
           {!cancelled && (
-            <button onClick={() => onCancel(sale.id)} className="btn text-sm text-red-600 border border-red-200 hover:bg-red-50 flex-1">
+            <button onClick={() => onCancel(sale.id)} className="btn text-sm text-orange-600 border border-orange-200 hover:bg-orange-50 flex-1">
               Anular venta
             </button>
           )}

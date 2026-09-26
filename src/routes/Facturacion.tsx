@@ -30,7 +30,7 @@ const STATUS_LABEL: Record<string, string> = { pendiente: "Pendiente", autorizad
 const STATUS_COLOR: Record<string, string> = {
   pendiente: "bg-amber-100 text-amber-700",
   autorizada: "bg-emerald-100 text-emerald-700",
-  error: "bg-red-100 text-red-700",
+  error: "bg-orange-100 text-orange-700",
 };
 const TYPE_COLOR: Record<string, string> = {
   A: "bg-blue-100 text-blue-700",
@@ -191,7 +191,7 @@ export default function Facturacion() {
           ]).map((t) => (
             <button key={t.id} onClick={() => setTab(t.id)}
               className={clsx("px-4 py-2 text-sm font-medium border-b-2 transition-colors",
-                tab === t.id ? "border-indigo-600 text-indigo-700" : "border-transparent text-stone-500 hover:text-stone-800")}>
+                tab === t.id ? "border-red-600 text-red-700" : "border-transparent text-stone-500 hover:text-stone-800")}>
               {t.label}
             </button>
           ))}
@@ -236,10 +236,10 @@ export default function Facturacion() {
                 { label: "Emitidas hoy", value: hoy.length, sub: centsToARS(totalHoy), color: "text-emerald-600", title: undefined, active: filterRange === "today", onClick: () => setFilterRange(filterRange === "today" ? "all" : "today") },
                 { label: "Total autorizadas", value: autorizadas.length, sub: "históricas", color: "text-stone-800", title: "Ya tienen CAE de ARCA: están firmadas y ya figuran en tu cuenta real (si estás en Producción).", active: filterStatus === "autorizada", onClick: () => setFilterStatus(filterStatus === "autorizada" ? "all" : "autorizada") },
                 { label: "Pendientes", value: pendientes.length, sub: "sin CAE", color: pendientes.length > 0 ? "text-amber-600" : "text-stone-400", title: "Todavía no se mandaron a ARCA (sin internet en ese momento). Usá \"Reintentar\" cuando tengas conexión.", active: filterStatus === "pendiente", onClick: () => setFilterStatus(filterStatus === "pendiente" ? "all" : "pendiente") },
-                { label: "Errores", value: errores.length, sub: "rechazadas", color: errores.length > 0 ? "text-red-600" : "text-stone-400", title: "ARCA las rechazó por algún dato mal cargado. Mirá el detalle de cada una para ver el motivo.", active: filterStatus === "error", onClick: () => setFilterStatus(filterStatus === "error" ? "all" : "error") },
+                { label: "Errores", value: errores.length, sub: "rechazadas", color: errores.length > 0 ? "text-orange-600" : "text-stone-400", title: "ARCA las rechazó por algún dato mal cargado. Mirá el detalle de cada una para ver el motivo.", active: filterStatus === "error", onClick: () => setFilterStatus(filterStatus === "error" ? "all" : "error") },
               ].map((k) => (
                 <button key={k.label} onClick={k.onClick} title={k.title}
-                  className={clsx("card p-4 text-left transition-shadow", k.active && "ring-2 ring-indigo-400")}>
+                  className={clsx("card p-4 text-left transition-shadow", k.active && "ring-2 ring-red-400")}>
                   <div className="text-xs text-stone-500 mb-1">{k.label}</div>
                   <div className={`text-2xl font-bold ${k.color}`}>{k.value}</div>
                   <div className="text-xs text-stone-400 mt-0.5">{k.sub}</div>
@@ -294,7 +294,7 @@ export default function Facturacion() {
                   <div className="flex flex-col items-center justify-center h-full text-stone-400 text-sm gap-2">
                     <span className="text-3xl">🔍</span>
                     Ningún comprobante coincide con los filtros.
-                    <button onClick={clearFilters} className="text-xs text-indigo-500 hover:text-indigo-700 underline">Limpiar filtros</button>
+                    <button onClick={clearFilters} className="text-xs text-red-500 hover:text-red-700 underline">Limpiar filtros</button>
                   </div>
                 ) : (
                   <table className="w-full text-sm">
@@ -338,13 +338,13 @@ export default function Facturacion() {
                           <td className="py-2.5 px-4 whitespace-nowrap">
                             <button onClick={() => setSelected(inv)} className="text-xs text-stone-400 hover:text-stone-700 mr-2">Ver</button>
                             {inv.status === "autorizada" && (
-                              <button onClick={() => setPrinting(inv)} className="text-xs text-indigo-500 hover:text-indigo-700 mr-2">🖨️</button>
+                              <button onClick={() => setPrinting(inv)} className="text-xs text-red-500 hover:text-red-700 mr-2">🖨️</button>
                             )}
                             {puedeAnular && (
                               <button
                                 onClick={() => annul(inv)}
                                 disabled={annullingId === inv.id}
-                                className="text-xs text-red-500 hover:text-red-700 disabled:opacity-50"
+                                className="text-xs text-orange-500 hover:text-orange-700 disabled:opacity-50"
                               >
                                 {annullingId === inv.id ? "Anulando…" : "Anular"}
                               </button>
@@ -579,7 +579,7 @@ function NuevaFacturaModal({ arcaConfig, onClose, onIssued }: { arcaConfig: Arca
             </p>
           )}
 
-          {error && <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded p-2">{error}</div>}
+          {error && <div className="text-xs text-orange-700 bg-orange-50 border border-orange-200 rounded p-2">{error}</div>}
 
           <button onClick={submit} disabled={issuing} className="btn btn-primary w-full disabled:opacity-50">
             {issuing ? "Emitiendo…" : "Emitir factura"}
@@ -726,13 +726,13 @@ function ArcaSetup({ arcaConfig, onRefresh }: { arcaConfig: ArcaConfig | null; o
               disabled={s.n > maxReachable}
               className={clsx(
                 "flex items-center gap-2 rounded-full py-1.5 pl-1.5 pr-3 text-sm font-medium transition-colors w-full justify-center",
-                activeStep === s.n ? "bg-indigo-600 text-white" :
+                activeStep === s.n ? "bg-red-600 text-white" :
                 s.done ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-200" :
                 s.n <= maxReachable ? "bg-stone-100 text-stone-600 hover:bg-stone-200" : "bg-stone-50 text-stone-300 cursor-not-allowed"
               )}
             >
               <span className={clsx("w-5 h-5 rounded-full text-xs font-bold flex items-center justify-center shrink-0",
-                activeStep === s.n ? "bg-white text-indigo-600" : s.done ? "bg-emerald-500 text-white" : "bg-white text-stone-400")}>
+                activeStep === s.n ? "bg-white text-red-600" : s.done ? "bg-emerald-500 text-white" : "bg-white text-stone-400")}>
                 {s.done ? "✓" : s.n}
               </span>
               {s.label}
@@ -805,7 +805,7 @@ function ArcaSetup({ arcaConfig, onRefresh }: { arcaConfig: ArcaConfig | null; o
                 value={form.punto_venta} onChange={(e) => setForm((f) => ({ ...f, punto_venta: Number(e.target.value) }))} />
               <span className="text-sm text-stone-400 block mt-1">El número que ARCA te asignó (casi siempre es el 1).</span>
             </label>
-            <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded p-3">
+            <div className="text-sm text-orange-700 bg-orange-50 border border-orange-200 rounded p-3">
               ⚠ Esta conexión es real: las facturas que emitas van a quedar en tu cuenta de ARCA de verdad.
             </div>
             <div className="flex gap-2">
@@ -863,7 +863,7 @@ function ArcaSetup({ arcaConfig, onRefresh }: { arcaConfig: ArcaConfig | null; o
               <p className="text-base font-semibold text-stone-700 mb-2">2. Pedí el certificado en la web de ARCA</p>
               {form.environment === "prod" ? (
                 <div className="text-sm text-stone-600 bg-amber-50 border border-amber-200 rounded-lg p-4 space-y-4">
-                  <div className="bg-red-50 border border-red-200 text-red-700 rounded p-2.5 font-medium">
+                  <div className="bg-orange-50 border border-orange-200 text-orange-700 rounded p-2.5 font-medium">
                     ⚠ Estás en Producción: el certificado que generes acá va a poder emitir facturas reales.
                   </div>
                   <button
@@ -1005,7 +1005,7 @@ function ArcaSetup({ arcaConfig, onRefresh }: { arcaConfig: ArcaConfig | null; o
               {testing ? "Conectando…" : "Probar conexión"}
             </button>
             {testResult && (
-              <div className={clsx("text-sm rounded p-3", testResult.ok ? "bg-emerald-50 text-emerald-800 border border-emerald-200" : "bg-red-50 text-red-800 border border-red-200")}>
+              <div className={clsx("text-sm rounded p-3", testResult.ok ? "bg-emerald-50 text-emerald-800 border border-emerald-200" : "bg-orange-50 text-orange-800 border border-orange-200")}>
                 {testResult.ok ? "✓ " : "✗ "}{testResult.msg}
               </div>
             )}
@@ -1028,12 +1028,12 @@ function ArcaSetup({ arcaConfig, onRefresh }: { arcaConfig: ArcaConfig | null; o
 
       {arcaConfig && (
         <div className="mt-8 border-t border-stone-200 pt-4">
-          <p className="text-sm font-semibold text-red-700 mb-1">Zona de peligro</p>
+          <p className="text-sm font-semibold text-orange-700 mb-1">Zona de peligro</p>
           <p className="text-sm text-stone-500 mb-2">
             Borra el CUIT, el certificado y todo el historial de facturas/notas de crédito guardado en esta compu.
             No toca nada de tu ARCA real. Útil para descartar pruebas antes de pasar a Producción.
           </p>
-          <button onClick={resetAll} disabled={resetting} className="btn text-sm bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 disabled:opacity-50">
+          <button onClick={resetAll} disabled={resetting} className="btn text-sm bg-orange-50 text-orange-700 border border-orange-200 hover:bg-orange-100 disabled:opacity-50">
             {resetting ? "Borrando…" : "🗑️ Borrar configuración y facturas de ARCA"}
           </button>
         </div>
@@ -1070,7 +1070,7 @@ function InvoiceDetail({ inv, onClose, onPrint }: { inv: ElectronicInvoice; onCl
             <div className="flex justify-between border-t border-stone-100 pt-2"><dt className="text-stone-500">CAE</dt><dd className="font-mono text-xs">{inv.cae}</dd></div>
             <div className="flex justify-between"><dt className="text-stone-500">Vto. CAE</dt><dd className="text-xs">{inv.cae_expires_at}</dd></div>
           </>}
-          {inv.error_msg && <div className="mt-2 p-3 bg-red-50 text-red-700 text-xs rounded border border-red-200">{inv.error_msg}</div>}
+          {inv.error_msg && <div className="mt-2 p-3 bg-orange-50 text-orange-700 text-xs rounded border border-orange-200">{inv.error_msg}</div>}
           <div className="flex justify-between text-xs text-stone-400 border-t border-stone-100 pt-2">
             <dt>Emitida</dt><dd>{new Date(inv.created_at).toLocaleString("es-AR")}</dd>
           </div>

@@ -89,6 +89,13 @@ pub fn close_cash_session(
 }
 
 #[tauri::command]
+pub fn get_cash_session(id: i64, state: State<AppState>) -> CmdResult<CashSession> {
+    let conn = state.db.lock();
+    let mut stmt = conn.prepare("SELECT * FROM cash_sessions WHERE id = ?1").map_err(err)?;
+    stmt.query_row(params![id], row_to_session).map_err(err)
+}
+
+#[tauri::command]
 pub fn get_current_session(state: State<AppState>) -> CmdResult<Option<CashSession>> {
     let conn = state.db.lock();
     let mut stmt = conn

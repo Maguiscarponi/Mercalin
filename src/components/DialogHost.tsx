@@ -63,7 +63,7 @@ export default function DialogHost() {
             key={t.id}
             className={clsx(
               "pointer-events-auto rounded-lg shadow-lg px-4 py-3 text-sm flex items-center gap-4 min-w-[260px] max-w-sm motion-safe:animate-fade-in",
-              t.tone === "danger" ? "bg-red-600 text-white" : t.tone === "success" ? "bg-emerald-600 text-white" : "bg-stone-900 text-white"
+              t.tone === "danger" ? "bg-orange-600 text-white" : t.tone === "success" ? "bg-emerald-600 text-white" : "bg-stone-900 text-white"
             )}
           >
             <span className="flex-1">{t.message}</span>

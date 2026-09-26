@@ -72,16 +72,16 @@ function TrendChart({ days, trendMax }: { days: Array<{ date: string; total_cent
     <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="w-full h-28">
       <defs>
         <linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#6366f1" stopOpacity="0.35" />
-          <stop offset="100%" stopColor="#6366f1" stopOpacity="0.02" />
+          <stop offset="0%" stopColor="#ef4444" stopOpacity="0.35" />
+          <stop offset="100%" stopColor="#ef4444" stopOpacity="0.02" />
         </linearGradient>
       </defs>
       <path d={areaPath} fill="url(#trendFill)" />
-      <path d={linePath} fill="none" stroke="#6366f1" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+      <path d={linePath} fill="none" stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
       {points.map((p, i) => {
         const isToday = i === n - 1;
         return (
-          <circle key={p.d.date} cx={p.x} cy={p.y} r={isToday ? 5 : 3.2} fill={isToday ? "#4f46e5" : "#fff"} stroke="#6366f1" strokeWidth="2" vectorEffect="non-scaling-stroke">
+          <circle key={p.d.date} cx={p.x} cy={p.y} r={isToday ? 5 : 3.2} fill={isToday ? "#dc2626" : "#fff"} stroke="#ef4444" strokeWidth="2" vectorEffect="non-scaling-stroke">
             <title>{dayLabel(p.d.date)}: {centsToARS(p.d.total_cents)}</title>
           </circle>
         );
@@ -110,13 +110,13 @@ function GreetingIcon({ className }: { className?: string }) {
 
 function pctColor(pct: number): string {
   if (pct > 5) return "text-emerald-600";
-  if (pct < -5) return "text-red-600";
+  if (pct < -5) return "text-orange-600";
   return "text-stone-500";
 }
 
 function pctBg(pct: number): string {
   if (pct > 5) return "bg-emerald-50 text-emerald-700";
-  if (pct < -5) return "bg-red-50 text-red-700";
+  if (pct < -5) return "bg-orange-50 text-orange-700";
   return "bg-stone-100 text-stone-600";
 }
 
@@ -167,9 +167,9 @@ function buildInsights(d: DashboardData): Insight[] {
 function AlertRow({ entry, onClick }: { entry: AlertEntry; onClick: () => void }) {
   const { kind, item } = entry;
   const Icon = kind === "stock" ? Package : kind === "exp" ? Clock : CreditCard;
-  const iconColor = kind === "stock" ? "text-red-500" : kind === "exp" ? "text-amber-500" : "text-stone-500";
+  const iconColor = kind === "stock" ? "text-orange-500" : kind === "exp" ? "text-amber-500" : "text-stone-500";
   const label = kind === "stock" ? "Stock crítico" : kind === "exp" ? "Vencimiento" : "CC vencida";
-  const labelColor = kind === "stock" ? "text-red-600" : kind === "exp" ? "text-amber-600" : "text-stone-500";
+  const labelColor = kind === "stock" ? "text-orange-600" : kind === "exp" ? "text-amber-600" : "text-stone-500";
   const detail =
     kind === "stock" ? `${item.stock} un · ${item.days_remaining.toFixed(1)} días restantes` :
     kind === "exp" ? `${item.stock} un · ${item.days_left} día${item.days_left !== 1 ? "s" : ""}` :
@@ -264,7 +264,7 @@ export default function Dashboard() {
 
   if (!data) {
     return (
-      <div className="h-full flex items-center justify-center text-red-500 text-sm">
+      <div className="h-full flex items-center justify-center text-orange-500 text-sm">
         Error al cargar el dashboard.
       </div>
     );
@@ -352,7 +352,7 @@ export default function Dashboard() {
         </div>
         <div className="flex items-center gap-2">
           {totalAlerts > 0 && (
-            <span className="flex items-center gap-1 bg-red-100 text-red-700 text-[11px] font-bold px-2 py-0.5 rounded-full">
+            <span className="flex items-center gap-1 bg-orange-100 text-orange-700 text-[11px] font-bold px-2 py-0.5 rounded-full">
               <AlertTriangle className="w-3 h-3" />
               {totalAlerts} alerta{totalAlerts !== 1 ? "s" : ""}
             </span>
@@ -360,14 +360,14 @@ export default function Dashboard() {
           <button
             onClick={load}
             disabled={loading}
-            className="flex items-center gap-1.5 text-xs text-stone-500 hover:text-indigo-600 bg-stone-100 hover:bg-indigo-50 px-3 py-1.5 rounded-md transition-colors disabled:opacity-50"
+            className="flex items-center gap-1.5 text-xs text-stone-500 hover:text-red-600 bg-stone-100 hover:bg-red-50 px-3 py-1.5 rounded-md transition-colors disabled:opacity-50"
           >
             <RefreshCw className={clsx("w-3.5 h-3.5", loading && "animate-spin")} />
             {loading ? "Actualizando…" : "Actualizar"}
           </button>
           <button
             onClick={() => navigate("/caja")}
-            className="flex items-center gap-1.5 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-md transition-colors"
+            className="flex items-center gap-1.5 text-xs font-semibold bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-md transition-colors"
           >
             <ShoppingCart className="w-3.5 h-3.5" />
             Ir a Caja
@@ -412,7 +412,7 @@ export default function Dashboard() {
               </div>
               <div>
                 <div className="text-[10px] text-stone-400 uppercase tracking-wide">Ganancia bruta</div>
-                <div className={clsx("text-lg font-bold mt-0.5", data.today_gross_profit_cents >= 0 ? "text-emerald-600" : "text-red-600")}>
+                <div className={clsx("text-lg font-bold mt-0.5", data.today_gross_profit_cents >= 0 ? "text-emerald-600" : "text-orange-600")}>
                   {centsToARS(data.today_gross_profit_cents)}
                 </div>
               </div>
@@ -478,7 +478,7 @@ export default function Dashboard() {
                         <div
                           className={clsx(
                             "h-full rounded-full transition-all",
-                            g.pct >= 100 ? "bg-emerald-500" : "bg-indigo-500"
+                            g.pct >= 100 ? "bg-emerald-500" : "bg-red-500"
                           )}
                           style={{ width: `${g.pct}%` }}
                         />
@@ -503,7 +503,7 @@ export default function Dashboard() {
                 <div className="text-xs text-stone-400">No hay metas configuradas</div>
                 <button
                   onClick={() => navigate("/configuracion", { state: { tab: "finanzas" } })}
-                  className="mt-2 text-[11px] text-indigo-600 hover:underline"
+                  className="mt-2 text-[11px] text-red-600 hover:underline"
                 >
                   Configurar →
                 </button>
@@ -540,7 +540,7 @@ export default function Dashboard() {
                       {days.map((day, idx) => (
                         <span
                           key={day.date}
-                          className={clsx("text-[10px]", idx === 6 ? "text-indigo-600 font-bold" : "text-stone-400")}
+                          className={clsx("text-[10px]", idx === 6 ? "text-red-600 font-bold" : "text-stone-400")}
                         >
                           {dayLabel(day.date)}
                         </span>
@@ -556,11 +556,11 @@ export default function Dashboard() {
           <div className="bg-white rounded-xl border border-stone-200 p-4">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-stone-400">
-                <AlertTriangle className="w-3.5 h-3.5 text-red-400" />
+                <AlertTriangle className="w-3.5 h-3.5 text-orange-400" />
                 Alertas
               </div>
               {totalAlerts > 0 && (
-                <span className="bg-red-100 text-red-700 text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                <span className="bg-orange-100 text-orange-700 text-[10px] font-bold px-1.5 py-0.5 rounded-full">
                   {totalAlerts}
                 </span>
               )}
@@ -579,7 +579,7 @@ export default function Dashboard() {
                 {totalAlerts > ALERTS_PREVIEW && (
                   <button
                     onClick={() => setShowAllAlerts(true)}
-                    className="w-full flex items-center justify-center gap-1 text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 py-1.5"
+                    className="w-full flex items-center justify-center gap-1 text-[11px] font-semibold text-red-600 hover:text-red-800 py-1.5"
                   >
                     Ver todas ({totalAlerts}) <ArrowRight className="w-3 h-3" />
                   </button>
@@ -604,9 +604,9 @@ export default function Dashboard() {
                       key={lvl}
                       className={clsx(
                         "text-[10px] font-bold px-2 py-0.5 rounded-full",
-                        lvl === "urgente" ? "bg-red-100 text-red-600" :
+                        lvl === "urgente" ? "bg-orange-100 text-orange-600" :
                         lvl === "importante" ? "bg-amber-100 text-amber-600" :
-                        lvl === "consejo" ? "bg-indigo-100 text-indigo-600" : "bg-stone-100 text-stone-500"
+                        lvl === "consejo" ? "bg-red-100 text-red-600" : "bg-stone-100 text-stone-500"
                       )}
                     >
                       {insightLevelCounts[lvl]} {LEVEL_LABEL[lvl].toLowerCase()}
@@ -622,7 +622,7 @@ export default function Dashboard() {
               {activeInsights.length > INSIGHTS_PREVIEW && (
                 <button
                   onClick={() => setShowAllInsights(true)}
-                  className="w-full flex items-center justify-center gap-1 text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 py-1.5"
+                  className="w-full flex items-center justify-center gap-1 text-[11px] font-semibold text-red-600 hover:text-red-800 py-1.5"
                 >
                   Ver los {activeInsights.length} consejos <ArrowRight className="w-3 h-3" />
                 </button>

@@ -1,5 +1,5 @@
 use crate::commands::{audit::log_action, err, CmdResult};
-use crate::models::{BulkPriceInput, BulkPricePreviewItem, CategoryStat, CsvProductRow, ExpiringProduct, ImportResult, MinStockSuggestion, NewProduct, PriceImpactItem, Product, ProductVelocity, PriceSyncAlert};
+use crate::models::{BulkPriceInput, BulkPricePreviewItem, BulkStockInput, BulkStockPreviewItem, CategoryStat, CsvProductRow, ExpiringProduct, ImportResult, MinStockSuggestion, NewProduct, PriceImpactItem, Product, ProductVelocity, PriceSyncAlert};
 use crate::AppState;
 use rusqlite::{params, Connection, Row};
 use tauri::State;
@@ -356,9 +356,34 @@ pub fn bulk_set_supplier(ids: Vec<i64>, supplier_id: Option<i64>, user_id: Optio
     let mut p: Vec<&dyn rusqlite::ToSql> = vec![&supplier_id];
     for id in &ids { p.push(id); }
     let n = conn.execute(&sql, p.as_slice()).map_err(err)?;
+    let supplier_name = match supplier_id {
+        Some(sid) => conn.query_row("SELECT name FROM suppliers WHERE id=?1", params![sid], |r| r.get::<_, String>(0))
+            .unwrap_or_else(|_| "(proveedor eliminado)".to_string()),
+        None => "(sin proveedor)".to_string(),
+    };
     log_action(&conn, user_id, "actualizacion_masiva_proveedor", "productos", None,
-        Some(&format!("{} productos -> proveedor #{:?}", n, supplier_id)));
+        Some(&format!("{} productos -> proveedor {}", n, supplier_name)));
     Ok(n as i64)
+}
+
+/// Traduce filter_type/filter_value (como los arma el frontend en BulkPriceInput /
+/// BulkStockInput) a una frase en español para el detalle de auditoría --
+/// sin esto, el registro queda con el nombre crudo del filtro (ej "category")
+/// en vez de decir a qué productos afectó en criollo.
+fn describe_bulk_filter(conn: &Connection, filter_type: &str, filter_value: Option<&str>, n_ids: usize) -> String {
+    match filter_type {
+        "all" => "todos los productos".to_string(),
+        "category" => format!("la categoría \"{}\"", filter_value.unwrap_or("")),
+        "brand" => format!("la marca \"{}\"", filter_value.unwrap_or("")),
+        "supplier" => {
+            let name = filter_value.and_then(|v| v.parse::<i64>().ok()).and_then(|sid| {
+                conn.query_row("SELECT name FROM suppliers WHERE id=?1", params![sid], |r| r.get::<_, String>(0)).ok()
+            }).unwrap_or_else(|| "(proveedor eliminado)".to_string());
+            format!("el proveedor \"{}\"", name)
+        }
+        "ids" => format!("{} producto{} seleccionado{}", n_ids, if n_ids == 1 { "" } else { "s" }, if n_ids == 1 { "" } else { "s" }),
+        other => other.to_string(),
+    }
 }
 
 // Lista de marcas en uso, para el autocompletar del formulario y el filtro de
@@ -666,8 +691,112 @@ pub fn apply_bulk_update_prices(
         count += 1;
     }
 
-    let detail = format!("Actualizacion masiva: {}% precio | filtro: {}", input.price_pct, input.filter_type);
+    let filtro = describe_bulk_filter(&conn, &input.filter_type, input.filter_value.as_deref(), 0);
+    let signo = if input.price_pct >= 0.0 { "+" } else { "" };
+    let detail = format!("Se actualizó el precio {}{}% de {} productos ({})", signo, input.price_pct, count, filtro);
     log_action(&conn, user_id, "actualizacion_masiva", "productos", None, Some(&detail));
+    Ok(count)
+}
+
+// ─── Stock masivo ────────────────────────────────────────────────────────────
+// Para subir stock rápido sin entrar producto por producto: por categoría,
+// marca, proveedor, o por una selección puntual (checkboxes de la grilla).
+// Comparte el mismo cálculo entre preview y apply para que nunca puedan
+// desincronizarse (lo que se previsualiza es exactamente lo que se aplica).
+
+fn bulk_stock_items(conn: &Connection, input: &BulkStockInput) -> CmdResult<Vec<BulkStockPreviewItem>> {
+    fn to_item(row: &Row, mode: &str, amount: f64) -> rusqlite::Result<BulkStockPreviewItem> {
+        let old_stock: f64 = row.get("stock")?;
+        let new_stock = if mode == "set" { amount.max(0.0) } else { (old_stock + amount).max(0.0) };
+        Ok(BulkStockPreviewItem {
+            id: row.get("id")?,
+            name: row.get("name")?,
+            category: row.get("category")?,
+            is_weighable: row.get("is_weighable")?,
+            unit: row.get::<_, Option<String>>("unit")?.filter(|s| !s.is_empty()).unwrap_or_else(|| "unidad".to_string()),
+            old_stock,
+            new_stock,
+        })
+    }
+
+    let mut out = Vec::new();
+
+    if input.filter_type == "ids" {
+        let ids = input.ids.clone().unwrap_or_default();
+        let mut stmt = conn.prepare(
+            "SELECT id, name, category, stock, is_weighable, unit FROM products WHERE active=1 AND id=?1"
+        ).map_err(err)?;
+        for id in ids {
+            if let Ok(item) = stmt.query_row(params![id], |r| to_item(r, &input.mode, input.amount)) {
+                out.push(item);
+            }
+        }
+        return Ok(out);
+    }
+
+    let sql = match input.filter_type.as_str() {
+        "category" => "SELECT id, name, category, stock, is_weighable, unit FROM products WHERE active=1 AND category=?1 ORDER BY name",
+        "brand"    => "SELECT id, name, category, stock, is_weighable, unit FROM products WHERE active=1 AND brand=?1 ORDER BY name",
+        "supplier" => "SELECT id, name, category, stock, is_weighable, unit FROM products WHERE active=1 AND supplier_id=?1 ORDER BY name",
+        _          => "SELECT id, name, category, stock, is_weighable, unit FROM products WHERE active=1 ORDER BY name",
+    };
+    let mut stmt = conn.prepare(sql).map_err(err)?;
+    let map_row = |r: &Row| to_item(r, &input.mode, input.amount);
+    let rows = if input.filter_type == "all" {
+        stmt.query_map([], map_row).map_err(err)?
+    } else {
+        let v = input.filter_value.as_deref().unwrap_or("");
+        stmt.query_map(params![v], map_row).map_err(err)?
+    };
+    for r in rows { out.push(r.map_err(err)?); }
+    Ok(out)
+}
+
+/// Preview de actualización masiva de stock (no aplica cambios).
+#[tauri::command]
+pub fn preview_bulk_update_stock(input: BulkStockInput, state: State<AppState>) -> CmdResult<Vec<BulkStockPreviewItem>> {
+    let conn = state.db.lock();
+    bulk_stock_items(&conn, &input)
+}
+
+/// Aplica la actualización masiva de stock -- cada producto queda con su
+/// propio movimiento en stock_movements, igual que un ajuste manual desde
+/// el modal de Stock de cada producto, para que el historial no pierda nada.
+#[tauri::command]
+pub fn apply_bulk_update_stock(input: BulkStockInput, user_id: Option<i64>, state: State<AppState>) -> CmdResult<i64> {
+    let mut conn = state.db.lock();
+    let items = bulk_stock_items(&conn, &input)?;
+
+    let tx = conn.transaction().map_err(err)?;
+    let mut count = 0i64;
+    for item in &items {
+        tx.execute(
+            "UPDATE products SET stock=?1, updated_at=CURRENT_TIMESTAMP WHERE id=?2",
+            params![item.new_stock, item.id],
+        ).map_err(err)?;
+        tx.execute(
+            "INSERT INTO stock_movements (product_id, movement_type, qty_change, qty_before, qty_after, notes)
+             VALUES (?1, 'ajuste', ?2, ?3, ?4, 'Actualización masiva de stock')",
+            params![item.id, item.new_stock - item.old_stock, item.old_stock, item.new_stock],
+        ).map_err(err)?;
+        if item.new_stock == 0.0 {
+            tx.execute("UPDATE product_lots SET qty = 0 WHERE product_id = ?1", params![item.id]).map_err(err)?;
+        }
+        count += 1;
+    }
+    tx.commit().map_err(err)?;
+
+    let n_ids = input.ids.as_ref().map(|v| v.len()).unwrap_or(0);
+    let filtro = describe_bulk_filter(&conn, &input.filter_type, input.filter_value.as_deref(), n_ids);
+    let accion = if input.mode == "set" {
+        format!("fijó el stock en {}", input.amount)
+    } else if input.amount >= 0.0 {
+        format!("sumó {} al stock", input.amount)
+    } else {
+        format!("restó {} al stock", input.amount.abs())
+    };
+    let detail = format!("Se {} de {} productos ({})", accion, count, filtro);
+    log_action(&conn, user_id, "actualizacion_masiva_stock", "productos", None, Some(&detail));
     Ok(count)
 }
 

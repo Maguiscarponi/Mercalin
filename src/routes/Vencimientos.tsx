@@ -20,7 +20,7 @@ function daysLabel(days: number) {
 // que costaba distinguir de un vistazo en la sección que más urge revisar.
 function urgencyClass(days: number) {
   if (days < 0) return "bg-violet-100 text-violet-900 border-violet-300";
-  if (days <= 3) return "bg-red-50 text-red-700 border-red-200";
+  if (days <= 3) return "bg-orange-50 text-orange-700 border-orange-200";
   if (days <= 7) return "bg-amber-50 text-amber-700 border-amber-200";
   if (days <= 30) return "bg-yellow-50 text-yellow-700 border-yellow-200";
   return "bg-stone-50 text-stone-600 border-stone-200";
@@ -28,7 +28,7 @@ function urgencyClass(days: number) {
 
 function badgeClass(days: number) {
   if (days < 0) return "bg-violet-700 text-white";
-  if (days <= 3) return "bg-red-500 text-white";
+  if (days <= 3) return "bg-orange-500 text-white";
   if (days <= 7) return "bg-amber-500 text-white";
   if (days <= 30) return "bg-yellow-500 text-white";
   return "bg-stone-400 text-white";
@@ -141,7 +141,7 @@ export default function Vencimientos() {
       </div>
 
       {orderMsg && (
-        <div className={`rounded-lg px-4 py-2.5 text-sm border ${orderMsg.startsWith("✓") ? "bg-emerald-50 text-emerald-800 border-emerald-200" : "bg-red-50 text-red-700 border-red-200"} flex items-center justify-between`}>
+        <div className={`rounded-lg px-4 py-2.5 text-sm border ${orderMsg.startsWith("✓") ? "bg-emerald-50 text-emerald-800 border-emerald-200" : "bg-orange-50 text-orange-700 border-orange-200"} flex items-center justify-between`}>
           <span>{orderMsg}</span>
           <button onClick={() => setOrderMsg(null)} className="ml-3 opacity-60 hover:opacity-100">×</button>
         </div>
@@ -150,7 +150,7 @@ export default function Vencimientos() {
       {/* Resumen */}
       <div className="grid grid-cols-4 gap-3">
         <SummaryCard label="Lotes vencidos" count={expired.length} color="text-violet-800" bg="bg-violet-50 border-violet-200" />
-        <SummaryCard label="Críticos (≤3 días)" count={critical.length} color="text-red-600" bg="bg-red-50 border-red-100" />
+        <SummaryCard label="Críticos (≤3 días)" count={critical.length} color="text-orange-600" bg="bg-orange-50 border-orange-100" />
         <SummaryCard label="Próximos (≤7 días)" count={soon.length} color="text-amber-700" bg="bg-amber-50 border-amber-200" />
         <SummaryCard label={`Próximos ${days} días`} count={upcoming.length} color="text-stone-600" bg="bg-stone-50 border-stone-200" />
       </div>
@@ -201,7 +201,7 @@ export default function Vencimientos() {
                             <button
                               onClick={() => retireLot(lot)}
                               disabled={retiringId === lot.lot_id}
-                              className="text-xs px-2 py-1 rounded bg-red-600 text-white hover:bg-red-700 disabled:opacity-40"
+                              className="text-xs px-2 py-1 rounded bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-40"
                             >
                               {retiringId === lot.lot_id ? "Retirando…" : "Retirar lote"}
                             </button>

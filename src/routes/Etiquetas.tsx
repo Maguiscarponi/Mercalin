@@ -314,7 +314,7 @@ function LabelGrid({
             <button onClick={() => onQtyChange(p.id, qty - 1)} className="w-6 h-6 border rounded text-sm hover:bg-stone-100">−</button>
             <span className="w-6 text-center text-sm tabular-nums">{qty}</span>
             <button onClick={() => onQtyChange(p.id, qty + 1)} className="w-6 h-6 border rounded text-sm hover:bg-stone-100">+</button>
-            <button onClick={() => onRemove(p)} title="Quitar de la selección" className="text-stone-400 hover:text-red-600 text-xs ml-1">×</button>
+            <button onClick={() => onRemove(p)} title="Quitar de la selección" className="text-stone-400 hover:text-orange-600 text-xs ml-1">×</button>
           </div>
         </div>
       ))}
@@ -385,7 +385,7 @@ function LabelGalleryModal({
           <button onClick={() => onQtyChange(p.id, qty + 1)} className="w-7 h-7 border rounded hover:bg-stone-100">+</button>
           <button
             onClick={() => { onRemove(p); if (items.length <= 1) onClose(); else setIdx((n) => Math.min(n, items.length - 2)); }}
-            className="text-stone-400 hover:text-red-600 text-sm ml-3"
+            className="text-stone-400 hover:text-orange-600 text-sm ml-3"
           >
             Quitar de la selección
           </button>
@@ -804,7 +804,7 @@ export default function Etiquetas() {
                   <button
                     key={s.label}
                     onClick={() => { setWidthMm(s.w); setHeightMm(s.h); }}
-                    className={`text-xs px-2 py-1 rounded border ${widthMm === s.w && heightMm === s.h ? "border-indigo-500 bg-indigo-50 text-indigo-700" : "border-stone-200 hover:bg-stone-50"}`}
+                    className={`text-xs px-2 py-1 rounded border ${widthMm === s.w && heightMm === s.h ? "border-red-500 bg-red-50 text-red-700" : "border-stone-200 hover:bg-stone-50"}`}
                   >
                     {s.label}
                   </button>
@@ -818,7 +818,7 @@ export default function Etiquetas() {
                   <button
                     key={s}
                     onClick={() => setFontScale(s)}
-                    className={`flex-1 text-xs px-2 py-1.5 rounded border capitalize ${fontScale === s ? "border-indigo-500 bg-indigo-50 text-indigo-700" : "border-stone-200 hover:bg-stone-50"}`}
+                    className={`flex-1 text-xs px-2 py-1.5 rounded border capitalize ${fontScale === s ? "border-red-500 bg-red-50 text-red-700" : "border-stone-200 hover:bg-stone-50"}`}
                   >
                     {s}
                   </button>
@@ -841,13 +841,13 @@ export default function Etiquetas() {
             <div className="flex gap-1.5">
               <button
                 onClick={() => setExtraBig(false)}
-                className={`flex-1 text-xs px-2 py-1.5 rounded border ${!extraBig ? "border-indigo-500 bg-indigo-50 text-indigo-700" : "border-stone-200 hover:bg-stone-50"}`}
+                className={`flex-1 text-xs px-2 py-1.5 rounded border ${!extraBig ? "border-red-500 bg-red-50 text-red-700" : "border-stone-200 hover:bg-stone-50"}`}
               >
                 Cintita chica
               </button>
               <button
                 onClick={() => setExtraBig(true)}
-                className={`flex-1 text-xs px-2 py-1.5 rounded border ${extraBig ? "border-indigo-500 bg-indigo-50 text-indigo-700" : "border-stone-200 hover:bg-stone-50"}`}
+                className={`flex-1 text-xs px-2 py-1.5 rounded border ${extraBig ? "border-red-500 bg-red-50 text-red-700" : "border-stone-200 hover:bg-stone-50"}`}
               >
                 Banner grande
               </button>
@@ -895,7 +895,7 @@ export default function Etiquetas() {
                 />
                 <button onClick={applyBulkQty} className="btn btn-secondary text-xs h-7 px-2">Aplicar</button>
               </div>
-              <button onClick={() => setSelected(new Map())} className="text-red-500 hover:text-red-700">Limpiar</button>
+              <button onClick={() => setSelected(new Map())} className="text-orange-500 hover:text-orange-700">Limpiar</button>
             </div>
           )}
           <div className="flex-1 overflow-y-auto">
@@ -925,7 +925,7 @@ export default function Etiquetas() {
                       <td className="px-3 py-2">
                         <div className="font-medium">
                           {p.name}
-                          {p.is_weighable && <span className="ml-1.5 text-[10px] font-normal text-indigo-500">(x {p.unit || "kg"})</span>}
+                          {p.is_weighable && <span className="ml-1.5 text-[10px] font-normal text-red-500">(x {p.unit || "kg"})</span>}
                         </div>
                         {p.barcode && <div className="text-[10px] text-stone-400 font-mono">{p.barcode}</div>}
                       </td>
@@ -933,7 +933,7 @@ export default function Etiquetas() {
                       <td className="px-3 py-2 text-right tabular font-medium">
                         {centsToARS(displayPrice)}{p.is_weighable && <span className="text-stone-400 font-normal">/{p.unit || "kg"}</span>}
                       </td>
-                      <td className={`px-3 py-2 text-right tabular ${p.id > 0 && stockTrackingEnabled && p.stock <= p.min_stock ? "text-red-600 font-medium" : ""}`}>
+                      <td className={`px-3 py-2 text-right tabular ${p.id > 0 && stockTrackingEnabled && p.stock <= p.min_stock ? "text-orange-600 font-medium" : ""}`}>
                         {p.id > 0 ? p.stock : "—"}
                       </td>
                     </tr>

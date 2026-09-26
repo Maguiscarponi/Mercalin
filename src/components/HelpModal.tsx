@@ -12,7 +12,7 @@ export default function HelpButton({ module }: { module: string }) {
     <>
       <button
         onClick={() => setOpen(true)}
-        className="fixed bottom-6 right-6 z-40 flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white text-sm font-semibold px-4 py-2.5 rounded-full shadow-lg transition-colors"
+        className="fixed bottom-6 right-6 z-40 flex items-center gap-2 bg-red-600 hover:bg-red-700 active:bg-red-800 text-white text-sm font-semibold px-4 py-2.5 rounded-full shadow-lg transition-colors"
         title="Abrir ayuda de este módulo"
       >
         <span className="text-base leading-none">?</span>
@@ -46,7 +46,7 @@ export default function HelpButton({ module }: { module: string }) {
             <div className="overflow-y-auto flex-1 p-6 space-y-6">
               {content.sections.map((section) => (
                 <div key={section.title}>
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-indigo-600 mb-3">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-red-600 mb-3">
                     {section.title}
                   </h3>
                   <div className="space-y-3">
@@ -55,8 +55,8 @@ export default function HelpButton({ module }: { module: string }) {
                         key={item.label}
                         className="flex gap-3 bg-stone-50 rounded-xl p-4 border border-stone-100"
                       >
-                        <div className="shrink-0 mt-0.5 w-5 h-5 rounded-full bg-indigo-100 flex items-center justify-center">
-                          <span className="text-indigo-600 text-xs font-bold">→</span>
+                        <div className="shrink-0 mt-0.5 w-5 h-5 rounded-full bg-red-100 flex items-center justify-center">
+                          <span className="text-red-600 text-xs font-bold">→</span>
                         </div>
                         <div>
                           <div className="text-sm font-semibold text-stone-800 leading-snug">

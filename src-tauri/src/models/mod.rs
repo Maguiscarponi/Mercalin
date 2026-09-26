@@ -210,6 +210,8 @@ pub struct LowStockProduct {
     pub stock: f64,
     pub min_stock: f64,
     pub category: Option<String>,
+    pub is_weighable: bool,
+    pub unit: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -822,6 +824,34 @@ pub struct BulkPricePreviewItem {
     pub new_price_cents: i64,
     pub old_cost_cents: i64,
     pub new_cost_cents: i64,
+}
+
+// ─── Stock masivo ──────────────────────────────────────────────────────────────
+// Mismo patrón que la actualización masiva de precios (arriba), pero para subir
+// o fijar stock de varios productos de una: por categoría, marca, proveedor, o
+// por una selección puntual de productos (checkboxes en la grilla).
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BulkStockInput {
+    /// "all" | "category" | "brand" | "supplier" | "ids"
+    pub filter_type: String,
+    pub filter_value: Option<String>,
+    /// Solo cuando filter_type = "ids": los productos seleccionados a mano.
+    pub ids: Option<Vec<i64>>,
+    /// "add" (sumar al stock actual) | "set" (fijar el stock en este valor)
+    pub mode: String,
+    pub amount: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BulkStockPreviewItem {
+    pub id: i64,
+    pub name: String,
+    pub category: Option<String>,
+    pub is_weighable: bool,
+    pub unit: String,
+    pub old_stock: f64,
+    pub new_stock: f64,
 }
 
 // ─── Fase 3: Importación CSV ──────────────────────────────────────────────────

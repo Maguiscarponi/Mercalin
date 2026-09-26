@@ -87,7 +87,7 @@ export default function Combos() {
         <div className="flex items-center gap-3">
           <button
             onClick={() => useCombosEnabledStore.getState().setEnabled(false)}
-            className="text-xs text-stone-400 hover:text-red-600"
+            className="text-xs text-stone-400 hover:text-orange-600"
           >
             Desactivar combos
           </button>
@@ -165,7 +165,7 @@ function ComboCard({ cw, onToggle, onEdit, onDelete }: {
             <span className="text-stone-400">Costo: {centsToARS(combo.cost_cents)}</span>
           )}
           {margin_pct && (
-            <span className={clsx("font-medium", Number(margin_pct) >= 20 ? "text-emerald-600" : Number(margin_pct) >= 10 ? "text-amber-600" : "text-red-600")}>
+            <span className={clsx("font-medium", Number(margin_pct) >= 20 ? "text-emerald-600" : Number(margin_pct) >= 10 ? "text-amber-600" : "text-orange-600")}>
               {margin_pct}% margen
             </span>
           )}
@@ -337,7 +337,7 @@ function ComboForm({ cw, onSave, onCancel }: {
                     <span className="text-xs text-stone-400">Cantidad:</span>
                     <input type="number" min="0.1" step="0.1" className="w-16 input text-sm tabular text-center py-1"
                       value={item.qty} onChange={(e) => setQty(idx, Number(e.target.value))} />
-                    <button onClick={() => removeItem(idx)} className="text-stone-400 hover:text-red-600 text-lg leading-none">×</button>
+                    <button onClick={() => removeItem(idx)} className="text-stone-400 hover:text-orange-600 text-lg leading-none">×</button>
                   </div>
                 ))}
               </div>
@@ -356,23 +356,23 @@ function ComboForm({ cw, onSave, onCancel }: {
                 <span className="tabular">{centsToARS(individualTotal)}</span>
               </div>
               <div className="flex justify-between font-medium">
-                <span className={savingsCents > 0 ? "text-emerald-700" : "text-red-600"}>
+                <span className={savingsCents > 0 ? "text-emerald-700" : "text-orange-600"}>
                   {savingsCents > 0 ? "Ahorro para el cliente" : savingsCents === 0 ? "Sin ahorro real" : "Más caro que por separado"}
                 </span>
-                <span className={clsx("tabular", savingsCents > 0 ? "text-emerald-700" : "text-red-600")}>
+                <span className={clsx("tabular", savingsCents > 0 ? "text-emerald-700" : "text-orange-600")}>
                   {centsToARS(Math.abs(savingsCents))} {individualTotal > 0 && `(${savingsPct >= 0 ? "" : "-"}${Math.abs(savingsPct).toFixed(0)}%)`}
                 </span>
               </div>
               {marginPct !== null && (
                 <div className="flex justify-between font-medium pt-1.5 border-t border-stone-200">
                   <span className="text-stone-600">Margen del combo</span>
-                  <span className={clsx("tabular", marginPct >= 20 ? "text-emerald-700" : marginPct >= 10 ? "text-amber-600" : "text-red-600")}>
+                  <span className={clsx("tabular", marginPct >= 20 ? "text-emerald-700" : marginPct >= 10 ? "text-amber-600" : "text-orange-600")}>
                     {marginPct.toFixed(1)}%
                   </span>
                 </div>
               )}
               {savingsCents <= 0 && (
-                <p className="text-red-500 pt-1">⚠ El combo no le conviene al cliente frente a comprar los productos por separado.</p>
+                <p className="text-orange-500 pt-1">⚠ El combo no le conviene al cliente frente a comprar los productos por separado.</p>
               )}
             </div>
           )}

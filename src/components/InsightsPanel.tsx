@@ -8,16 +8,16 @@ import type { Insight } from "@/types";
 // Dashboard) — una sola fuente para el estilo y el modal de detalle.
 
 export const LEVEL_STYLE: Record<Insight["level"], string> = {
-  urgente:   "border-l-4 border-red-500 bg-red-50",
+  urgente:   "border-l-4 border-orange-500 bg-orange-50",
   importante:"border-l-4 border-amber-400 bg-amber-50",
-  consejo:   "border-l-4 border-indigo-400 bg-indigo-50",
+  consejo:   "border-l-4 border-red-400 bg-red-50",
   info:      "border-l-4 border-stone-300 bg-stone-50",
 };
 
 export const LEVEL_DOT: Record<Insight["level"], string> = {
-  urgente:   "bg-red-500",
+  urgente:   "bg-orange-500",
   importante:"bg-amber-400",
-  consejo:   "bg-indigo-500",
+  consejo:   "bg-red-500",
   info:      "bg-stone-400",
 };
 
@@ -31,9 +31,9 @@ export const LEVEL_LABEL: Record<Insight["level"], string> = {
 // Badge compacto (para el ícono de campana) — el color sigue el nivel más
 // alto presente, así de un vistazo se nota si hay algo urgente esperando.
 const BADGE_CLASS: Record<Insight["level"], string> = {
-  urgente:   "bg-red-100 text-red-700",
+  urgente:   "bg-orange-100 text-orange-700",
   importante:"bg-amber-100 text-amber-700",
-  consejo:   "bg-indigo-100 text-indigo-700",
+  consejo:   "bg-red-100 text-red-700",
   info:      "bg-stone-200 text-stone-600",
 };
 
@@ -57,9 +57,9 @@ export function InsightRow({ ins, onNavigate }: { ins: Insight; onNavigate: (rou
         <div className={clsx("w-2 h-2 rounded-full shrink-0", LEVEL_DOT[ins.level])} />
         <span className={clsx(
           "text-[9px] font-bold tracking-widest",
-          ins.level === "urgente" ? "text-red-600" :
+          ins.level === "urgente" ? "text-orange-600" :
           ins.level === "importante" ? "text-amber-600" :
-          ins.level === "consejo" ? "text-indigo-600" : "text-stone-500"
+          ins.level === "consejo" ? "text-red-600" : "text-stone-500"
         )}>
           {LEVEL_LABEL[ins.level]}
         </span>
@@ -71,7 +71,7 @@ export function InsightRow({ ins, onNavigate }: { ins: Insight; onNavigate: (rou
       {ins.route && ins.action && (
         <button
           onClick={() => onNavigate(ins.route!)}
-          className="flex items-center gap-0.5 text-[10px] font-semibold text-indigo-600 hover:text-indigo-800 shrink-0 mt-0.5"
+          className="flex items-center gap-0.5 text-[10px] font-semibold text-red-600 hover:text-red-800 shrink-0 mt-0.5"
         >
           {ins.action} <ArrowRight className="w-3 h-3" />
         </button>

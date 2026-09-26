@@ -268,8 +268,8 @@ export default function Inventario() {
 
       {/* Escaneo rápido — solo en modo contando */}
       {step === "contando" && (
-        <div className="flex items-center gap-2 rounded-lg border-2 border-indigo-200 bg-indigo-50/50 px-3 py-2">
-          <Barcode className="w-5 h-5 text-indigo-500 shrink-0" />
+        <div className="flex items-center gap-2 rounded-lg border-2 border-red-200 bg-red-50/50 px-3 py-2">
+          <Barcode className="w-5 h-5 text-red-500 shrink-0" />
           <input
             ref={barcodeRef}
             autoFocus
@@ -280,7 +280,7 @@ export default function Inventario() {
             onChange={(e) => setScanValue(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleScan(); } }}
           />
-          <span className="text-xs text-indigo-400 shrink-0 hidden sm:inline">
+          <span className="text-xs text-red-400 shrink-0 hidden sm:inline">
             El foco salta a la cantidad — Enter la confirma y vuelve acá
           </span>
         </div>
@@ -369,7 +369,7 @@ export default function Inventario() {
                       <td className="px-4 py-2.5 text-right tabular font-semibold">{p.counted}</td>
                       <td className={clsx(
                         "px-4 py-2.5 text-right tabular font-bold",
-                        diff !== null && diff > 0 ? "text-emerald-600" : "text-red-600"
+                        diff !== null && diff > 0 ? "text-emerald-600" : "text-orange-600"
                       )}>
                         {diff !== null && diff > 0 ? `+${diff}` : diff}
                       </td>

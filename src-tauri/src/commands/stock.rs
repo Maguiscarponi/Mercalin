@@ -76,7 +76,7 @@ pub fn list_low_stock(state: State<AppState>) -> CmdResult<Vec<LowStockProduct>>
     }
     let mut stmt = conn
         .prepare(
-            "SELECT id, barcode, name, stock, min_stock, category
+            "SELECT id, barcode, name, stock, min_stock, category, is_weighable, unit
              FROM products
              WHERE active = 1 AND stock <= min_stock
              ORDER BY (stock - min_stock) ASC, name ASC",
@@ -92,6 +92,8 @@ pub fn list_low_stock(state: State<AppState>) -> CmdResult<Vec<LowStockProduct>>
                 stock: row.get("stock")?,
                 min_stock: row.get("min_stock")?,
                 category: row.get("category")?,
+                is_weighable: row.get("is_weighable")?,
+                unit: row.get::<_, Option<String>>("unit")?.filter(|s| !s.is_empty()).unwrap_or_else(|| "unidad".to_string()),
             })
         })
         .map_err(err)?;

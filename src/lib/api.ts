@@ -12,7 +12,7 @@ import type {
   ArcaConfig, ArcaConfigInput, ElectronicInvoice, InvoiceInput,
   AuditEntry,
   BackupInfo,
-  BulkPriceInput, BulkPricePreviewItem,
+  BulkPriceInput, BulkPricePreviewItem, BulkStockInput, BulkStockPreviewItem,
   CatalogImportResult,
   Combo, ComboWithItems, NewCombo,
   MinStockSuggestion, PriceImpactItem, ProductAffinity, SupplierRiskScore,
@@ -158,6 +158,9 @@ export const api = {
     rpc<StockMovement[]>("list_stock_movements", { productId, limit }),
 
   // ─── Caja ───────────────────────────────────────────────────────────
+  getCashSession: (id: number) =>
+    rpc<CashSession>("get_cash_session", { id }),
+
   getCurrentSession: () =>
     rpc<CashSession | null>("get_current_session"),
 
@@ -402,6 +405,13 @@ export const api = {
 
   applyBulkUpdatePrices: (input: BulkPriceInput) =>
     rpc<number>("apply_bulk_update_prices", { input, userId: currentUserId() }),
+
+  // ─── Stock masivo ─────────────────────────────────────────────────────────
+  previewBulkUpdateStock: (input: BulkStockInput) =>
+    rpc<BulkStockPreviewItem[]>("preview_bulk_update_stock", { input }),
+
+  applyBulkUpdateStock: (input: BulkStockInput) =>
+    rpc<number>("apply_bulk_update_stock", { input, userId: currentUserId() }),
 
   importProductsCsv: (rows: CsvProductRow[]) =>
     rpc<ImportResult>("import_products_csv", { rows, userId: currentUserId() }),

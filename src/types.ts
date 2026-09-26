@@ -120,6 +120,8 @@ export interface LowStockProduct {
   stock: number;
   min_stock: number;
   category: string | null;
+  is_weighable: boolean;
+  unit: string;
 }
 
 export interface StockAdjustInput {
@@ -862,6 +864,25 @@ export interface BulkPricePreviewItem {
   new_price_cents: number;
   old_cost_cents: number;
   new_cost_cents: number;
+}
+
+// ─── Stock masivo ───────────────────────────────────────────────────────────
+export interface BulkStockInput {
+  filter_type: 'all' | 'category' | 'brand' | 'supplier' | 'ids';
+  filter_value: string | null;
+  ids: number[] | null;
+  mode: 'add' | 'set';
+  amount: number;
+}
+
+export interface BulkStockPreviewItem {
+  id: Id;
+  name: string;
+  category: string | null;
+  is_weighable: boolean;
+  unit: string;
+  old_stock: number;
+  new_stock: number;
 }
 
 // ─── Fase 3: Importación CSV ─────────────────────────────────────────────────

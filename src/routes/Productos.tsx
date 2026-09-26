@@ -4,7 +4,7 @@ import { api } from "@/lib/api";
 import { centsToARS, arsStringToCents, formatDateTime } from "@/lib/format";
 import { useSearchParams } from "react-router-dom";
 import { confirmAction, showToast } from "@/stores/dialogs";
-import type { BulkPriceInput, BulkPricePreviewItem, Combo, CsvProductRow, DeadStockItem, ImportResult, LowStockProduct, MinStockSuggestion, PriceImpactItem, PriceSyncAlert, Product, ProductVelocity, StockMovement, Supplier } from "@/types";
+import type { BulkPriceInput, BulkPricePreviewItem, BulkStockInput, BulkStockPreviewItem, Combo, CsvProductRow, DeadStockItem, ImportResult, LowStockProduct, MinStockSuggestion, PriceImpactItem, PriceSyncAlert, Product, ProductVelocity, StockMovement, Supplier } from "@/types";
 import clsx from "clsx";
 import { Loader2 } from "lucide-react";
 import HelpButton from "@/components/HelpModal";
@@ -49,7 +49,7 @@ function VelocityBadge({ v }: { v: ProductVelocity | undefined }) {
   const vel = v.daily_velocity;
   const [bg, text] =
     days < 3
-      ? ["bg-red-100 text-red-700", true]
+      ? ["bg-orange-100 text-orange-700", true]
       : days < 7
       ? ["bg-amber-100 text-amber-700", false]
       : ["bg-emerald-100 text-emerald-700", false];
@@ -58,7 +58,7 @@ function VelocityBadge({ v }: { v: ProductVelocity | undefined }) {
       <span className={clsx("text-[10px] font-semibold px-1.5 py-0.5 rounded-full", bg)}>
         {days < 1 ? "<1 día" : `~${days.toFixed(days < 10 ? 1 : 0)} días`}
       </span>
-      <span className={clsx("text-[9px]", text ? "text-red-500" : "text-stone-400")}>
+      <span className={clsx("text-[9px]", text ? "text-orange-500" : "text-stone-400")}>
         {vel.toFixed(vel < 1 ? 2 : 1)} un/día
       </span>
     </div>
@@ -74,7 +74,7 @@ function MarginBadge({ price, cost }: { price: number; cost: number }) {
   if (cost <= 0 || price <= 0) return null;
   const pct = ((price - cost) / price) * 100;
   if (pct < 0) return (
-    <span className="text-[10px] font-semibold bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full">
+    <span className="text-[10px] font-semibold bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full">
       Precio bajo costo
     </span>
   );
@@ -113,6 +113,7 @@ export default function Productos() {
   const [page, setPage] = useState(1);
   const [showImport, setShowImport] = useState(false);
   const [showBulkPrice, setShowBulkPrice] = useState(false);
+  const [showBulkStock, setShowBulkStock] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [priceListNames, setPriceListNames] = useState<[string, string, string]>(["Minorista", "Mayorista", "Especial"]);
 
@@ -279,9 +280,9 @@ export default function Productos() {
           {lowStock.length > 0 && (
             <button
               onClick={() => setTab(tab === "alertas" ? "todos" : "alertas")}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-red-50 text-red-700 border border-red-200 rounded-md text-xs font-medium hover:bg-red-100 transition-colors"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-orange-50 text-orange-700 border border-orange-200 rounded-md text-xs font-medium hover:bg-orange-100 transition-colors"
             >
-              <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></span>
+              <span className="w-1.5 h-1.5 rounded-full bg-orange-500 animate-pulse"></span>
               {lowStock.length} con stock bajo
             </button>
           )}
@@ -295,6 +296,9 @@ export default function Productos() {
           </button>
           <button onClick={() => setShowBulkPrice(true)} className="btn btn-secondary text-sm">
             💲 Actualizar precios
+          </button>
+          <button onClick={() => setShowBulkStock(true)} className="btn btn-secondary text-sm">
+            📦 Actualizar stock
           </button>
           <button onClick={() => setEditing({})} className="btn btn-primary">
             Nuevo producto
@@ -324,7 +328,7 @@ export default function Productos() {
             className={clsx(
               "px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors",
               tab === id
-                ? "border-indigo-600 text-indigo-700"
+                ? "border-red-600 text-red-700"
                 : "border-transparent text-stone-500 hover:text-stone-700"
             )}
           >
@@ -384,9 +388,14 @@ export default function Productos() {
             );
           })()}
           {tab === "todos" && selectedIds.size > 0 && (
-            <button onClick={() => setShowBulkEdit(true)} className="btn btn-secondary text-sm whitespace-nowrap">
-              Editar {selectedIds.size} seleccionado{selectedIds.size !== 1 ? "s" : ""}
-            </button>
+            <>
+              <button onClick={() => setShowBulkEdit(true)} className="btn btn-secondary text-sm whitespace-nowrap">
+                Editar {selectedIds.size} seleccionado{selectedIds.size !== 1 ? "s" : ""}
+              </button>
+              <button onClick={() => setShowBulkStock(true)} className="btn btn-secondary text-sm whitespace-nowrap">
+                📦 Stock de {selectedIds.size} seleccionado{selectedIds.size !== 1 ? "s" : ""}
+              </button>
+            </>
           )}
         </div>
       )}
@@ -427,10 +436,12 @@ export default function Productos() {
               </thead>
               <tbody>
                 {filteredLowStock.map((p) => (
-                  <tr key={p.id} className="border-t border-stone-100 hover:bg-red-50 transition-colors">
+                  <tr key={p.id} className="border-t border-stone-100 hover:bg-orange-50 transition-colors">
                     <td className="table-cell font-semibold">{p.name}</td>
                     <td className="table-cell text-stone-500">{p.category || "—"}</td>
-                    <td className="table-cell text-right tabular text-red-600 font-bold text-base">{p.stock}</td>
+                    <td className="table-cell text-right tabular text-orange-600 font-bold text-base">
+                      {p.stock}{p.is_weighable && <span className="text-xs font-normal"> {p.unit || "kg"}</span>}
+                    </td>
                     <td className="table-cell text-right tabular text-stone-500">{p.min_stock}</td>
                     <td className="table-cell text-right">
                       <button
@@ -552,7 +563,7 @@ export default function Productos() {
                             return (
                               <div className={clsx(
                                 "text-xs font-normal mt-0.5",
-                                pct < 0 ? "text-red-600" : pct < 15 ? "text-amber-600" : pct >= 30 ? "text-emerald-600" : "text-amber-600"
+                                pct < 0 ? "text-orange-600" : pct < 15 ? "text-amber-600" : pct >= 30 ? "text-emerald-600" : "text-amber-600"
                               )}>
                                 {pct}% margen
                               </div>
@@ -568,8 +579,8 @@ export default function Productos() {
                           </div>
                         </td>
                         <td className="table-cell text-right tabular">
-                          <span className={clsx("font-semibold text-base", stockTrackingEnabled && p.stock <= p.min_stock ? "text-red-600" : "text-stone-800")}>
-                            {p.stock}
+                          <span className={clsx("font-semibold text-base", stockTrackingEnabled && p.stock <= p.min_stock ? "text-orange-600" : "text-stone-800")}>
+                            {p.stock}{p.is_weighable && <span className="text-xs font-normal text-stone-400"> {p.unit || "kg"}</span>}
                             {stockTrackingEnabled && p.stock <= p.min_stock && <span className="ml-1 text-sm">⚠</span>}
                           </span>
                           <VelocityBadge v={velocities.get(p.id)} />
@@ -635,7 +646,7 @@ export default function Productos() {
           return (
             <div className="card flex-1 overflow-hidden flex flex-col">
               {filtered.length > 0 && (
-                <div className="px-4 py-2.5 bg-indigo-50 border-b border-indigo-100 text-sm text-indigo-800 shrink-0">
+                <div className="px-4 py-2.5 bg-red-50 border-b border-red-100 text-sm text-red-800 shrink-0">
                   Completá el precio de venta para poder vender estos productos en Caja.
                 </div>
               )}
@@ -871,6 +882,14 @@ export default function Productos() {
         />
       )}
 
+      {showBulkStock && (
+        <BulkStockModal
+          selectedIds={[...selectedIds]}
+          onClose={() => setShowBulkStock(false)}
+          onSaved={() => { setShowBulkStock(false); setSelectedIds(new Set()); load(); }}
+        />
+      )}
+
       {showBulkEdit && (
         <BulkEditSelectedModal
           ids={[...selectedIds]}
@@ -968,8 +987,8 @@ function StockIaTab({ onProductsReload, search }: { onProductsReload: () => void
   return (
     <div className="card flex-1 overflow-hidden flex flex-col">
       {/* Header */}
-      <div className="px-4 py-3 bg-indigo-50 border-b border-indigo-100 flex items-center justify-between gap-3 shrink-0">
-        <span className="text-sm text-indigo-800">
+      <div className="px-4 py-3 bg-red-50 border-b border-red-100 flex items-center justify-between gap-3 shrink-0">
+        <span className="text-sm text-red-800">
           Sugerencias calculadas automáticamente: velocidad de venta × lead time del proveedor × 1.3
         </span>
         {appliedCount !== null && (
@@ -993,7 +1012,7 @@ function StockIaTab({ onProductsReload, search }: { onProductsReload: () => void
               <th className="px-4 py-2.5 text-left">
                 <input
                   type="checkbox"
-                  className="w-4 h-4 accent-indigo-600"
+                  className="w-4 h-4 accent-red-600"
                   checked={allSelected}
                   onChange={toggleAll}
                 />
@@ -1024,13 +1043,13 @@ function StockIaTab({ onProductsReload, search }: { onProductsReload: () => void
               return (
                 <tr
                   key={s.product_id}
-                  className={clsx("table-row cursor-pointer", selected.has(s.product_id) && "bg-indigo-50/50")}
+                  className={clsx("table-row cursor-pointer", selected.has(s.product_id) && "bg-red-50/50")}
                   onClick={() => toggleOne(s.product_id)}
                 >
                   <td className="table-cell" onClick={(e) => e.stopPropagation()}>
                     <input
                       type="checkbox"
-                      className="w-4 h-4 accent-indigo-600"
+                      className="w-4 h-4 accent-red-600"
                       checked={selected.has(s.product_id)}
                       onChange={() => toggleOne(s.product_id)}
                     />
@@ -1154,7 +1173,7 @@ function PrecioIaTab({ onProductsReload, search }: { onProductsReload: () => voi
             {filtered.map((item) => {
               const marginClass =
                 item.current_margin_pct < 5
-                  ? "text-red-600 font-semibold"
+                  ? "text-orange-600 font-semibold"
                   : item.current_margin_pct < item.min_margin_pct
                   ? "text-amber-600 font-semibold"
                   : "text-stone-700";
@@ -1169,7 +1188,7 @@ function PrecioIaTab({ onProductsReload, search }: { onProductsReload: () => voi
                   <td className="table-cell text-right tabular">
                     <span className={marginClass}>{item.current_margin_pct.toFixed(1)}%</span>
                   </td>
-                  <td className="table-cell text-right tabular font-semibold text-indigo-700">
+                  <td className="table-cell text-right tabular font-semibold text-red-700">
                     {centsToARS(item.suggested_price_cents)}
                   </td>
                   <td className="table-cell text-right tabular font-semibold text-emerald-700">
@@ -1279,7 +1298,7 @@ function StockForm({
             onClick={() => setMode("sumar")}
             className={clsx(
               "flex-1 py-1.5 rounded-md font-medium transition-colors",
-              mode === "sumar" ? "bg-white shadow-sm text-indigo-700" : "text-stone-500 hover:text-stone-700"
+              mode === "sumar" ? "bg-white shadow-sm text-red-700" : "text-stone-500 hover:text-stone-700"
             )}
           >
             Sumar mercadería
@@ -1288,7 +1307,7 @@ function StockForm({
             onClick={() => setMode("corregir")}
             className={clsx(
               "flex-1 py-1.5 rounded-md font-medium transition-colors",
-              mode === "corregir" ? "bg-white shadow-sm text-indigo-700" : "text-stone-500 hover:text-stone-700"
+              mode === "corregir" ? "bg-white shadow-sm text-red-700" : "text-stone-500 hover:text-stone-700"
             )}
           >
             Corregir total
@@ -1362,7 +1381,7 @@ function StockForm({
             {newStock && !isNaN(parseVal(newStock)) && parseVal(newStock) !== product.stock && (
               <div className={clsx(
                 "text-sm text-center py-2 rounded-md mb-4 font-medium",
-                diff > 0 ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"
+                diff > 0 ? "bg-emerald-50 text-emerald-700" : "bg-orange-50 text-orange-700"
               )}>
                 {diff > 0 ? `+${diff}` : diff} {unitLabel}
               </div>
@@ -1457,7 +1476,7 @@ function StockMovementsModal({
                     </td>
                     <td className={clsx(
                       "py-2 text-right tabular font-medium",
-                      m.qty_change > 0 ? "text-emerald-700" : "text-red-600"
+                      m.qty_change > 0 ? "text-emerald-700" : "text-orange-600"
                     )}>
                       {m.qty_change > 0 ? `+${m.qty_change}` : m.qty_change}
                     </td>
@@ -1708,7 +1727,7 @@ function ProductForm({
                 />
               </label>
               {form.image_path && (
-                <button type="button" onClick={() => setForm((f) => ({ ...f, image_path: null }))} className="text-xs text-stone-400 hover:text-red-600">
+                <button type="button" onClick={() => setForm((f) => ({ ...f, image_path: null }))} className="text-xs text-stone-400 hover:text-orange-600">
                   Quitar
                 </button>
               )}
@@ -2127,7 +2146,7 @@ function ImportCsvModal({ onClose, onImported }: { onClose: () => void; onImport
 
           {/* Errores de parseo */}
           {parseError && (
-            <div className="bg-red-50 border border-red-200 rounded p-3 text-xs text-red-700">
+            <div className="bg-orange-50 border border-orange-200 rounded p-3 text-xs text-orange-700">
               {parseError}
             </div>
           )}
@@ -2177,7 +2196,7 @@ function ImportCsvModal({ onClose, onImported }: { onClose: () => void; onImport
               <p className="font-semibold text-emerald-800">Importación completada</p>
               <p className="text-emerald-700">Creados: <strong>{result.created}</strong> · Actualizados: <strong>{result.updated}</strong> · Omitidos: <strong>{result.skipped}</strong></p>
               {result.errors.length > 0 && (
-                <div className="mt-2 text-xs text-red-700 space-y-0.5">
+                <div className="mt-2 text-xs text-orange-700 space-y-0.5">
                   <p className="font-medium">Errores ({result.errors.length}):</p>
                   {result.errors.slice(0, 5).map((e, i) => <p key={i}>{e}</p>)}
                   {result.errors.length > 5 && <p>…y {result.errors.length - 5} más</p>}
@@ -2476,7 +2495,7 @@ function BulkPriceModal({ onClose, onSaved }: { onClose: () => void; onSaved: ()
             <label className="flex items-center gap-2 cursor-pointer select-none">
               <input
                 type="checkbox"
-                className="w-4 h-4 accent-indigo-600"
+                className="w-4 h-4 accent-red-600"
                 checked={updateCost}
                 onChange={(e) => { setUpdateCost(e.target.checked); resetPreview(); }}
               />
@@ -2496,7 +2515,7 @@ function BulkPriceModal({ onClose, onSaved }: { onClose: () => void; onSaved: ()
           </div>
 
           {error && (
-            <div className="bg-red-50 border border-red-200 rounded p-3 text-xs text-red-700">{error}</div>
+            <div className="bg-orange-50 border border-orange-200 rounded p-3 text-xs text-orange-700">{error}</div>
           )}
 
           {/* Vista previa */}
@@ -2526,7 +2545,7 @@ function BulkPriceModal({ onClose, onSaved }: { onClose: () => void; onSaved: ()
                             <td className="px-3 py-2 text-right tabular font-semibold">
                               <span>{centsToARS(item.new_price_cents)}</span>
                               {priceDiff !== 0 && (
-                                <span className={clsx("ml-1.5 text-xs font-normal", priceDiff > 0 ? "text-emerald-600" : "text-red-600")}>
+                                <span className={clsx("ml-1.5 text-xs font-normal", priceDiff > 0 ? "text-emerald-600" : "text-orange-600")}>
                                   ({priceDiff > 0 ? "+" : ""}{centsToARS(priceDiff)})
                                 </span>
                               )}
@@ -2589,6 +2608,250 @@ function BulkPriceModal({ onClose, onSaved }: { onClose: () => void; onSaved: ()
             <button onClick={onSaved} className="btn btn-primary">
               Listo
             </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Subir stock rápido sin entrar producto por producto: por categoría, marca,
+// proveedor, o por una selección puntual de la grilla (si se abrió con
+// productos ya tildados, arranca directo en modo "seleccionados").
+function BulkStockModal({ selectedIds, onClose, onSaved }: { selectedIds: number[]; onClose: () => void; onSaved: () => void }) {
+  const hasSelection = selectedIds.length > 0;
+  const [filterType, setFilterType] = useState<BulkStockInput["filter_type"]>(hasSelection ? "ids" : "all");
+  const [filterValue, setFilterValue] = useState("");
+  const [mode, setMode] = useState<BulkStockInput["mode"]>("add");
+  const [amountStr, setAmountStr] = useState("");
+  const [categories, setCategories] = useState<string[]>([]);
+  const [brands, setBrands] = useState<string[]>([]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [previewItems, setPreviewItems] = useState<BulkStockPreviewItem[] | null>(null);
+  const [loadingPreview, setLoadingPreview] = useState(false);
+  const [applying, setApplying] = useState(false);
+  const [appliedCount, setAppliedCount] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEscapeToClose(onClose);
+
+  useEffect(() => {
+    api.listCategories().then((cats) => setCategories(cats.map((c) => c.name).filter(Boolean))).catch(console.error);
+    api.listBrands().then((b) => setBrands(b.map((x) => x.name).filter(Boolean))).catch(console.error);
+    api.listSuppliers().then(setSuppliers).catch(console.error);
+  }, []);
+
+  function resetPreview() { setPreviewItems(null); setAppliedCount(null); setError(null); }
+
+  function buildInput(): BulkStockInput {
+    return {
+      filter_type: filterType,
+      filter_value: filterType === "all" || filterType === "ids" ? null : filterValue.trim() || null,
+      ids: filterType === "ids" ? selectedIds : null,
+      mode,
+      amount: parseFloat(amountStr.replace(",", ".")) || 0,
+    };
+  }
+
+  const amountValid = !isNaN(parseFloat(amountStr.replace(",", "."))) && amountStr.trim() !== "" && (mode === "add" ? parseFloat(amountStr.replace(",", ".")) !== 0 : parseFloat(amountStr.replace(",", ".")) >= 0);
+
+  async function handlePreview() {
+    if (!amountValid) { setError("Ingresá una cantidad válida."); return; }
+    if ((filterType === "category" || filterType === "brand") && !filterValue) { setError("Elegí una opción del filtro."); return; }
+    if (filterType === "supplier" && !filterValue) { setError("Elegí un proveedor."); return; }
+    setError(null);
+    setLoadingPreview(true);
+    setPreviewItems(null);
+    try {
+      const items = await api.previewBulkUpdateStock(buildInput());
+      setPreviewItems(items);
+    } catch (err) {
+      console.error(err);
+      setError("Error al generar la vista previa.");
+    } finally {
+      setLoadingPreview(false);
+    }
+  }
+
+  async function handleApply() {
+    setApplying(true);
+    setError(null);
+    try {
+      const count = await api.applyBulkUpdateStock(buildInput());
+      setAppliedCount(count);
+    } catch (err) {
+      console.error(err);
+      setError("Error al actualizar el stock. Intentá nuevamente.");
+    } finally {
+      setApplying(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
+      <div className="bg-white rounded-lg shadow-xl w-[680px] max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className="p-5 border-b border-stone-200 flex items-center justify-between">
+          <h2 className="font-semibold text-lg">📦 Actualización masiva de stock</h2>
+          <button onClick={onClose} className="text-stone-400 hover:text-stone-600 text-xl leading-none">×</button>
+        </div>
+
+        <div className="p-5 flex-1 overflow-y-auto space-y-5">
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs font-medium text-stone-600 block mb-1">Aplicar a</label>
+              <select
+                className="input w-full"
+                value={filterType}
+                onChange={(e) => { setFilterType(e.target.value as BulkStockInput["filter_type"]); setFilterValue(""); resetPreview(); }}
+              >
+                {hasSelection && <option value="ids">Los {selectedIds.length} productos seleccionados</option>}
+                <option value="all">Todos los productos</option>
+                <option value="category">Por categoría</option>
+                <option value="brand">Por marca</option>
+                <option value="supplier">Por proveedor</option>
+              </select>
+            </div>
+
+            {filterType === "category" && (
+              <div>
+                <label className="text-xs font-medium text-stone-600 block mb-1">Categoría</label>
+                <select autoFocus className="input w-full" value={filterValue} onChange={(e) => { setFilterValue(e.target.value); resetPreview(); }}>
+                  <option value="">Elegir categoría…</option>
+                  {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+            )}
+
+            {filterType === "brand" && (
+              <div>
+                <label className="text-xs font-medium text-stone-600 block mb-1">Marca</label>
+                <select autoFocus className="input w-full" value={filterValue} onChange={(e) => { setFilterValue(e.target.value); resetPreview(); }}>
+                  <option value="">Elegir marca…</option>
+                  {brands.map((b) => <option key={b} value={b}>{b}</option>)}
+                </select>
+              </div>
+            )}
+
+            {filterType === "supplier" && (
+              <div>
+                <label className="text-xs font-medium text-stone-600 block mb-1">Proveedor</label>
+                <select autoFocus className="input w-full" value={filterValue} onChange={(e) => { setFilterValue(e.target.value); resetPreview(); }}>
+                  <option value="">Elegir proveedor…</option>
+                  {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </div>
+            )}
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-stone-600 block mb-1">Qué hacer</label>
+            <div className="flex rounded-md border border-stone-200 overflow-hidden text-sm w-fit">
+              {([
+                { id: "add" as const, label: "Sumar al stock actual" },
+                { id: "set" as const, label: "Fijar el stock en un valor" },
+              ]).map((m) => (
+                <button
+                  key={m.id}
+                  onClick={() => { setMode(m.id); resetPreview(); }}
+                  className={clsx("px-3 py-1.5", mode === m.id ? "bg-red-600 text-white" : "bg-white hover:bg-stone-50 text-stone-600")}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-stone-600 block mb-1">
+              {mode === "add" ? "Cantidad a sumar" : "Nuevo valor de stock"}
+              <span className="text-stone-400"> {mode === "add" ? "(puede ser negativa para restar)" : "(igual para todos los productos que entren en el filtro)"}</span>
+            </label>
+            <input
+              className="input w-full tabular"
+              placeholder={mode === "add" ? "10" : "0"}
+              value={amountStr}
+              onChange={(e) => { setAmountStr(e.target.value); resetPreview(); }}
+            />
+          </div>
+
+          {error && (
+            <div className="bg-orange-50 border border-orange-200 rounded p-3 text-xs text-orange-700">{error}</div>
+          )}
+
+          {previewItems && previewItems.length > 0 && (
+            <div>
+              <p className="text-sm font-medium text-stone-700 mb-2">{previewItems.length} productos afectados — Vista previa:</p>
+              <div className="rounded border border-stone-200 overflow-hidden">
+                <div className="overflow-y-auto max-h-[280px]">
+                  <table className="w-full text-sm">
+                    <thead className="text-xs text-stone-500 uppercase bg-stone-50 sticky top-0">
+                      <tr>
+                        <th className="text-left px-3 py-2">Producto</th>
+                        <th className="text-left px-3 py-2">Categoría</th>
+                        <th className="text-right px-3 py-2">Stock actual</th>
+                        <th className="text-right px-3 py-2">Stock nuevo</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {previewItems.map((item) => {
+                        const diff = item.new_stock - item.old_stock;
+                        return (
+                          <tr key={item.id} className="border-t border-stone-100 hover:bg-stone-50">
+                            <td className="px-3 py-2 font-medium">{item.name}</td>
+                            <td className="px-3 py-2 text-stone-400 text-xs">{item.category || "—"}</td>
+                            <td className="px-3 py-2 text-right tabular text-stone-500">
+                              {item.old_stock}{item.is_weighable && <span className="text-xs"> {item.unit}</span>}
+                            </td>
+                            <td className="px-3 py-2 text-right tabular font-semibold">
+                              <span>{item.new_stock}{item.is_weighable && <span className="text-xs font-normal"> {item.unit}</span>}</span>
+                              {diff !== 0 && (
+                                <span className={clsx("ml-1.5 text-xs font-normal", diff > 0 ? "text-emerald-600" : "text-orange-600")}>
+                                  ({diff > 0 ? "+" : ""}{diff})
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {previewItems && previewItems.length === 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded p-3 text-sm text-amber-700">
+              No se encontraron productos con ese filtro.
+            </div>
+          )}
+
+          {appliedCount !== null && (
+            <div className="bg-emerald-50 border border-emerald-200 rounded p-4 text-sm text-emerald-800">
+              <p className="font-semibold">Stock actualizado</p>
+              <p>{appliedCount} productos actualizados correctamente.</p>
+            </div>
+          )}
+        </div>
+
+        <div className="p-4 border-t border-stone-200 flex gap-2 justify-end">
+          <button onClick={onClose} className="btn btn-secondary">
+            {appliedCount !== null ? "Cerrar" : "Cancelar"}
+          </button>
+          {appliedCount === null && !previewItems && (
+            <button onClick={handlePreview} disabled={loadingPreview || !amountValid} className="btn btn-secondary disabled:opacity-40">
+              {loadingPreview ? "Cargando…" : "Vista previa"}
+            </button>
+          )}
+          {appliedCount === null && previewItems && previewItems.length > 0 && (
+            <>
+              <button onClick={resetPreview} className="btn btn-secondary">Volver a configurar</button>
+              <button onClick={handleApply} disabled={applying} className="btn btn-primary disabled:opacity-40">
+                {applying ? "Aplicando…" : `Confirmar actualización (${previewItems.length} productos)`}
+              </button>
+            </>
+          )}
+          {appliedCount !== null && (
+            <button onClick={onSaved} className="btn btn-primary">Listo</button>
           )}
         </div>
       </div>

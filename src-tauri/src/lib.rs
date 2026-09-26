@@ -579,6 +579,7 @@ pub fn run() {
             // Caja
             commands::caja::open_cash_session,
             commands::caja::close_cash_session,
+            commands::caja::get_cash_session,
             commands::caja::get_current_session,
             commands::caja::list_open_sessions,
             commands::caja::list_cash_sessions,
@@ -667,6 +668,8 @@ pub fn run() {
             // Fase 3 — Productos
             commands::products::preview_bulk_update_prices,
             commands::products::apply_bulk_update_prices,
+            commands::products::preview_bulk_update_stock,
+            commands::products::apply_bulk_update_stock,
             commands::products::import_products_csv,
             // Inteligencia de negocio
             commands::products::get_min_stock_suggestions,

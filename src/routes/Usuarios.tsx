@@ -3,6 +3,7 @@ import { api } from "@/lib/api";
 import { formatDate } from "@/lib/format";
 import { confirmAction, showToast } from "@/stores/dialogs";
 import { useAuthStore } from "@/stores/auth";
+import { usePosModeStore } from "@/stores/posMode";
 import Field from "@/components/ui/Field";
 import { useEscapeToClose } from "@/lib/useEscapeToClose";
 import ModalCloseButton from "@/components/ui/ModalCloseButton";
@@ -23,6 +24,7 @@ const ROLE_COLORS: Record<UserRole, string> = {
 
 export default function Usuarios() {
   const actorId = useAuthStore((s) => s.user?.id ?? null);
+  const posMode = usePosModeStore((s) => s.mode);
   const [users, setUsers] = useState<User[]>([]);
   const [editing, setEditing] = useState<Partial<User> | null>(null);
   const [showPassModal, setShowPassModal] = useState<User | null>(null);
@@ -111,6 +113,21 @@ export default function Usuarios() {
             </div>
           ))}
         </div>
+
+        {/* Aclaración: usuarios vs. multicaja son cosas distintas -- se puede confundir
+            "varias personas" (esto) con "varias computadoras" (Multicaja, en Configuración). */}
+        {posMode === "standalone" ? (
+          <div className="text-xs text-stone-500 bg-stone-50 border border-stone-200 rounded-md px-3 py-2">
+            ℹ️ Los usuarios sirven para separar accesos y saber quién hizo cada acción, aunque tengas
+            <strong> una sola caja</strong>. Si en algún momento sumás otra computadora vendiendo al mismo
+            tiempo, activá <strong>Multicaja</strong> en Configuración — los usuarios que ya creaste van a
+            funcionar igual ahí, no hace falta crearlos de nuevo.
+          </div>
+        ) : (
+          <div className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md px-3 py-2">
+            ℹ️ Multicaja está activo — estos usuarios sirven para iniciar sesión en cualquiera de las cajas conectadas, con la misma contraseña.
+          </div>
+        )}
 
         {/* Usuarios activos */}
         <div className="card">

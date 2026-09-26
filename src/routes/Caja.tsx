@@ -527,7 +527,7 @@ ${itemsHtml}
       return (
         <div className="h-full flex items-center justify-center bg-stone-100">
           <div className="bg-white rounded-2xl shadow-lg p-8 flex flex-col items-center gap-5 max-w-lg w-full text-center">
-            <div className="w-14 h-14 bg-indigo-100 rounded-full flex items-center justify-center text-2xl">🏪</div>
+            <div className="w-14 h-14 bg-red-100 rounded-full flex items-center justify-center text-2xl">🏪</div>
             <div>
               <h2 className="text-xl font-bold text-stone-800">Seleccioná tu caja</h2>
               <p className="text-sm text-stone-500 mt-1">Hay {openSessions.length} cajas abiertas. Elegí con cuál vas a trabajar.</p>
@@ -537,13 +537,13 @@ ${itemsHtml}
                 <button
                   key={s.id}
                   onClick={() => setSession(s)}
-                  className="w-full text-left px-4 py-3 border-2 border-stone-200 hover:border-indigo-400 hover:bg-indigo-50 rounded-xl transition-colors flex items-center justify-between"
+                  className="w-full text-left px-4 py-3 border-2 border-stone-200 hover:border-red-400 hover:bg-red-50 rounded-xl transition-colors flex items-center justify-between"
                 >
                   <div>
                     <div className="font-semibold text-stone-800">Caja #{s.id}</div>
                     <div className="text-xs text-stone-500 mt-0.5">Abierta: {formatDateTime(s.opened_at)}</div>
                   </div>
-                  <span className="text-indigo-600 font-bold text-sm">Usar →</span>
+                  <span className="text-red-600 font-bold text-sm">Usar →</span>
                 </button>
               ))}
             </div>
@@ -632,7 +632,7 @@ ${itemsHtml}
                 }, 150);
               }}
             />
-            {error && <p className="text-sm text-red-600 mt-2">{error}</p>}
+            {error && <p className="text-sm text-orange-600 mt-2">{error}</p>}
             {searchResults.length > 0 && (
               <div className="mt-2 border border-stone-200 rounded-lg shadow-lg bg-white overflow-hidden">
                 <div className="px-4 py-2 bg-stone-50 border-b border-stone-100 text-xs text-stone-500 font-medium">
@@ -644,7 +644,7 @@ ${itemsHtml}
                       <button
                         onClick={() => { selectSearchResult(p); setFocusedResultIndex(-1); }}
                         className={`w-full text-left px-4 py-3 flex justify-between items-center border-b border-stone-50 last:border-0 transition-colors ${
-                          focusedResultIndex === idx ? "bg-indigo-100 ring-2 ring-inset ring-indigo-400" : "hover:bg-indigo-50"
+                          focusedResultIndex === idx ? "bg-red-100 ring-2 ring-inset ring-red-400" : "hover:bg-red-50"
                         }`}
                       >
                         <div>
@@ -717,7 +717,7 @@ ${itemsHtml}
                         )}
                       </div>
 
-                      <button onClick={() => cart.removeItem(idx)} data-cart-ctrl="true" className="text-stone-400 hover:text-red-500 text-2xl flex items-center justify-center">×</button>
+                      <button onClick={() => cart.removeItem(idx)} data-cart-ctrl="true" className="text-stone-400 hover:text-orange-500 text-2xl flex items-center justify-center">×</button>
                     </li>
                   );
                 })}
@@ -738,8 +738,8 @@ ${itemsHtml}
               onChange={(e) => setPriceList(Number(e.target.value) as 1 | 2 | 3)}
               title="Cambiar lista de precios"
               className={clsx(
-                "text-[11px] font-semibold bg-transparent border-0 rounded py-0.5 pl-1 pr-1 cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-300",
-                priceList === 1 ? "text-stone-400" : "text-indigo-600"
+                "text-[11px] font-semibold bg-transparent border-0 rounded py-0.5 pl-1 pr-1 cursor-pointer focus:outline-none focus:ring-1 focus:ring-red-300",
+                priceList === 1 ? "text-stone-400" : "text-red-600"
               )}
             >
               {priceListNames.map((name, i) => (
@@ -813,7 +813,7 @@ ${itemsHtml}
             {discount > 0 && (
               <button
                 onClick={() => { setDiscountStr(""); cart.setDiscount(0); }}
-                className="text-stone-400 hover:text-red-500 text-xl px-1 shrink-0"
+                className="text-stone-400 hover:text-orange-500 text-xl px-1 shrink-0"
               >✕</button>
             )}
           </div>
@@ -828,7 +828,7 @@ ${itemsHtml}
 
           {/* Sin stock suficiente — bloquea el cobro */}
           {stockIssueItem && (
-            <div className="px-4 py-2 bg-red-50 border border-red-300 rounded-lg text-xs text-red-800 flex items-center gap-2 shrink-0">
+            <div className="px-4 py-2 bg-orange-50 border border-orange-300 rounded-lg text-xs text-orange-800 flex items-center gap-2 shrink-0">
               <span className="font-bold">⚠</span>
               <span>
                 No hay stock suficiente de <strong>{stockIssueItem.name}</strong> (quedan{" "}
@@ -841,7 +841,7 @@ ${itemsHtml}
           <button
             onClick={tryOpenPay}
             disabled={cart.items.length === 0 || session === null || hasStockIssue}
-            className="w-full rounded-xl bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-black text-2xl disabled:opacity-35 disabled:cursor-not-allowed flex items-center justify-center gap-3 transition-colors shrink-0"
+            className="w-full rounded-xl bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-black text-2xl disabled:opacity-35 disabled:cursor-not-allowed flex items-center justify-center gap-3 transition-colors shrink-0"
             style={{ height: "80px" }}
           >
             Cobrar
@@ -864,7 +864,7 @@ ${itemsHtml}
               }
             }}
             disabled={cart.items.length === 0}
-            className="w-full rounded-xl border-2 border-red-300 bg-red-50 hover:bg-red-100 text-red-600 font-bold text-sm disabled:opacity-25 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-colors shrink-0"
+            className="w-full rounded-xl border-2 border-orange-300 bg-orange-50 hover:bg-orange-100 text-orange-600 font-bold text-sm disabled:opacity-25 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-colors shrink-0"
             style={{ height: "46px" }}
           >
             🗑 Anular venta
@@ -878,7 +878,7 @@ ${itemsHtml}
               {cart.client_id ? (
                 <div className="flex items-center justify-between bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2.5">
                   <span className="text-sm text-emerald-800 font-semibold">👥 {cart.client_name}</span>
-                  <button onClick={() => cart.setClient(null, null)} className="text-stone-400 hover:text-red-600">✕</button>
+                  <button onClick={() => cart.setClient(null, null)} className="text-stone-400 hover:text-orange-600">✕</button>
                 </div>
               ) : (
                 <button
@@ -916,7 +916,7 @@ ${itemsHtml}
               {lastSale && !lastSale.sale.notes?.includes("[ANULADA]") && (
                 <button
                   onClick={cancelLastSale}
-                  className="h-10 text-sm bg-stone-50 hover:bg-red-50 border border-stone-200 hover:border-red-200 rounded-lg flex items-center justify-center gap-1.5 font-medium text-red-600"
+                  className="h-10 text-sm bg-stone-50 hover:bg-orange-50 border border-stone-200 hover:border-orange-200 rounded-lg flex items-center justify-center gap-1.5 font-medium text-orange-600"
                 >
                   🗑 Anular última venta
                 </button>
@@ -956,7 +956,7 @@ ${itemsHtml}
                       key={p.id}
                       onClick={() => addProductSafely(p)}
                       title={p.name}
-                      className="text-left px-2.5 py-2 bg-stone-50 hover:bg-indigo-50 border border-stone-200 hover:border-indigo-200 rounded-lg text-xs"
+                      className="text-left px-2.5 py-2 bg-stone-50 hover:bg-red-50 border border-stone-200 hover:border-red-200 rounded-lg text-xs"
                     >
                       <div className="font-medium truncate">{p.name}</div>
                       <div className="tabular text-stone-500 font-mono mt-0.5">{centsToARS(getPriceForList(p))}</div>
@@ -975,7 +975,7 @@ ${itemsHtml}
                     <button
                       key={i}
                       onClick={() => cart.addOpenItem(btn.label, btn.price_cents)}
-                      className="w-full text-left px-3 py-2.5 bg-stone-50 hover:bg-indigo-50 border border-stone-200 hover:border-indigo-200 rounded-lg text-sm font-medium flex justify-between items-center"
+                      className="w-full text-left px-3 py-2.5 bg-stone-50 hover:bg-red-50 border border-stone-200 hover:border-red-200 rounded-lg text-sm font-medium flex justify-between items-center"
                     >
                       <span>{btn.label}</span>
                       <span className="tabular text-stone-500 font-mono">{centsToARS(btn.price_cents)}</span>
@@ -1257,7 +1257,7 @@ function ParkedSalesModal({
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
                     <button onClick={() => onResume(p.id)} className="btn btn-primary text-xs px-2.5 py-1.5">Retomar</button>
-                    <button onClick={() => onDiscard(p.id)} title="Descartar" className="text-stone-400 hover:text-red-600 text-lg px-1">×</button>
+                    <button onClick={() => onDiscard(p.id)} title="Descartar" className="text-stone-400 hover:text-orange-600 text-lg px-1">×</button>
                   </div>
                 </div>
               );
@@ -1307,13 +1307,13 @@ function WeighModal({
           <span className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 text-sm">{u}</span>
         </div>
         <div className="flex gap-2 mt-4">
-          <button onClick={onCancel} className="btn btn-secondary flex-1">Cancelar</button>
+          <button onClick={onCancel} className="btn btn-secondary flex-1">Cancelar (Esc)</button>
           <button
             onClick={submit}
             disabled={!parseFloat(kgStr.replace(",", ".")) || parseFloat(kgStr.replace(",", ".")) <= 0}
             className="btn btn-primary flex-1 disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            {currentKg !== undefined ? "Guardar" : "Agregar"}
+            {currentKg !== undefined ? "Guardar (Enter)" : "Agregar (Enter)"}
           </button>
         </div>
       </div>
@@ -1379,15 +1379,15 @@ function SupervisorApprovalModal({
             onKeyDown={(e) => e.key === "Enter" && submit()}
           />
         </div>
-        {error && <p className="text-sm text-red-600 mt-2">{error}</p>}
+        {error && <p className="text-sm text-orange-600 mt-2">{error}</p>}
         <div className="flex gap-2 mt-4">
-          <button onClick={onCancel} className="btn btn-secondary flex-1">Cancelar</button>
+          <button onClick={onCancel} className="btn btn-secondary flex-1">Cancelar (Esc)</button>
           <button
             onClick={submit}
             disabled={checking || !username.trim() || !password}
             className="btn btn-primary flex-1 disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            {checking ? "Verificando…" : "Autorizar"}
+            {checking ? "Verificando…" : "Autorizar (Enter)"}
           </button>
         </div>
       </div>
@@ -1450,7 +1450,7 @@ function PriceCheckModal({ onClose }: { onClose: () => void }) {
             <div className="text-3xl font-bold text-emerald-700 mt-2">{centsToARS(found.price_cents)}</div>
             <div className="flex gap-4 mt-2 text-xs text-stone-500">
               {found.barcode && <span>Cód: {found.barcode}</span>}
-              <span>Stock: <strong className={stockTrackingEnabled && found.stock <= found.min_stock ? "text-red-600" : ""}>{found.stock}</strong></span>
+              <span>Stock: <strong className={stockTrackingEnabled && found.stock <= found.min_stock ? "text-orange-600" : ""}>{found.stock}</strong></span>
             </div>
           </div>
         )}
@@ -1459,7 +1459,7 @@ function PriceCheckModal({ onClose }: { onClose: () => void }) {
             Producto no encontrado
           </div>
         )}
-        <button onClick={onClose} className="btn btn-secondary w-full mt-4">Cerrar</button>
+        <button onClick={onClose} className="btn btn-secondary w-full mt-4">Cerrar (Esc)</button>
       </div>
     </div>
   );
@@ -1483,7 +1483,7 @@ function CombosPickerModal({
             <button
               key={c.combo.id}
               onClick={() => onSelect(c)}
-              className="w-full text-left p-3 bg-stone-50 hover:bg-indigo-50 border border-stone-200 hover:border-indigo-200 rounded-lg transition-colors"
+              className="w-full text-left p-3 bg-stone-50 hover:bg-red-50 border border-stone-200 hover:border-red-200 rounded-lg transition-colors"
             >
               <div className="flex items-center justify-between">
                 <span className="font-medium">{c.combo.name}</span>

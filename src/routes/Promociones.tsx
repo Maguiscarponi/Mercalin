@@ -234,14 +234,14 @@ function PromoCard({
             {promoSummary(promo)} · {targetLabel(promo)}
           </div>
           {conditions && (
-            <div className="text-xs text-indigo-600 mt-0.5">⏰ {conditions}</div>
+            <div className="text-xs text-red-600 mt-0.5">⏰ {conditions}</div>
           )}
           {(promo.starts_at || promo.ends_at) && (
             <div className="text-xs text-stone-400 mt-1">
               {promo.starts_at && `Desde ${promo.starts_at}`}
               {promo.starts_at && promo.ends_at && " — "}
               {promo.ends_at && `Hasta ${promo.ends_at}`}
-              {expired && <span className="ml-2 text-red-500 font-medium">Expirada</span>}
+              {expired && <span className="ml-2 text-orange-500 font-medium">Expirada</span>}
             </div>
           )}
         </div>
@@ -442,7 +442,7 @@ function PromoForm({
           {/* Condiciones temporales opcionales */}
           <div className="border-t border-stone-100 pt-3">
             <button type="button" onClick={() => setShowConditions((s) => !s)}
-              className="text-xs text-indigo-600 hover:underline flex items-center gap-1">
+              className="text-xs text-red-600 hover:underline flex items-center gap-1">
               {showConditions ? "▾" : "▸"} Condiciones avanzadas (horario, días, cantidad)
             </button>
 
@@ -454,7 +454,7 @@ function PromoForm({
                     {DAY_LABELS.map((label, i) => (
                       <button key={i} type="button" onClick={() => toggleDay(i)}
                         className={clsx("px-2.5 py-1 rounded-md text-xs border transition-colors font-medium",
-                          selectedDays.includes(i) ? "bg-indigo-600 text-white border-indigo-600" : "bg-white border-stone-200 text-stone-600 hover:bg-stone-100")}>
+                          selectedDays.includes(i) ? "bg-red-600 text-white border-red-600" : "bg-white border-stone-200 text-stone-600 hover:bg-stone-100")}>
                         {label}
                       </button>
                     ))}

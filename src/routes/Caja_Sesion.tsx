@@ -80,9 +80,9 @@ export function CashSessionPanel({ session, onClose, onClosed }: Props) {
             <div className="text-xs text-stone-500">Apertura</div>
             <div className="font-semibold tabular mt-0.5">{centsToARS(session.opening_cents)}</div>
           </div>
-          <div className="bg-indigo-50 rounded-md p-3">
-            <div className="text-xs text-indigo-700">Ventas (todas)</div>
-            <div className="font-semibold tabular text-indigo-700 mt-0.5">{centsToARS(ventasTotal)}</div>
+          <div className="bg-red-50 rounded-md p-3">
+            <div className="text-xs text-red-700">Ventas (todas)</div>
+            <div className="font-semibold tabular text-red-700 mt-0.5">{centsToARS(ventasTotal)}</div>
           </div>
           <div className="bg-emerald-50 rounded-md p-3">
             <div className="text-xs text-emerald-700">Ventas efectivo</div>
@@ -93,9 +93,9 @@ export function CashSessionPanel({ session, onClose, onClosed }: Props) {
               <div className="text-xs text-emerald-700">+ Ingresos</div>
               <div className="font-semibold tabular text-emerald-700 mt-0.5">{centsToARS(ingresos)}</div>
             </div>
-            <div className="bg-red-50 rounded-md p-3">
-              <div className="text-xs text-red-700">− Egresos</div>
-              <div className="font-semibold tabular text-red-700 mt-0.5">{centsToARS(egresos)}</div>
+            <div className="bg-orange-50 rounded-md p-3">
+              <div className="text-xs text-orange-700">− Egresos</div>
+              <div className="font-semibold tabular text-orange-700 mt-0.5">{centsToARS(egresos)}</div>
             </div>
           </div>
         </div>
@@ -129,7 +129,7 @@ export function CashSessionPanel({ session, onClose, onClosed }: Props) {
                         "text-xs font-medium px-1.5 py-0.5 rounded mr-2",
                         m.movement_type === "ingreso"
                           ? "bg-emerald-100 text-emerald-700"
-                          : "bg-red-100 text-red-700"
+                          : "bg-orange-100 text-orange-700"
                       )}
                     >
                       {m.movement_type}
@@ -137,7 +137,7 @@ export function CashSessionPanel({ session, onClose, onClosed }: Props) {
                     {m.concept}
                   </div>
                   <div className="flex items-center gap-3">
-                    <span className={clsx("tabular font-medium", m.movement_type === "ingreso" ? "text-emerald-700" : "text-red-700")}>
+                    <span className={clsx("tabular font-medium", m.movement_type === "ingreso" ? "text-emerald-700" : "text-orange-700")}>
                       {m.movement_type === "egreso" ? "−" : "+"}{centsToARS(m.amount_cents)}
                     </span>
                     <span className="text-xs text-stone-400">{formatDateTime(m.created_at)}</span>
@@ -154,7 +154,7 @@ export function CashSessionPanel({ session, onClose, onClosed }: Props) {
           </button>
           <button
             onClick={() => setShowClose(true)}
-            className="btn flex-1 bg-red-600 text-white hover:bg-red-700"
+            className="btn flex-1 bg-orange-600 text-white hover:bg-orange-700"
           >
             Cerrar caja
           </button>
@@ -235,7 +235,7 @@ function MovementForm({
                 type === t
                   ? t === "ingreso"
                     ? "bg-emerald-600 text-white border-emerald-600"
-                    : "bg-red-600 text-white border-red-600"
+                    : "bg-orange-600 text-white border-orange-600"
                   : "bg-stone-50 border-stone-200 hover:bg-stone-100"
               )}
             >
@@ -274,7 +274,7 @@ function MovementForm({
             disabled={saving}
             className={clsx(
               "btn flex-1 text-white",
-              type === "ingreso" ? "bg-emerald-600 hover:bg-emerald-700" : "bg-red-600 hover:bg-red-700"
+              type === "ingreso" ? "bg-emerald-600 hover:bg-emerald-700" : "bg-orange-600 hover:bg-orange-700"
             )}
           >
             {saving ? "Guardando…" : "Guardar"}
@@ -353,7 +353,7 @@ function CloseForm({
             "text-sm text-center py-2 rounded-md mb-4 font-medium",
             diff === 0 && "bg-emerald-50 text-emerald-700",
             diff > 0 && "bg-emerald-50 text-emerald-700",
-            diff < 0 && "bg-red-50 text-red-700",
+            diff < 0 && "bg-orange-50 text-orange-700",
           )}>
             {diff === 0 && "Caja sin diferencias"}
             {diff > 0 && `Sobrante: ${centsToARS(diff)}`}
@@ -376,7 +376,7 @@ function CloseForm({
           <button
             onClick={submit}
             disabled={saving || !closingStr.trim()}
-            className="btn flex-1 bg-red-600 text-white hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed"
+            className="btn flex-1 bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {saving ? "Cerrando…" : "Confirmar cierre"}
           </button>

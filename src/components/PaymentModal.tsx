@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useCart } from "@/stores/cart";
 import { useAuthStore } from "@/stores/auth";
 import { api } from "@/lib/api";
@@ -84,9 +85,11 @@ export default function PaymentModal({ totalCents, sessionId, isRi, onClose, onC
   const [businessAddress, setBusinessAddress] = useState("");
   const [ticketFooter, setTicketFooter]   = useState("¡Gracias por su compra!");
   const [arcaConfig, setArcaConfig] = useState<ArcaConfig | null>(null);
+  const [arcaConfigLoaded, setArcaConfigLoaded] = useState(false);
   const [invoice, setInvoice] = useState<ElectronicInvoice | null>(null);
   const [invoiceState, setInvoiceState] = useState<"idle" | "issuing" | "ok" | "error">("idle");
   const cart = useCart();
+  const navigate = useNavigate();
   // Sin Escape en la pantalla de "venta confirmada": es intencional, para no
   // descartar sin querer el ticket recién cobrado antes de imprimirlo.
   useEscapeToClose(onClose, !completedSale);
@@ -127,15 +130,18 @@ export default function PaymentModal({ totalCents, sessionId, isRi, onClose, onC
     // intenta emitir el comprobante solo -- si esto falla (sin internet, sin
     // config completa, ARCA caída), la venta ya quedó guardada igual: no se
     // bloquea el cobro por un problema de facturación electrónica.
-    api.getArcaConfig().then(setArcaConfig).catch(() => setArcaConfig(null));
+    api.getArcaConfig().then(setArcaConfig).catch(() => setArcaConfig(null)).finally(() => setArcaConfigLoaded(true));
   }, []);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (completedSale && !showTicket) {
-        // Pantalla de éxito: Enter = imprimir, Escape = sin ticket
+        // Pantalla de éxito: Enter = imprimir, Escape = sin ticket, F = facturar
         if (e.key === "Enter") { e.preventDefault(); setShowTicket(true); }
         if (e.key === "Escape") { e.preventDefault(); onConfirmed(completedSale); }
+        if (e.key.toLowerCase() === "f" && arcaConfig?.has_certificate && invoiceState !== "issuing" && invoiceState !== "ok") {
+          e.preventDefault(); issueNow();
+        }
         return;
       }
       if (e.key === "Escape" && !completedSale) { e.preventDefault(); onClose(); }
@@ -143,7 +149,7 @@ export default function PaymentModal({ totalCents, sessionId, isRi, onClose, onC
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [canConfirm, submitting, completedSale, showTicket]); // eslint-disable-line
+  }, [canConfirm, submitting, completedSale, showTicket, arcaConfig, invoiceState]); // eslint-disable-line
 
   function updateSplit(i: number, field: "method" | "inputStr", value: string) {
     setSplits((prev) => prev.map((s, idx) => idx === i ? { ...s, [field]: value } : s));
@@ -197,16 +203,22 @@ export default function PaymentModal({ totalCents, sessionId, isRi, onClose, onC
       setCompletedSale(sw);
       playSuccess();
 
-      if (arcaConfig?.has_certificate) {
+      // Se pide de nuevo la config acá (no se confía en el `arcaConfig` del
+      // estado) porque si se cobra muy rápido (Enter apenas se abre el modal)
+      // el fetch inicial puede no haber terminado todavía -- confiar en el
+      // estado hacía que la factura se saltara en silencio, sin avisar nada.
+      const freshArcaConfig = await api.getArcaConfig().catch(() => null);
+      setArcaConfig(freshArcaConfig);
+      if (freshArcaConfig?.has_certificate) {
         setInvoiceState("issuing");
         try {
-          const emitted = await issueInvoiceForSale(sw.sale, cart.client_id, arcaConfig.condicion_iva);
+          const emitted = await issueInvoiceForSale(sw.sale, cart.client_id, freshArcaConfig.condicion_iva);
           setInvoice(emitted);
           setInvoiceState(emitted.status === "autorizada" ? "ok" : "error");
         } catch (invErr) {
           // No se bloquea el cobro por esto -- la venta ya está guardada.
-          // Queda como pendiente/error en Facturación → Comprobantes, y se
-          // puede reintentar desde ahí.
+          // Queda como pendiente/error en Facturación → Comprobantes, y
+          // también se puede reintentar al toque acá mismo (botón "Facturar").
           console.error("No se pudo emitir la factura electrónica:", invErr);
           setInvoiceState("error");
         }
@@ -218,6 +230,30 @@ export default function PaymentModal({ totalCents, sessionId, isRi, onClose, onC
       showToast({ message, tone: "danger" });
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  // Botón "Facturar" de la pantalla de éxito: emite la factura ARCA de esta
+  // venta al toque, a mano -- para cuando no se emitió sola (ARCA todavía no
+  // configurada en ese momento, o falló y se quiere reintentar sin ir hasta
+  // Facturación → Comprobantes).
+  async function issueNow() {
+    if (!completedSale || invoiceState === "issuing" || invoiceState === "ok") return;
+    setInvoiceState("issuing");
+    try {
+      const freshArcaConfig = arcaConfig?.has_certificate ? arcaConfig : await api.getArcaConfig().catch(() => null);
+      if (!freshArcaConfig?.has_certificate) {
+        setInvoiceState("error");
+        showToast({ message: "Facturación ARCA no está configurada. Configurala en Facturación → Configuración ARCA.", tone: "danger" });
+        return;
+      }
+      setArcaConfig(freshArcaConfig);
+      const emitted = await issueInvoiceForSale(completedSale.sale, cart.client_id, freshArcaConfig.condicion_iva);
+      setInvoice(emitted);
+      setInvoiceState(emitted.status === "autorizada" ? "ok" : "error");
+    } catch (e) {
+      console.error("No se pudo emitir la factura electrónica:", e);
+      setInvoiceState("error");
     }
   }
 
@@ -273,12 +309,32 @@ export default function PaymentModal({ totalCents, sessionId, isRi, onClose, onC
           )}
           {invoiceState === "error" && (
             <p className="text-xs text-amber-600 mt-2">
-              ⚠ No se pudo emitir la factura ahora. Se reintenta desde Facturación → Comprobantes.
+              ⚠ No se pudo emitir la factura ahora. Podés reintentar acá abajo, o más tarde desde Facturación → Comprobantes.
             </p>
           )}
-          <div className="flex gap-2 mt-5">
-            <button onClick={() => onConfirmed(sw)} className="btn btn-secondary flex-1">Sin ticket</button>
-            <button onClick={() => setShowTicket(true)} className="btn btn-primary flex-1">Imprimir ticket</button>
+          {arcaConfig?.has_certificate && invoiceState !== "ok" && (
+            <button
+              onClick={issueNow}
+              disabled={invoiceState === "issuing"}
+              className="btn btn-secondary w-full mt-3 text-sm disabled:opacity-50"
+            >
+              {invoiceState === "issuing" ? "Emitiendo…" : invoiceState === "error" ? "🧾 Reintentar factura ARCA (F)" : "🧾 Facturar con ARCA (F)"}
+            </button>
+          )}
+          {arcaConfigLoaded && !arcaConfig?.has_certificate && (
+            <div className="mt-3 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2.5 py-2 flex items-center justify-between gap-2">
+              <span>⚠ Facturación ARCA no configurada — esta venta no tiene factura.</span>
+              <button
+                onClick={() => { onConfirmed(sw); navigate("/facturacion"); }}
+                className="shrink-0 underline hover:no-underline font-medium"
+              >
+                Configurar
+              </button>
+            </div>
+          )}
+          <div className="flex gap-2 mt-3">
+            <button onClick={() => onConfirmed(sw)} className="btn btn-secondary flex-1">Sin ticket (Esc)</button>
+            <button onClick={() => setShowTicket(true)} className="btn btn-primary flex-1">Imprimir ticket (Enter)</button>
           </div>
         </div>
       </div>
@@ -301,6 +357,24 @@ export default function PaymentModal({ totalCents, sessionId, isRi, onClose, onC
             {splitMode ? "✓ Pago mixto activo" : "Pago mixto"}
           </button>
         </div>
+
+        {arcaConfigLoaded && (
+          arcaConfig?.has_certificate ? (
+            <p className="text-xs text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-md px-2.5 py-1.5 mb-3">
+              🧾 Esta venta se va a facturar con ARCA automáticamente al cobrar.
+            </p>
+          ) : (
+            <div className="flex items-center justify-between gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2.5 py-1.5 mb-3">
+              <span>⚠ Facturación ARCA no configurada — esta venta no va a tener factura electrónica.</span>
+              <button
+                onClick={() => { onClose(); navigate("/facturacion"); }}
+                className="shrink-0 underline hover:no-underline font-medium"
+              >
+                Configurar
+              </button>
+            </div>
+          )
+        )}
 
         {!splitMode ? (
           <>
@@ -383,7 +457,7 @@ export default function PaymentModal({ totalCents, sessionId, isRi, onClose, onC
                 />
                 {splits.length > 2 && (
                   <button onClick={() => setSplits((p) => p.filter((_, idx) => idx !== i))}
-                    className="text-stone-400 hover:text-red-600">×</button>
+                    className="text-stone-400 hover:text-orange-600">×</button>
                 )}
               </div>
             ))}

@@ -20,6 +20,7 @@ import { NAV_GROUPS, KEY_ROUTES, ALT_KEY_ROUTES, ROLE_LABEL, hasAccess } from "@
 import DialogHost from "@/components/DialogHost";
 import CommandPalette from "@/components/CommandPalette";
 import { AllInsightsModal, insightBadgeClass } from "@/components/InsightsPanel";
+import UpdateModal from "@/components/UpdateModal";
 import { useEscapeToClose } from "@/lib/useEscapeToClose";
 import type { LicenseStatus, UserRole } from "@/types";
 
@@ -56,7 +57,7 @@ function CloseCajaWarningModal({
 // Las clases van completas (no interpoladas) para que Tailwind las detecte.
 type GroupAccent = { dot: string; chip: string; icon: string; active: string; activeIcon: string };
 const GROUP_ACCENT: Record<string, GroupAccent> = {
-  "Operación": { dot: "bg-indigo-500",  chip: "bg-indigo-50",  icon: "text-indigo-600",  active: "bg-indigo-600",  activeIcon: "text-white" },
+  "Operación": { dot: "bg-red-500",  chip: "bg-red-50",  icon: "text-red-600",  active: "bg-red-600",  activeIcon: "text-white" },
   "Catálogo":  { dot: "bg-emerald-500", chip: "bg-emerald-50", icon: "text-emerald-600", active: "bg-emerald-600", activeIcon: "text-white" },
   "Gestión":   { dot: "bg-amber-500",   chip: "bg-amber-50",   icon: "text-amber-600",   active: "bg-amber-500",   activeIcon: "text-white" },
   "Análisis":  { dot: "bg-violet-500",  chip: "bg-violet-50",  icon: "text-violet-600",  active: "bg-violet-600",  activeIcon: "text-white" },
@@ -82,6 +83,9 @@ export default function Layout() {
   const posModeMode = usePosModeStore((s) => s.mode);
   const syncStatus = usePosModeStore((s) => s.syncStatus);
   const availableUpdate = useUpdaterStore((s) => s.update);
+  // "Más tarde" tapa el modal el resto de esta sesión -- vuelve a aparecer
+  // recién la próxima vez que se abra la app (si seguís sin actualizar).
+  const [updateDismissed, setUpdateDismissed] = useState(false);
   const [licenseStatus, setLicenseStatus] = useState<LicenseStatus | null>(null);
   const combosEnabled = useCombosEnabledStore((s) => s.enabled);
   const insights = useInsightsStore((s) => s.insights);
@@ -177,7 +181,7 @@ export default function Layout() {
           "border-b border-stone-100 flex items-center",
           sidebarOpen ? "px-3 py-4 gap-2.5" : "px-0 py-4 justify-center"
         )}>
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shrink-0 shadow-sm shadow-indigo-200">
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-red-500 to-red-700 flex items-center justify-center shrink-0 shadow-sm shadow-red-200">
             <Store size={18} strokeWidth={2.25} className="text-white" />
           </div>
           {sidebarOpen && (
@@ -327,7 +331,7 @@ export default function Layout() {
           )}>
             <span className={clsx(
               "w-2 h-2 rounded-full shrink-0",
-              syncStatus === "online" ? "bg-emerald-500" : syncStatus === "syncing" ? "bg-amber-500" : "bg-red-500"
+              syncStatus === "online" ? "bg-emerald-500" : syncStatus === "syncing" ? "bg-amber-500" : "bg-orange-500"
             )} />
             {sidebarOpen && (
               <span className="text-[10px] text-stone-400">
@@ -379,7 +383,7 @@ export default function Layout() {
         )}>
           {sidebarOpen ? (
             <div className="flex items-center gap-1.5">
-              <div className="w-7 h-7 rounded-full bg-gradient-to-br from-indigo-400 to-violet-500 flex items-center justify-center shrink-0 text-white text-[11px] font-bold">
+              <div className="w-7 h-7 rounded-full bg-gradient-to-br from-red-400 to-red-600 flex items-center justify-center shrink-0 text-white text-[11px] font-bold">
                 {(user?.full_name ?? "?").trim().charAt(0).toUpperCase()}
               </div>
               <div className="flex-1 min-w-0">
@@ -387,7 +391,7 @@ export default function Layout() {
                 <p className="text-[10px] text-stone-400">{ROLE_LABEL[userRole]}</p>
               </div>
               <button onClick={logout} title="Cerrar sesión"
-                className="text-stone-400 hover:text-red-600 hover:bg-red-50 transition-colors rounded-md w-7 h-7 flex items-center justify-center">
+                className="text-stone-400 hover:text-orange-600 hover:bg-orange-50 transition-colors rounded-md w-7 h-7 flex items-center justify-center">
                 <LogOut size={13} />
               </button>
               <button onClick={toggleFullscreen}
@@ -399,7 +403,7 @@ export default function Layout() {
           ) : (
             <>
               <button onClick={logout} title="Cerrar sesión"
-                className="text-stone-400 hover:text-red-600 hover:bg-red-50 transition-colors rounded-md w-8 h-8 flex items-center justify-center">
+                className="text-stone-400 hover:text-orange-600 hover:bg-orange-50 transition-colors rounded-md w-8 h-8 flex items-center justify-center">
                 <LogOut size={13} />
               </button>
               <button onClick={toggleFullscreen}
@@ -415,7 +419,7 @@ export default function Layout() {
       {/* ── Contenido ─────────────────────────────────────────── */}
       <main className="flex-1 overflow-hidden flex flex-col">
         {isFocusMode && (
-          <div className="h-11 bg-gradient-to-r from-indigo-700 to-violet-700 flex items-center px-2 gap-1 shrink-0">
+          <div className="h-11 bg-gradient-to-r from-red-700 to-red-900 flex items-center px-2 gap-1 shrink-0">
             <button
               onClick={() => navigate("/dashboard")}
               title="Volver"
@@ -472,6 +476,9 @@ export default function Layout() {
           onExitAnyway={handleExitAnyway}
           onCancel={() => setShowCloseCajaWarning(false)}
         />
+      )}
+      {availableUpdate && !updateDismissed && (
+        <UpdateModal update={availableUpdate} onDismiss={() => setUpdateDismissed(true)} />
       )}
     </div>
   );

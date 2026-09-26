@@ -46,8 +46,8 @@ export default function OnboardingChecklist({ hasProducts, hasSales }: { hasProd
   if (dismissed) return null;
 
   return (
-    <div className="card overflow-hidden animate-fade-in border-indigo-100">
-      <div className="flex items-center justify-between px-5 py-3 bg-gradient-to-r from-indigo-50 to-white border-b border-indigo-100">
+    <div className="card overflow-hidden animate-fade-in border-red-100">
+      <div className="flex items-center justify-between px-5 py-3 bg-gradient-to-r from-red-50 to-white border-b border-red-100">
         <div className="flex items-center gap-2.5">
           <span className="text-lg">{allDone ? "🎉" : "🚀"}</span>
           <div>
@@ -58,7 +58,7 @@ export default function OnboardingChecklist({ hasProducts, hasSales }: { hasProd
           </div>
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="text-xs font-bold text-indigo-600 tabular w-9 text-right">{pct}%</span>
+          <span className="text-xs font-bold text-red-600 tabular w-9 text-right">{pct}%</span>
           <button
             onClick={() => setCollapsed((c) => !c)}
             className="text-stone-400 hover:text-stone-600 w-7 h-7 flex items-center justify-center rounded-md hover:bg-white transition-colors"
@@ -68,7 +68,7 @@ export default function OnboardingChecklist({ hasProducts, hasSales }: { hasProd
           </button>
           <button
             onClick={dismiss}
-            className="text-stone-400 hover:text-red-500 w-7 h-7 flex items-center justify-center rounded-md hover:bg-white transition-colors"
+            className="text-stone-400 hover:text-orange-500 w-7 h-7 flex items-center justify-center rounded-md hover:bg-white transition-colors"
             title="Ocultar"
           >
             ✕
@@ -86,13 +86,13 @@ export default function OnboardingChecklist({ hasProducts, hasSales }: { hasProd
                 key={step.id}
                 className={clsx(
                   "flex items-center justify-between gap-3 px-5 py-3 transition-colors",
-                  isNext && "bg-indigo-50/60"
+                  isNext && "bg-red-50/60"
                 )}
               >
                 <div className="flex items-center gap-3 min-w-0">
                   <div className="relative shrink-0 w-8 h-8">
                     {isNext && !isDone && (
-                      <span className="absolute inset-0 rounded-full bg-indigo-400 motion-safe:animate-ping opacity-40" />
+                      <span className="absolute inset-0 rounded-full bg-red-400 motion-safe:animate-ping opacity-40" />
                     )}
                     <div
                       className={clsx(
@@ -100,7 +100,7 @@ export default function OnboardingChecklist({ hasProducts, hasSales }: { hasProd
                         isDone
                           ? "bg-emerald-100 text-emerald-600 animate-pop-in"
                           : isNext
-                          ? "bg-indigo-100 text-indigo-600 motion-safe:animate-heartbeat"
+                          ? "bg-red-100 text-red-600 motion-safe:animate-heartbeat"
                           : "bg-stone-100 text-stone-400"
                       )}
                     >
@@ -130,7 +130,7 @@ export default function OnboardingChecklist({ hasProducts, hasSales }: { hasProd
 
       <div className="h-1 bg-stone-100">
         <div
-          className="h-full bg-gradient-to-r from-indigo-500 to-emerald-500 transition-all duration-500 ease-out"
+          className="h-full bg-gradient-to-r from-red-500 to-emerald-500 transition-all duration-500 ease-out"
           style={{ width: `${pct}%` }}
         />
       </div>

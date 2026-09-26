@@ -15,7 +15,7 @@ const SEGMENT_CONFIG: Record<ClientSegment, { label: string; emoji: string; bg: 
   vip:           { label: "VIP",           emoji: "⭐", bg: "bg-yellow-100", text: "text-yellow-800" },
   habitual:      { label: "Habitual",      emoji: "✅", bg: "bg-emerald-100", text: "text-emerald-800" },
   en_riesgo:     { label: "En riesgo",     emoji: "⚠️", bg: "bg-amber-100",  text: "text-amber-800" },
-  deudor_critico:{ label: "Deudor",        emoji: "🔴", bg: "bg-red-100",    text: "text-red-800" },
+  deudor_critico:{ label: "Deudor",        emoji: "🔴", bg: "bg-orange-100",    text: "text-orange-800" },
   nuevo:         { label: "Nuevo",         emoji: "🆕", bg: "bg-blue-100",   text: "text-blue-800" },
 };
 
@@ -178,8 +178,8 @@ export default function Clientes() {
               className={clsx(
                 "px-2.5 py-1 text-xs font-medium rounded-md border transition-colors",
                 debtFilter
-                  ? "bg-red-600 text-white border-red-600"
-                  : "bg-red-50 text-red-700 border-red-200 hover:bg-red-100"
+                  ? "bg-orange-600 text-white border-orange-600"
+                  : "bg-orange-50 text-orange-700 border-orange-200 hover:bg-orange-100"
               )}
             >
               {debtors.length} con deuda {debtFilter ? "· ver todos" : ""}
@@ -187,7 +187,7 @@ export default function Clientes() {
           )}
           {totalDebt > 0 && (
             <span className="text-xs text-stone-500">
-              Deuda total: <span className="font-semibold text-red-600">{centsToARS(totalDebt)}</span>
+              Deuda total: <span className="font-semibold text-orange-600">{centsToARS(totalDebt)}</span>
             </span>
           )}
           {atRisk > 0 && (
@@ -298,7 +298,7 @@ export default function Clientes() {
                   <td className="px-4 py-2.5 font-mono text-xs text-stone-500">{c.dni || "—"}</td>
                   <td className="px-4 py-2.5 text-right tabular">
                     {c.balance_cents > 0 ? (
-                      <span className="text-red-600 font-semibold">{centsToARS(c.balance_cents)}</span>
+                      <span className="text-orange-600 font-semibold">{centsToARS(c.balance_cents)}</span>
                     ) : (
                       <span className="text-stone-400">Sin deuda</span>
                     )}
@@ -462,7 +462,7 @@ function ClientAccountModal({ client, onClose }: { client: Client; onClose: () =
             </div>
             <div className="text-right">
               <div className="text-xs text-stone-500">Saldo deudor</div>
-              <div className={clsx("text-2xl font-bold tabular", currentClient.balance_cents > 0 ? "text-red-600" : "text-emerald-600")}>
+              <div className={clsx("text-2xl font-bold tabular", currentClient.balance_cents > 0 ? "text-orange-600" : "text-emerald-600")}>
                 {centsToARS(currentClient.balance_cents)}
               </div>
               {currentClient.credit_limit_cents > 0 && (
@@ -496,7 +496,7 @@ function ClientAccountModal({ client, onClose }: { client: Client; onClose: () =
                 {saving ? "…" : "Registrar pago"}
               </button>
             </div>
-            {payError && <p className="text-xs text-red-600 mt-1.5">{payError}</p>}
+            {payError && <p className="text-xs text-orange-600 mt-1.5">{payError}</p>}
           </div>
         )}
 
@@ -508,7 +508,7 @@ function ClientAccountModal({ client, onClose }: { client: Client; onClose: () =
               className={clsx(
                 "px-4 py-2 text-xs font-semibold uppercase tracking-wide border-b-2 transition-colors -mb-px",
                 accountTab === t
-                  ? "border-indigo-600 text-indigo-700"
+                  ? "border-red-600 text-red-700"
                   : "border-transparent text-stone-400 hover:text-stone-700"
               )}
             >
@@ -529,14 +529,14 @@ function ClientAccountModal({ client, onClose }: { client: Client; onClose: () =
                       <div>
                         <span className={clsx(
                           "text-xs px-1.5 py-0.5 rounded font-medium mr-2",
-                          e.movement_type === "cargo" ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-700"
+                          e.movement_type === "cargo" ? "bg-orange-50 text-orange-700" : "bg-emerald-50 text-emerald-700"
                         )}>
                           {e.movement_type === "cargo" ? "Cargo" : "Pago"}
                         </span>
                         {e.concept}
                       </div>
                       <div className="flex items-center gap-3">
-                        <span className={clsx("tabular font-medium", e.movement_type === "cargo" ? "text-red-600" : "text-emerald-600")}>
+                        <span className={clsx("tabular font-medium", e.movement_type === "cargo" ? "text-orange-600" : "text-emerald-600")}>
                           {e.movement_type === "cargo" ? "+" : "−"}{centsToARS(e.amount_cents)}
                         </span>
                         <span className="text-xs text-stone-400">{formatDateTime(e.created_at)}</span>
@@ -622,12 +622,12 @@ function ClientForm({
           <Field label="Nombre *">
             <input
               autoFocus
-              className={clsx("input", nameError && "border-red-400 focus:ring-red-500")}
+              className={clsx("input", nameError && "border-orange-400 focus:ring-orange-500")}
               value={form.name || ""}
               onChange={(e) => { setNameError(false); f("name")(e); }}
               placeholder="Juan Pérez"
             />
-            {nameError && <p className="text-xs text-red-600 mt-1">Ingresá un nombre para continuar</p>}
+            {nameError && <p className="text-xs text-orange-600 mt-1">Ingresá un nombre para continuar</p>}
           </Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Teléfono">

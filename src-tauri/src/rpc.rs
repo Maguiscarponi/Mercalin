@@ -66,6 +66,8 @@ pub fn dispatch(app: &AppHandle, command: &str, body: Value) -> RpcResult {
         "delete_brand" => crate::commands::products::delete_brand[name: String],
         "preview_bulk_update_prices" => crate::commands::products::preview_bulk_update_prices[input: crate::models::BulkPriceInput],
         "apply_bulk_update_prices" => crate::commands::products::apply_bulk_update_prices[input: crate::models::BulkPriceInput, user_id: Option<i64>],
+        "preview_bulk_update_stock" => crate::commands::products::preview_bulk_update_stock[input: crate::models::BulkStockInput],
+        "apply_bulk_update_stock" => crate::commands::products::apply_bulk_update_stock[input: crate::models::BulkStockInput, user_id: Option<i64>],
         "import_products_csv" => crate::commands::products::import_products_csv[rows: Vec<crate::models::CsvProductRow>, user_id: Option<i64>],
         "get_min_stock_suggestions" => crate::commands::products::get_min_stock_suggestions[],
         "apply_min_stock_suggestions" => crate::commands::products::apply_min_stock_suggestions[suggestions: Vec<crate::models::MinStockSuggestion>, user_id: Option<i64>],
@@ -83,6 +85,7 @@ pub fn dispatch(app: &AppHandle, command: &str, body: Value) -> RpcResult {
         // Caja / sesiones
         "open_cash_session" => crate::commands::caja::open_cash_session[input: crate::models::OpenSessionInput],
         "close_cash_session" => crate::commands::caja::close_cash_session[input: crate::models::CloseSessionInput],
+        "get_cash_session" => crate::commands::caja::get_cash_session[id: i64],
         "get_current_session" => crate::commands::caja::get_current_session[],
         "list_open_sessions" => crate::commands::caja::list_open_sessions[],
         "list_cash_sessions" => crate::commands::caja::list_cash_sessions[limit: i64],

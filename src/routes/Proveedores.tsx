@@ -166,7 +166,7 @@ export default function Proveedores() {
             onClick={() => handleTabChange(key)}
             className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
               tab === key
-                ? "border-indigo-600 text-indigo-700"
+                ? "border-red-600 text-red-700"
                 : "border-transparent text-stone-500 hover:text-stone-700"
             }`}
           >
@@ -254,7 +254,7 @@ export default function Proveedores() {
                     <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
                       o.status === "pendiente" ? "bg-amber-100 text-amber-700" :
                       o.status === "recibido" ? "bg-emerald-100 text-emerald-700" :
-                      "bg-red-100 text-red-700"
+                      "bg-orange-100 text-orange-700"
                     }`}>
                       {o.status.charAt(0).toUpperCase() + o.status.slice(1)}
                     </span>
@@ -298,7 +298,7 @@ export default function Proveedores() {
                         <td className="px-3 py-2 font-medium">{p.name}</td>
                         <td className="px-3 py-2 text-stone-500">{p.category || "—"}</td>
                         <td className="px-3 py-2 text-right tabular">{p.stock}</td>
-                        <td className={`px-3 py-2 text-right tabular font-medium ${p.days_remaining <= 2 ? "text-red-600" : p.days_remaining <= 5 ? "text-amber-600" : ""}`}>
+                        <td className={`px-3 py-2 text-right tabular font-medium ${p.days_remaining <= 2 ? "text-orange-600" : p.days_remaining <= 5 ? "text-amber-600" : ""}`}>
                           {p.days_remaining}
                         </td>
                         <td className="px-3 py-2 text-right tabular text-stone-500">{p.daily_velocity.toFixed(1)}</td>
@@ -391,7 +391,7 @@ export default function Proveedores() {
                     <td className="px-3 py-2 text-right tabular text-stone-500">{centsToARS(item.first_cost_cents)}</td>
                     <td className="px-3 py-2 text-right tabular">{centsToARS(item.last_cost_cents)}</td>
                     <td className={`px-3 py-2 text-right tabular font-medium ${
-                      item.pct_change > 20 ? "text-red-600" :
+                      item.pct_change > 20 ? "text-orange-600" :
                       item.pct_change > 10 ? "text-amber-600" :
                       item.pct_change > 0 ? "text-yellow-600" : "text-stone-500"
                     }`}>
@@ -423,7 +423,7 @@ export default function Proveedores() {
                   const bajo = riskScores.filter((r) => r.risk_level === "bajo").length;
                   return (
                     <div className="flex items-center gap-2 text-sm">
-                      <span className="px-2.5 py-1 rounded-md bg-red-50 text-red-700 border border-red-200 font-medium">{alto} alto</span>
+                      <span className="px-2.5 py-1 rounded-md bg-orange-50 text-orange-700 border border-orange-200 font-medium">{alto} alto</span>
                       <span className="px-2.5 py-1 rounded-md bg-amber-50 text-amber-700 border border-amber-200 font-medium">{medio} medio</span>
                       <span className="px-2.5 py-1 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium">{bajo} bajo</span>
                     </div>
@@ -450,7 +450,7 @@ export default function Proveedores() {
                         <td className="px-3 py-2 text-right tabular text-stone-600">{r.lead_time_avg.toFixed(1)} días</td>
                         <td className="px-3 py-2 text-right tabular text-stone-500">±{r.lead_time_std.toFixed(1)} días</td>
                         <td className={`px-3 py-2 text-right tabular font-medium ${
-                          r.cost_inflation_pct > 20 ? "text-red-600" :
+                          r.cost_inflation_pct > 20 ? "text-orange-600" :
                           r.cost_inflation_pct > 10 ? "text-amber-600" :
                           r.cost_inflation_pct > 0 ? "text-yellow-600" : "text-stone-500"
                         }`}>
@@ -461,7 +461,7 @@ export default function Proveedores() {
                             <div className="w-20 bg-stone-100 rounded-full h-2 overflow-hidden">
                               <div
                                 className={`h-2 rounded-full ${
-                                  r.risk_level === "alto" ? "bg-red-500" :
+                                  r.risk_level === "alto" ? "bg-orange-500" :
                                   r.risk_level === "medio" ? "bg-amber-400" :
                                   "bg-emerald-500"
                                 }`}
@@ -473,7 +473,7 @@ export default function Proveedores() {
                         </td>
                         <td className="px-3 py-2 text-center">
                           <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                            r.risk_level === "alto" ? "bg-red-100 text-red-700" :
+                            r.risk_level === "alto" ? "bg-orange-100 text-orange-700" :
                             r.risk_level === "medio" ? "bg-amber-100 text-amber-700" :
                             "bg-emerald-100 text-emerald-700"
                           }`}>
@@ -582,7 +582,7 @@ function OrderDetailModal({
           {order.status === "pendiente" && (
             <button
               onClick={() => onCancel(order.id)}
-              className="btn flex-1 bg-red-50 text-red-700 border border-red-200 hover:bg-red-100"
+              className="btn flex-1 bg-orange-50 text-orange-700 border border-orange-200 hover:bg-orange-100"
             >
               Cancelar orden
             </button>
@@ -666,7 +666,7 @@ function OrderItemRow({
         value={item.qty}
         onChange={(e) => onChange(index, { qty: e.target.value })}
       />
-      <button onClick={() => onRemove(index)} className="text-stone-400 hover:text-red-600 text-lg">×</button>
+      <button onClick={() => onRemove(index)} className="text-stone-400 hover:text-orange-600 text-lg">×</button>
     </div>
   );
 }
@@ -878,8 +878,8 @@ function SupplierProductsModal({
               <div className="text-xl font-bold tabular">{totalStock}</div>
               <div className="text-xs text-stone-500">unidades en stock</div>
             </div>
-            <div className={`rounded-md px-3 py-2 text-center ${lowStockCount > 0 ? "bg-red-50" : "bg-stone-50"}`}>
-              <div className={`text-xl font-bold tabular ${lowStockCount > 0 ? "text-red-600" : ""}`}>{lowStockCount}</div>
+            <div className={`rounded-md px-3 py-2 text-center ${lowStockCount > 0 ? "bg-orange-50" : "bg-stone-50"}`}>
+              <div className={`text-xl font-bold tabular ${lowStockCount > 0 ? "text-orange-600" : ""}`}>{lowStockCount}</div>
               <div className="text-xs text-stone-500">con stock bajo</div>
             </div>
           </div>
@@ -907,7 +907,7 @@ function SupplierProductsModal({
               </thead>
               <tbody>
                 {products.map((p) => (
-                  <tr key={p.id} className={`border-t border-stone-100 ${stockTrackingEnabled && p.stock <= p.min_stock ? "bg-red-50" : "hover:bg-stone-50"}`}>
+                  <tr key={p.id} className={`border-t border-stone-100 ${stockTrackingEnabled && p.stock <= p.min_stock ? "bg-orange-50" : "hover:bg-stone-50"}`}>
                     <td className="px-4 py-2.5">
                       <div className="font-medium">{p.name}</div>
                       {p.barcode && <div className="text-[10px] text-stone-400 font-mono">{p.barcode}</div>}
@@ -915,7 +915,7 @@ function SupplierProductsModal({
                     <td className="px-4 py-2.5 text-stone-500 text-xs">{p.category || "—"}</td>
                     <td className="px-4 py-2.5 text-right tabular text-stone-500">{centsToARS(p.cost_cents)}</td>
                     <td className="px-4 py-2.5 text-right tabular font-medium">{centsToARS(p.price_cents)}</td>
-                    <td className={`px-4 py-2.5 text-right tabular font-bold ${stockTrackingEnabled && p.stock <= p.min_stock ? "text-red-600" : ""}`}>
+                    <td className={`px-4 py-2.5 text-right tabular font-bold ${stockTrackingEnabled && p.stock <= p.min_stock ? "text-orange-600" : ""}`}>
                       {p.stock}
                       {stockTrackingEnabled && p.stock <= p.min_stock && <span className="ml-1 text-xs">⚠</span>}
                     </td>

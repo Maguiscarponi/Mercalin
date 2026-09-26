@@ -208,9 +208,9 @@ function SessionDetailModal({
 
         <div className="grid grid-cols-4 gap-3 p-5 border-b border-stone-200">
           <MiniStat label="Apertura" value={centsToARS(session.opening_cents)} />
-          <MiniStat label="Ventas totales" value={centsToARS(salesTotal)} color="text-indigo-700" />
+          <MiniStat label="Ventas totales" value={centsToARS(salesTotal)} color="text-red-700" />
           <MiniStat label="Ingresos man." value={centsToARS(ingresos)} color="text-emerald-700" />
-          <MiniStat label="Egresos man." value={centsToARS(egresos)} color="text-red-700" />
+          <MiniStat label="Egresos man." value={centsToARS(egresos)} color="text-orange-700" />
         </div>
 
         {Object.keys(byMethod).length > 0 && (
@@ -232,7 +232,7 @@ function SessionDetailModal({
             "mx-5 mt-4 py-2 px-3 rounded-md text-sm text-center font-medium",
             diff === 0 && "bg-emerald-50 text-emerald-700",
             diff > 0 && "bg-emerald-50 text-emerald-700",
-            diff < 0 && "bg-red-50 text-red-700",
+            diff < 0 && "bg-orange-50 text-orange-700",
           )}>
             Cierre: {centsToARS(session.closing_cents)} ·{" "}
             {diff === 0 && "Sin diferencia"}
@@ -252,14 +252,14 @@ function SessionDetailModal({
                   <div>
                     <span className={clsx(
                       "text-xs px-1.5 py-0.5 rounded mr-2 font-medium",
-                      m.movement_type === "ingreso" ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"
+                      m.movement_type === "ingreso" ? "bg-emerald-100 text-emerald-700" : "bg-orange-100 text-orange-700"
                     )}>
                       {m.movement_type}
                     </span>
                     {m.concept}
                   </div>
                   <div className="flex gap-3 items-center">
-                    <span className={clsx("tabular font-medium", m.movement_type === "ingreso" ? "text-emerald-700" : "text-red-700")}>
+                    <span className={clsx("tabular font-medium", m.movement_type === "ingreso" ? "text-emerald-700" : "text-orange-700")}>
                       {m.movement_type === "egreso" ? "−" : "+"}{centsToARS(m.amount_cents)}
                     </span>
                     <span className="text-xs text-stone-400">{formatDateTime(m.created_at)}</span>
