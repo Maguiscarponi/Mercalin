@@ -394,9 +394,13 @@ pub fn get_iva_report(
     Ok(out)
 }
 
-/// Co-ocurrencia de productos en la misma venta (últimos 60 días).
+/// Co-ocurrencia de productos en la misma venta, dentro del período pedido.
+// Encontrado en la auditoría: esta pestaña ignoraba el selector de fecha de
+// Reportes -- siempre miraba una ventana fija de 60 días desde hoy, aunque
+// la dueña estuviera mirando un mes pasado. Ahora recibe el mismo rango que
+// el resto de las pestañas.
 #[tauri::command]
-pub fn get_product_affinity(state: State<AppState>) -> CmdResult<Vec<ProductAffinity>> {
+pub fn get_product_affinity(from_date: String, to_date: String, state: State<AppState>) -> CmdResult<Vec<ProductAffinity>> {
     let conn = state.db.lock();
 
     // Pares que aparecen juntos en la misma venta
@@ -410,7 +414,7 @@ pub fn get_product_affinity(state: State<AppState>) -> CmdResult<Vec<ProductAffi
          JOIN products pa ON a.product_id = pa.id
          JOIN products pb ON b.product_id = pb.id
          JOIN sales s ON a.sale_id = s.id
-         WHERE date(s.created_at,'localtime') >= date('now','localtime','-60 days')
+         WHERE date(s.created_at,'localtime') BETWEEN ?1 AND ?2
            AND (s.notes IS NULL OR s.notes NOT LIKE '%[ANULADA]%')
            AND a.product_id IS NOT NULL AND b.product_id IS NOT NULL
          GROUP BY a.product_id, b.product_id
@@ -419,16 +423,18 @@ pub fn get_product_affinity(state: State<AppState>) -> CmdResult<Vec<ProductAffi
          LIMIT 40",
     ).map_err(err)?;
 
-    let pairs: Vec<(i64, String, i64, String, i64)> = stmt.query_map([], |row| {
+    let pairs: Vec<(i64, String, i64, String, i64)> = stmt.query_map(params![from_date, to_date], |row| {
         Ok((row.get("a_id")?, row.get("a_name")?, row.get("b_id")?, row.get("b_name")?, row.get("together")?))
     }).map_err(err)?.filter_map(|r| r.ok()).collect();
 
-    // Para cada par, obtener total de ventas del producto A
+    // Para cada par, obtener total de ventas del producto A (mismo período)
     let mut out = Vec::new();
     for (a_id, a_name, b_id, b_name, together) in pairs {
         let total_a: i64 = conn.query_row(
-            "SELECT COUNT(DISTINCT sale_id) FROM sale_items WHERE product_id=?1",
-            rusqlite::params![a_id], |r| r.get(0),
+            "SELECT COUNT(DISTINCT si.sale_id) FROM sale_items si JOIN sales s ON s.id = si.sale_id
+             WHERE si.product_id=?1 AND date(s.created_at,'localtime') BETWEEN ?2 AND ?3
+               AND (s.notes IS NULL OR s.notes NOT LIKE '%[ANULADA]%')",
+            rusqlite::params![a_id, from_date, to_date], |r| r.get(0),
         ).unwrap_or(1).max(1);
 
         let affinity_pct = (together as f64 / total_a as f64) * 100.0;

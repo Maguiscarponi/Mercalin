@@ -292,7 +292,10 @@ pub fn reorder_by_supplier(state: State<AppState>) -> CmdResult<Vec<ReorderItem>
                 s.id as supplier_id, s.name as supplier_name
          FROM products p
          LEFT JOIN suppliers s ON p.supplier_id = s.id
-         WHERE p.active=1 AND p.stock <= p.min_stock
+         -- Encontrado en la auditoría: un producto con mínimo dejado
+         -- deliberadamente en 0 (sin umbral de reposición) igual aparecía acá
+         -- sugiriendo pedir 1 unidad apenas tocaba stock 0, generando ruido.
+         WHERE p.active=1 AND p.min_stock > 0 AND p.stock <= p.min_stock
          ORDER BY s.name NULLS LAST, p.name",
     ).map_err(err)?;
     let rows = stmt.query_map([], |row| {

@@ -194,7 +194,7 @@ pub fn dispatch(app: &AppHandle, command: &str, body: Value) -> RpcResult {
         "margin_report" => crate::commands::reports::margin_report[from_date: String, to_date: String],
         "margin_by_category" => crate::commands::reports::margin_by_category[from_date: String, to_date: String],
         "get_iva_report" => crate::commands::reports::get_iva_report[from_date: String, to_date: String],
-        "get_product_affinity" => crate::commands::reports::get_product_affinity[],
+        "get_product_affinity" => crate::commands::reports::get_product_affinity[from_date: String, to_date: String],
 
         // Auditoría / backup
         "list_audit_log" => crate::commands::audit::list_audit_log[limit: i64],

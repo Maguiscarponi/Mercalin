@@ -396,8 +396,8 @@ export const api = {
   getPriceImpactProjections: () =>
     rpc<PriceImpactItem[]>("get_price_impact_projections"),
 
-  getProductAffinity: () =>
-    rpc<ProductAffinity[]>("get_product_affinity"),
+  getProductAffinity: (fromDate: string, toDate: string) =>
+    rpc<ProductAffinity[]>("get_product_affinity", { fromDate, toDate }),
 
   getSupplierRiskScores: () =>
     rpc<SupplierRiskScore[]>("get_supplier_risk_scores"),

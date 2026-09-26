@@ -164,13 +164,17 @@ export default function Reportes() {
 
   useEffect(() => {
     if (tab !== "afinidad") return;
-    if (affinityItems.length > 0) return;
+    // Encontrado en la auditoría: esto guardaba en caché el resultado para
+    // siempre después de la primera carga, así que cambiar el período
+    // seleccionado no volvía a pedir nada -- combinado con que el backend
+    // ignoraba el rango, la pestaña quedaba fija a lo que hubiera cargado
+    // la primera vez, sin importar qué período se mirara después.
     setLoadingAffinity(true);
-    api.getProductAffinity()
+    api.getProductAffinity(fromDate, toDate)
       .then(setAffinityItems)
       .catch(console.error)
       .finally(() => setLoadingAffinity(false));
-  }, [tab]); // eslint-disable-line
+  }, [tab, fromDate, toDate]); // eslint-disable-line
 
   useEffect(() => {
     if (tab !== "libro_iva") return;
@@ -201,6 +205,7 @@ export default function Reportes() {
       // pide todo el período de nuevo sin límite para que el Excel no quede truncado
       // en meses con muchas ventas.
       const allSales = await api.listSalesRange(fromDate, toDate, 1000000);
+      const userNameById = new Map(byUser.map((u) => [u.user_id, u.user_name]));
       const sheets: ExcelSheet[] = [
         {
           name: "Ventas",
@@ -211,6 +216,7 @@ export default function Reportes() {
             { header: "Descuento", key: "discount", width: 14, numFmt: CURRENCY_FMT, align: "right" as const },
             { header: "Medio de pago", key: "method", width: 16 },
             { header: "Cliente", key: "client", width: 22 },
+            { header: "Cajero", key: "seller", width: 18 },
             { header: "Estado", key: "status", width: 12 },
           ],
           rows: allSales.map((s) => ({
@@ -220,6 +226,7 @@ export default function Reportes() {
             discount: s.discount_cents / 100,
             method: METHOD_LABELS[s.payment_method] ?? s.payment_method,
             client: s.client_name ?? "",
+            seller: s.user_id != null ? userNameById.get(s.user_id) ?? "Sin usuario" : "Sin usuario asignado",
             status: s.notes?.includes("[ANULADA]") ? "Anulada" : "OK",
           })),
         },
@@ -575,7 +582,7 @@ export default function Reportes() {
           <div className="px-4 py-2.5 border-b border-stone-100 bg-stone-50 shrink-0">
             <input
               className="input h-8 text-sm w-64"
-              placeholder="Filtrar por cliente o medio de pago…"
+              placeholder="Filtrar por cliente, cajero o medio de pago…"
               value={salesFilter}
               onChange={(e) => setSalesFilter(e.target.value)}
             />
@@ -587,11 +594,19 @@ export default function Reportes() {
           )}
           <div className="flex-1 overflow-y-auto">
             {(() => {
+              // Encontrado en la auditoría: no había forma de ver o filtrar
+              // el detalle de ventas por cajero puntual desde esta tabla
+              // (solo existía el agregado en Resumen). Se reusa byUser (ya
+              // cargado para el mismo período) para mostrar el nombre y
+              // sumarlo al mismo buscador de arriba.
+              const userNameById = new Map(byUser.map((u) => [u.user_id, u.user_name]));
+              const sellerName = (s: Sale) => (s.user_id != null ? userNameById.get(s.user_id) ?? "Sin usuario" : "Sin usuario asignado");
               const f = salesFilter.toLowerCase();
               const fSales = f
                 ? sales.filter((s) =>
                     (s.client_name || "").toLowerCase().includes(f) ||
-                    (METHOD_LABELS[s.payment_method] || s.payment_method).toLowerCase().includes(f)
+                    (METHOD_LABELS[s.payment_method] || s.payment_method).toLowerCase().includes(f) ||
+                    sellerName(s).toLowerCase().includes(f)
                   )
                 : sales;
               const activeTotal = fSales.filter((s) => !s.notes?.includes("[ANULADA]")).reduce((a, s) => a + s.total_cents, 0);
@@ -608,6 +623,7 @@ export default function Reportes() {
                       <th className="text-left px-4 py-2.5 font-medium">#</th>
                       <th className="text-left px-4 py-2.5 font-medium">Fecha/Hora</th>
                       <th className="text-left px-4 py-2.5 font-medium">Cliente</th>
+                      <th className="text-left px-4 py-2.5 font-medium">Cajero</th>
                       <th className="text-left px-4 py-2.5 font-medium">Medio</th>
                       <th className="text-right px-4 py-2.5 font-medium">Total</th>
                       <th className="text-center px-4 py-2.5 font-medium">Estado</th>
@@ -622,6 +638,7 @@ export default function Reportes() {
                           <td className="px-4 py-2.5 font-mono text-xs text-stone-400">#{s.id}</td>
                           <td className="px-4 py-2.5 text-xs text-stone-500">{formatDateTime(s.created_at)}</td>
                           <td className="px-4 py-2.5 text-xs">{s.client_name || <span className="text-stone-400">—</span>}</td>
+                          <td className="px-4 py-2.5 text-xs text-stone-500">{sellerName(s)}</td>
                           <td className="px-4 py-2.5 text-xs">{METHOD_LABELS[s.payment_method] || s.payment_method}</td>
                           <td className="px-4 py-2.5 text-right tabular font-medium">{centsToARS(s.total_cents)}</td>
                           <td className="px-4 py-2.5 text-center">
@@ -639,7 +656,7 @@ export default function Reportes() {
                   </tbody>
                   <tfoot className="bg-stone-50 border-t-2 border-stone-200 sticky bottom-0">
                     <tr>
-                      <td colSpan={4} className="px-4 py-2.5 text-xs font-semibold text-stone-600">
+                      <td colSpan={5} className="px-4 py-2.5 text-xs font-semibold text-stone-600">
                         {activeCount} {activeCount === 1 ? "venta válida" : "ventas válidas"}
                       </td>
                       <td className="px-4 py-2.5 text-right tabular font-bold text-stone-800">{centsToARS(activeTotal)}</td>

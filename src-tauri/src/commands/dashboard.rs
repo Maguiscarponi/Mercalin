@@ -158,10 +158,16 @@ pub fn get_dashboard(state: State<AppState>) -> CmdResult<DashboardData> {
     let critical_stock: Vec<CriticalStockItem> = if !crate::db::stock_tracking_enabled(&conn) {
         Vec::new()
     } else {
+        // Encontrado en la auditoría: sin un mínimo de muestra, una sola
+        // venta grande dentro de los 30 días (ej. una corrección de stock
+        // cargada como venta) podía inflar la velocidad diaria y mostrar un
+        // "se agota en 0.X días" poco representativo del consumo real. Se
+        // exige que haya ventas en al menos 2 días distintos del período.
         let mut critical_stmt = conn
             .prepare(
                 "SELECT p.id, p.name, p.stock,
-                        COALESCE(SUM(si.qty), 0) / 30.0 as daily_velocity
+                        COALESCE(SUM(si.qty), 0) / 30.0 as daily_velocity,
+                        COUNT(DISTINCT date(s.created_at, 'localtime')) as sale_days
                  FROM products p
                  LEFT JOIN sale_items si ON p.id = si.product_id
                  LEFT JOIN sales s ON si.sale_id = s.id
@@ -170,6 +176,7 @@ pub fn get_dashboard(state: State<AppState>) -> CmdResult<DashboardData> {
                  WHERE p.active = 1 AND p.stock > 0
                  GROUP BY p.id, p.name, p.stock
                  HAVING daily_velocity > 0.01
+                    AND sale_days >= 2
                     AND CAST(p.stock AS REAL) / daily_velocity < 3.0
                  ORDER BY CAST(p.stock AS REAL) / daily_velocity ASC
                  LIMIT 8",

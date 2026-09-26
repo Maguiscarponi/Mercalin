@@ -420,28 +420,32 @@ export default function Configuracion() {
             <section className="card p-5">
               <h2 className="font-semibold text-sm mb-4">🎯 Metas y objetivos</h2>
               <div className="grid grid-cols-2 gap-4">
+                {/* Encontrado en la auditoría: una meta negativa se guardaba
+                    sin ningún error y después desaparecía en silencio del
+                    Dashboard (que solo muestra metas > 0), sin explicar por
+                    qué. Se clampea acá a 0 -- que ya significa "sin meta". */}
                 <Field label="Meta de venta diaria ($)">
                   <input className="input tabular" inputMode="numeric"
                     value={config.daily_goal_cents ? (Number(config.daily_goal_cents) / 100).toString() : ""}
-                    onChange={(e) => setField("daily_goal_cents", String(arsStringToCents(e.target.value)))}
+                    onChange={(e) => setField("daily_goal_cents", String(Math.max(0, arsStringToCents(e.target.value))))}
                     placeholder="50000" />
                 </Field>
                 <Field label="Meta de venta semanal ($)">
                   <input className="input tabular" inputMode="numeric"
                     value={config.weekly_goal_cents ? (Number(config.weekly_goal_cents) / 100).toString() : ""}
-                    onChange={(e) => setField("weekly_goal_cents", String(arsStringToCents(e.target.value)))}
+                    onChange={(e) => setField("weekly_goal_cents", String(Math.max(0, arsStringToCents(e.target.value))))}
                     placeholder="300000" />
                 </Field>
                 <Field label="Meta de venta mensual ($)">
                   <input className="input tabular" inputMode="numeric"
                     value={config.monthly_goal_cents ? (Number(config.monthly_goal_cents) / 100).toString() : ""}
-                    onChange={(e) => setField("monthly_goal_cents", String(arsStringToCents(e.target.value)))}
+                    onChange={(e) => setField("monthly_goal_cents", String(Math.max(0, arsStringToCents(e.target.value))))}
                     placeholder="1200000" />
                 </Field>
                 <Field label="Meta de venta anual ($)">
                   <input className="input tabular" inputMode="numeric"
                     value={config.yearly_goal_cents ? (Number(config.yearly_goal_cents) / 100).toString() : ""}
-                    onChange={(e) => setField("yearly_goal_cents", String(arsStringToCents(e.target.value)))}
+                    onChange={(e) => setField("yearly_goal_cents", String(Math.max(0, arsStringToCents(e.target.value))))}
                     placeholder="14000000" />
                 </Field>
               </div>
