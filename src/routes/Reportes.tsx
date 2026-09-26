@@ -21,6 +21,7 @@ const METHOD_LABELS: Record<string, string> = {
   fiado: "Fiado",
   cuenta_corriente: "Cta. Cte.",
   mixto: "Pago mixto",
+  nota_de_credito: "Nota de crédito",
 };
 
 type Tab = "resumen" | "ventas" | "margenes" | "stock" | "reposicion" | "libro_iva" | "afinidad";
@@ -74,16 +75,23 @@ export default function Reportes() {
   const [businessAddress, setBusinessAddress] = useState("");
   const [ticketFooter, setTicketFooter] = useState("¡Gracias por su compra!");
   const [reprintSale, setReprintSale] = useState<SaleWithItems | null>(null);
+  // Encontrado en la auditoría: los umbrales de color de margen estaban fijos
+  // en 30%/15%, ignorando el "Margen mínimo" configurable en Configuración
+  // (que Caja y Productos sí respetan) -- con un mínimo real distinto, acá
+  // seguía evaluando con 15% fijo, una lectura distinta al resto del sistema.
+  const [minMarginPct, setMinMarginPct] = useState(15);
 
   useEffect(() => {
     Promise.all([
       api.getConfig("business_name"),
       api.getConfig("business_address"),
       api.getConfig("ticket_footer"),
-    ]).then(([bname, baddr, tfooter]) => {
+      api.getConfig("min_margin_pct"),
+    ]).then(([bname, baddr, tfooter, minMarg]) => {
       if (bname) setBusinessName(bname);
       if (baddr) setBusinessAddress(baddr);
       if (tfooter) setTicketFooter(tfooter);
+      if (minMarg) setMinMarginPct(Number(minMarg) || 15);
     }).catch(console.error);
   }, []);
 
@@ -688,8 +696,8 @@ export default function Reportes() {
                       <td className="py-2 text-right tabular">
                         <span className={clsx(
                           "text-xs px-2 py-0.5 rounded-full font-medium",
-                          c.margin_pct >= 30 ? "bg-emerald-100 text-emerald-700" :
-                          c.margin_pct >= 15 ? "bg-yellow-100 text-yellow-700" :
+                          c.margin_pct >= minMarginPct * 2 ? "bg-emerald-100 text-emerald-700" :
+                          c.margin_pct >= minMarginPct ? "bg-yellow-100 text-yellow-700" :
                           "bg-orange-100 text-orange-700"
                         )}>
                           {c.margin_pct.toFixed(1)}%
@@ -720,7 +728,7 @@ export default function Reportes() {
               if (cum / totalProfit >= 0.8) break;
             }
             const negativoCount = marginProducts.filter(p => p.margin_pct < 0 && p.units_sold > 0 && p.cost_cents > 0).length;
-            const bajoCount = marginProducts.filter(p => p.margin_pct >= 0 && p.margin_pct < 15 && p.units_sold > 0 && p.cost_cents > 0).length;
+            const bajoCount = marginProducts.filter(p => p.margin_pct >= 0 && p.margin_pct < minMarginPct && p.units_sold > 0 && p.cost_cents > 0).length;
             return (
               <div className="space-y-4">
                 {/* Insight Pareto */}
@@ -792,8 +800,8 @@ export default function Reportes() {
                               ) : (
                                 <span className={clsx(
                                   "text-xs px-2 py-0.5 rounded-full font-medium",
-                                  p.margin_pct >= 30 ? "bg-emerald-100 text-emerald-700" :
-                                  p.margin_pct >= 15 ? "bg-yellow-100 text-yellow-700" :
+                                  p.margin_pct >= minMarginPct * 2 ? "bg-emerald-100 text-emerald-700" :
+                                  p.margin_pct >= minMarginPct ? "bg-yellow-100 text-yellow-700" :
                                   "bg-orange-100 text-orange-700"
                                 )}>
                                   {p.margin_pct.toFixed(1)}%
@@ -1052,9 +1060,9 @@ export default function Reportes() {
                     </thead>
                     <tbody>
                       {ivaItems.map((item) => (
-                        <tr key={item.sale_id} className="border-t border-stone-100 hover:bg-stone-50">
+                        <tr key={item.sale_id} className={clsx("border-t border-stone-100 hover:bg-stone-50", item.total_cents < 0 && "bg-amber-50/50")}>
                           <td className="px-4 py-2 tabular text-stone-500">{item.date}</td>
-                          <td className="px-4 py-2 tabular text-stone-400 text-xs">#{item.sale_id}</td>
+                          <td className="px-4 py-2 tabular text-stone-400 text-xs">{item.total_cents < 0 ? "NC" : `#${item.sale_id}`}</td>
                           <td className="px-4 py-2 text-xs">{METHOD_LABELS[item.payment_method] ?? item.payment_method}</td>
                           <td className="px-4 py-2 text-xs text-stone-500">{item.client_name ?? "—"}</td>
                           <td className="px-4 py-2 text-right tabular font-medium">{centsToARS(item.total_cents)}</td>

@@ -452,6 +452,17 @@ fn open_and_migrate_inner(path: &Path) -> Result<Connection> {
     // duplicarla) sin bloquear otras devoluciones parciales de la misma venta.
     let _ = conn.execute_batch("ALTER TABLE electronic_invoices ADD COLUMN return_id INTEGER REFERENCES returns(id);");
 
+    // Encontrado en la auditoría: los reportes de margen/ganancia (Reportes →
+    // Márgenes) usaban el costo ACTUAL del catálogo aplicado retroactivamente
+    // a ventas viejas -- con la inflación actualizando precios seguido, la
+    // "Ganancia" de cualquier período que no fuera "Hoy" quedaba sistemáticamente
+    // desviada de lo que el negocio realmente ganó. Ahora se guarda el costo
+    // vigente al momento de cada venta (por unidad; para combos, ya es la suma
+    // de sus componentes) y los reportes usan ESE valor. Las filas viejas (de
+    // antes de esta migración) quedan en NULL -- los reportes caen al costo
+    // actual para esas, igual que antes, no se puede reconstruir el pasado.
+    let _ = conn.execute_batch("ALTER TABLE sale_items ADD COLUMN cost_cents_at_sale INTEGER;");
+
     // Multicaja: identifica qué terminal física abrió cada sesión, para poder
     // permitir varias cajas abiertas en simultáneo (una por terminal) sin
     // dejar de frenar el doble-click que abre dos sesiones en la MISMA

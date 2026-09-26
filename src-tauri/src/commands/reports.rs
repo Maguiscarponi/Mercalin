@@ -116,6 +116,28 @@ pub fn sales_by_user(
     Ok(out)
 }
 
+// Separada para poder testearla sin una Connection real. Encontrado en la
+// auditoría: antes se calculaba profit_cents = units * (precio_actual -
+// costo_actual), aplicando el costo de HOY a ventas de cualquier fecha.
+// Ahora revenue_cents/cost_basis_cents ya vienen calculados con el costo
+// histórico (cost_cents_at_sale) desde la consulta SQL -- acá solo se
+// deriva la ganancia y el % de margen a partir de esos dos números.
+fn compute_margin_row(price_cents: i64, cost_cents: i64, revenue_cents: i64, cost_basis_cents: i64) -> (i64, f64) {
+    let profit_cents = revenue_cents - cost_basis_cents;
+    // % de margen: si hubo ventas en el período, el margen REAL de esas
+    // ventas (ganancia/facturado); si no, el margen de referencia del
+    // catálogo actual (precio vs. costo de hoy), para no mostrar 0% en un
+    // producto sin ventas que en realidad tiene buen margen de lista.
+    let margin_pct = if revenue_cents > 0 {
+        (profit_cents as f64 / revenue_cents as f64) * 100.0
+    } else if price_cents > 0 {
+        ((price_cents - cost_cents) as f64 / price_cents as f64) * 100.0
+    } else {
+        0.0
+    };
+    (profit_cents, margin_pct)
+}
+
 #[tauri::command]
 pub fn margin_report(
     from_date: String,
@@ -128,6 +150,14 @@ pub fn margin_report(
     // y combo_id=<id> (no dos líneas separadas), así que sin este bloque su facturación
     // quedaba invisible acá aunque sí contara en el Resumen — su "costo" es la suma de
     // los costos de sus componentes.
+    //
+    // Encontrado en la auditoría: antes esto aplicaba p.cost_cents (el costo
+    // ACTUAL del catálogo) a toda unidad vendida en el período, aunque haya
+    // cambiado desde entonces -- con la inflación actualizando costos seguido,
+    // la ganancia de cualquier período que no fuera "Hoy" quedaba sistemáticamente
+    // desviada. Ahora la ganancia usa cost_cents_at_sale (el costo vigente al
+    // momento de CADA venta, ver sales.rs), con el costo actual como respaldo
+    // solo para ventas de antes de que existiera esa columna.
     let mut stmt = conn.prepare(
         "SELECT * FROM (
             SELECT
@@ -137,7 +167,8 @@ pub fn margin_report(
                 p.price_cents,
                 p.cost_cents,
                 COALESCE(SUM(si.qty), 0) as units_sold,
-                COALESCE(SUM(si.qty * si.unit_price_cents * (1 - si.discount_pct/100.0)), 0) as revenue_cents
+                COALESCE(SUM(si.qty * si.unit_price_cents * (1 - si.discount_pct/100.0)), 0) as revenue_cents,
+                COALESCE(SUM(COALESCE(si.cost_cents_at_sale, p.cost_cents) * si.qty), 0) as cost_basis_cents
              FROM products p
              LEFT JOIN sale_items si ON p.id = si.product_id AND si.combo_id IS NULL
              LEFT JOIN sales s ON si.sale_id = s.id
@@ -156,7 +187,11 @@ pub fn margin_report(
                 COALESCE((SELECT SUM(ci.qty * pr.cost_cents) FROM combo_items ci
                           JOIN products pr ON ci.product_id = pr.id WHERE ci.combo_id = c.id), 0) as cost_cents,
                 COALESCE(SUM(si.qty), 0) as units_sold,
-                COALESCE(SUM(si.qty * si.unit_price_cents * (1 - si.discount_pct/100.0)), 0) as revenue_cents
+                COALESCE(SUM(si.qty * si.unit_price_cents * (1 - si.discount_pct/100.0)), 0) as revenue_cents,
+                COALESCE(SUM(COALESCE(si.cost_cents_at_sale,
+                    (SELECT SUM(ci.qty * pr.cost_cents) FROM combo_items ci
+                     JOIN products pr ON ci.product_id = pr.id WHERE ci.combo_id = c.id)
+                ) * si.qty), 0) as cost_basis_cents
              FROM combos c
              LEFT JOIN sale_items si ON c.id = si.combo_id
              LEFT JOIN sales s ON si.sale_id = s.id
@@ -173,18 +208,10 @@ pub fn margin_report(
         let price: i64 = row.get("price_cents")?;
         let cost: i64 = row.get("cost_cents")?;
         let revenue: f64 = row.get::<_, f64>("revenue_cents")?;
+        let cost_basis: f64 = row.get::<_, f64>("cost_basis_cents")?;
         let units: f64 = row.get("units_sold")?;
-        let margin_pct = if price > 0 {
-            ((price - cost) as f64 / price as f64) * 100.0
-        } else {
-            0.0
-        };
         let revenue_cents = revenue.round() as i64;
-        let profit_cents = if units > 0.0 {
-            ((units * (price - cost) as f64).round()) as i64
-        } else {
-            0
-        };
+        let (profit_cents, margin_pct) = compute_margin_row(price, cost, revenue_cents, cost_basis.round() as i64);
         Ok(MarginProduct {
             product_id: row.get("product_id")?,
             name: row.get("name")?,
@@ -211,12 +238,14 @@ pub fn margin_by_category(
 ) -> CmdResult<Vec<MarginCategory>> {
     let conn = state.db.lock();
 
+    // Mismo criterio que margin_report: usa el costo vigente al momento de la
+    // venta (cost_cents_at_sale), no el costo actual del catálogo.
     let mut stmt = conn.prepare(
         "SELECT category, SUM(revenue_cents) as revenue_cents, SUM(cost_cents) as cost_cents FROM (
             SELECT
                 COALESCE(p.category, 'Sin categoría') as category,
                 si.qty * si.unit_price_cents * (1 - si.discount_pct/100.0) as revenue_cents,
-                si.qty * p.cost_cents as cost_cents
+                si.qty * COALESCE(si.cost_cents_at_sale, p.cost_cents) as cost_cents
              FROM sale_items si
              JOIN products p ON si.product_id = p.id AND si.combo_id IS NULL
              JOIN sales s ON si.sale_id = s.id
@@ -228,8 +257,9 @@ pub fn margin_by_category(
              SELECT
                 'Combos' as category,
                 si.qty * si.unit_price_cents * (1 - si.discount_pct/100.0) as revenue_cents,
-                si.qty * COALESCE((SELECT SUM(ci.qty * pr.cost_cents) FROM combo_items ci
-                          JOIN products pr ON ci.product_id = pr.id WHERE ci.combo_id = si.combo_id), 0) as cost_cents
+                si.qty * COALESCE(si.cost_cents_at_sale,
+                    (SELECT SUM(ci.qty * pr.cost_cents) FROM combo_items ci
+                     JOIN products pr ON ci.product_id = pr.id WHERE ci.combo_id = si.combo_id), 0) as cost_cents
              FROM sale_items si
              JOIN sales s ON si.sale_id = s.id
              WHERE si.combo_id IS NOT NULL
@@ -325,6 +355,42 @@ pub fn get_iva_report(
 
     let mut out = Vec::new();
     for r in rows { out.push(r.map_err(err)?); }
+
+    // Encontrado en la auditoría: una Nota de Crédito autorizada por ARCA
+    // seguía sin descontarse acá -- issue_credit_note guarda esas filas con
+    // sale_id=NULL, así que el JOIN de arriba (por sale_id) nunca las
+    // encontraba. Una factura completamente revertida seguía sumando su
+    // neto/IVA entero en el Libro IVA del mes, aunque ARCA ya hubiera
+    // autorizado la nota de crédito correspondiente. Se agregan como líneas
+    // NEGATIVAS (con sale_id negativo para no chocar con una venta real).
+    let mut nc_stmt = conn.prepare(
+        "SELECT nc.id, date(nc.created_at,'localtime') as date, nc.neto_cents, nc.iva_cents, nc.total_cents,
+                nc.client_name, orig.id as orig_sale_id
+         FROM electronic_invoices nc
+         LEFT JOIN electronic_invoices orig ON orig.id = nc.credited_invoice_id
+         WHERE nc.credited_invoice_id IS NOT NULL
+           AND nc.status = 'autorizada'
+           AND date(nc.created_at,'localtime') BETWEEN ?1 AND ?2",
+    ).map_err(err)?;
+    let nc_rows = nc_stmt.query_map(params![from_date, to_date], |row| {
+        let nc_id: i64 = row.get("id")?;
+        let orig_sale_id: Option<i64> = row.get("orig_sale_id")?;
+        Ok(IvaReportItem {
+            date: row.get("date")?,
+            sale_id: -nc_id,
+            payment_method: "nota_de_credito".to_string(),
+            total_cents: -row.get::<_, i64>("total_cents")?,
+            neto_cents: -row.get::<_, i64>("neto_cents")?,
+            iva_cents: -row.get::<_, i64>("iva_cents")?,
+            client_name: Some(format!(
+                "NC — anula venta {}",
+                orig_sale_id.map(|s| format!("#{}", s)).unwrap_or_else(|| "manual".to_string())
+            )),
+            is_invoiced: true,
+        })
+    }).map_err(err)?;
+    for r in nc_rows { out.push(r.map_err(err)?); }
+
     Ok(out)
 }
 
@@ -374,4 +440,38 @@ pub fn get_product_affinity(state: State<AppState>) -> CmdResult<Vec<ProductAffi
         });
     }
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::compute_margin_row;
+
+    #[test]
+    fn usa_costo_historico_no_el_actual_para_la_ganancia() {
+        // Este es el bug real: un producto que costaba $100 cuando se vendió
+        // (y se facturó a $150, ganancia real $50) no debe mostrar ganancia
+        // $0 o negativa solo porque HOY, con inflación, cuesta $160.
+        // revenue_cents/cost_basis_cents ya reflejan el costo de cuando se
+        // vendió (150 y 100), no el costo actual (160) que solo se usa acá
+        // para price_cents/cost_cents de referencia.
+        let (profit, margin_pct) = compute_margin_row(160, 160, 150, 100);
+        assert_eq!(profit, 50);
+        assert!((margin_pct - 33.33).abs() < 0.1);
+    }
+
+    #[test]
+    fn sin_ventas_en_el_periodo_usa_el_margen_de_catalogo_como_referencia() {
+        let (profit, margin_pct) = compute_margin_row(200, 100, 0, 0);
+        assert_eq!(profit, 0);
+        assert_eq!(margin_pct, 50.0);
+    }
+
+    #[test]
+    fn con_ventas_el_margen_es_el_real_del_periodo_no_el_de_catalogo() {
+        // Precio/costo actuales darían 50% de margen, pero la venta real de
+        // este período fue con descuento: ganancia real menor a la de catálogo.
+        let (profit, margin_pct) = compute_margin_row(200, 100, 120, 100);
+        assert_eq!(profit, 20);
+        assert!((margin_pct - 16.66).abs() < 0.1);
+    }
 }

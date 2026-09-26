@@ -272,9 +272,40 @@ pub fn create_sale(input: SaleInput, state: State<AppState>) -> CmdResult<Sale> 
     let sale_id = tx.last_insert_rowid();
 
     for item in &input.items {
+        // Encontrado en la auditoría: los reportes de margen aplicaban el
+        // costo ACTUAL del catálogo a ventas viejas -- se guarda acá el costo
+        // vigente en este momento (por unidad del ítem vendido; para un
+        // combo, la suma de sus componentes) para que el margen histórico no
+        // se desvíe cuando el costo cambia después.
+        let components: Vec<(i64, f64)> = if let Some(cid) = item.combo_id {
+            let mut s = tx.prepare(
+                "SELECT product_id, qty FROM combo_items WHERE combo_id=?1"
+            ).map_err(err)?;
+            let x: Vec<(i64, f64)> = s.query_map(params![cid], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, f64>(1)?)))
+                .map_err(err)?
+                .filter_map(|r| r.ok())
+                .collect();
+            x
+        } else {
+            Vec::new()
+        };
+
+        let cost_cents_at_sale: Option<i64> = if item.combo_id.is_some() {
+            let mut total = 0i64;
+            for (pid, component_qty) in &components {
+                let cost: i64 = tx.query_row("SELECT cost_cents FROM products WHERE id=?1", params![pid], |r| r.get(0)).unwrap_or(0);
+                total += (cost as f64 * component_qty).round() as i64;
+            }
+            Some(total)
+        } else if let Some(pid) = item.product_id {
+            tx.query_row("SELECT cost_cents FROM products WHERE id=?1", params![pid], |r| r.get(0)).ok()
+        } else {
+            None
+        };
+
         tx.execute(
-            "INSERT INTO sale_items (sale_id, product_id, combo_id, barcode, name, unit_price_cents, discount_pct, qty)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            "INSERT INTO sale_items (sale_id, product_id, combo_id, barcode, name, unit_price_cents, discount_pct, qty, cost_cents_at_sale)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             params![
                 sale_id,
                 item.product_id,
@@ -284,22 +315,13 @@ pub fn create_sale(input: SaleInput, state: State<AppState>) -> CmdResult<Sale> 
                 item.unit_price_cents,
                 item.discount_pct,
                 item.qty,
+                cost_cents_at_sale,
             ],
         )
         .map_err(err)?;
 
         if let Some(cid) = item.combo_id {
             // Combo: descontar stock de cada componente individualmente
-            let components: Vec<(i64, f64)> = {
-                let mut s = tx.prepare(
-                    "SELECT product_id, qty FROM combo_items WHERE combo_id=?1"
-                ).map_err(err)?;
-                let x: Vec<(i64, f64)> = s.query_map(params![cid], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, f64>(1)?)))
-                    .map_err(err)?
-                    .filter_map(|r| r.ok())
-                    .collect();
-                x
-            };
             for (pid, component_qty) in components {
                 let total_qty = component_qty * item.qty;
                 let qty_before: f64 = tx.query_row(
