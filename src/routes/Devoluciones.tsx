@@ -1,12 +1,18 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
-import { centsToARS, formatDateTime } from "@/lib/format";
+import { centsToARS, formatDateTime, todayISO } from "@/lib/format";
 import type { Client, ElectronicInvoice, NewReturnItem, ReturnRecord, Sale, SaleWithItems } from "@/types";
 import HelpButton from "@/components/HelpModal";
 import clsx from "clsx";
 
 type Tab = "nueva" | "historial";
-type SearchMode = "numero" | "cliente";
+type SearchMode = "recientes" | "numero" | "cliente";
+
+const METHOD_LABEL: Record<string, string> = {
+  efectivo: "Efectivo", debito: "Débito", credito: "Crédito",
+  qr: "QR / MP", transferencia: "Transferencia",
+  fiado: "Fiado", cuenta_corriente: "Cta. Cte.", mixto: "Mixto",
+};
 
 const REASONS = [
   "Producto defectuoso",
@@ -47,7 +53,15 @@ function lineKey(productId: number | null, comboId: number | null, name: string)
 
 export default function Devoluciones() {
   const [tab, setTab] = useState<Tab>("nueva");
-  const [searchMode, setSearchMode] = useState<SearchMode>("numero");
+  // Por defecto "recientes": la mayoría de las devoluciones son de un cliente
+  // ocasional que no tiene (o no guardó) el ticket con el número de venta --
+  // pedirle ese número de entrada era la principal fricción del módulo.
+  const [searchMode, setSearchMode] = useState<SearchMode>("recientes");
+
+  // Búsqueda por ventas recientes (sin saber el número)
+  const [recentDate, setRecentDate] = useState(todayISO());
+  const [recentSales, setRecentSales] = useState<Sale[]>([]);
+  const [loadingRecent, setLoadingRecent] = useState(false);
 
   // Búsqueda por número
   const [saleIdInput, setSaleIdInput] = useState("");
@@ -83,6 +97,11 @@ export default function Devoluciones() {
   }, [tab]);
 
   useEffect(() => {
+    if (tab === "nueva" && searchMode === "recientes") loadRecentSales(recentDate);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, searchMode, recentDate]);
+
+  useEffect(() => {
     if (clientQuery.trim().length < 2) { setClientResults([]); return; }
     const t = setTimeout(() => {
       api.listClients(clientQuery).then(setClientResults).catch(console.error);
@@ -96,6 +115,14 @@ export default function Devoluciones() {
       setReturns(await api.listReturns(100));
     } catch (e) { console.error(e); }
     finally { setLoadingHistory(false); }
+  }
+
+  async function loadRecentSales(date: string) {
+    setLoadingRecent(true);
+    try {
+      setRecentSales(await api.listSales(date, 100));
+    } catch (e) { console.error(e); }
+    finally { setLoadingRecent(false); }
   }
 
   async function loadClientSales(client: Client) {
@@ -324,7 +351,7 @@ export default function Devoluciones() {
             <div className="flex items-center justify-between mb-3">
               <h2 className="font-medium text-sm">Buscar venta original</h2>
               <div className="flex rounded-md border border-stone-200 overflow-hidden text-xs">
-                {(["numero", "cliente"] as SearchMode[]).map((m) => (
+                {(["recientes", "numero", "cliente"] as SearchMode[]).map((m) => (
                   <button
                     key={m}
                     onClick={() => { setSearchMode(m); reset(); }}
@@ -333,11 +360,54 @@ export default function Devoluciones() {
                       searchMode === m ? "bg-red-600 text-white" : "bg-white hover:bg-stone-50 text-stone-600"
                     )}
                   >
-                    {m === "numero" ? "Por número" : "Por cliente"}
+                    {m === "recientes" ? "Ventas recientes" : m === "numero" ? "Por número" : "Por cliente"}
                   </button>
                 ))}
               </div>
             </div>
+
+            {searchMode === "recientes" && (
+              <div className="space-y-3">
+                <input
+                  type="date"
+                  className="input"
+                  value={recentDate}
+                  max={todayISO()}
+                  onChange={(e) => setRecentDate(e.target.value)}
+                />
+
+                {loadingRecent && (
+                  <p className="text-sm text-stone-400">Cargando ventas…</p>
+                )}
+
+                {!loadingRecent && recentSales.length === 0 && (
+                  <p className="text-sm text-stone-400">No hay ventas registradas ese día.</p>
+                )}
+
+                {recentSales.length > 0 && !saleData && (
+                  <ul className="space-y-1 max-h-64 overflow-y-auto">
+                    {recentSales.map((s) => (
+                      <li key={s.id}>
+                        <button
+                          onClick={() => loadSale(s.id)}
+                          disabled={loadingSearch}
+                          className="w-full text-left px-3 py-2.5 bg-stone-50 hover:bg-red-50 border border-stone-200 hover:border-red-200 rounded-lg text-sm transition-colors"
+                        >
+                          <div className="flex justify-between items-center">
+                            <span className="font-mono text-xs text-stone-400">Venta #{s.id}</span>
+                            <span className="font-semibold tabular">{centsToARS(s.total_cents)}</span>
+                          </div>
+                          <div className="text-xs text-stone-500 mt-0.5 flex justify-between">
+                            <span>{formatDateTime(s.created_at)}{s.client_name ? ` · ${s.client_name}` : ""}</span>
+                            <span>{METHOD_LABEL[s.payment_method] ?? s.payment_method}</span>
+                          </div>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
 
             {searchMode === "numero" && (
               <div className="flex gap-2">

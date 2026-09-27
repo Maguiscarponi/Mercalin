@@ -406,14 +406,19 @@ export const helpContent: Record<string, HelpContent> = {
         title: "Paso 1: Buscar la venta original",
         items: [
           {
+            label: "Ventas recientes (sin saber el número)",
+            description:
+              "Es la opción que abre por defecto. Elegí el día y aparece la lista de ventas de esa fecha, más nuevas primero, con hora, monto y forma de pago — reconocés la venta a simple vista sin necesidad del ticket.",
+          },
+          {
             label: "Por número de venta",
             description:
-              "Si tenés el ticket, escribí el número de venta directamente.",
+              "Si tenés el ticket a mano, escribí el número directamente.",
           },
           {
             label: "Por cliente",
             description:
-              "Si no tenés el ticket a mano, buscá al cliente y elegí entre sus últimas ventas registradas — útil para clientes frecuentes o con cuenta corriente.",
+              "Buscá al cliente y elegí entre sus ventas registradas — útil para clientes frecuentes o con cuenta corriente.",
           },
         ],
       },
