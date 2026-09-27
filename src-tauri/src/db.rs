@@ -593,6 +593,10 @@ fn seed_default_config(conn: &Connection) -> Result<()> {
         // Interruptor general de "Consejo del día" (pedido por Magalí) --
         // apagable desde Configuración para quien no lo quiera ver nunca.
         ("insights_enabled", "1"),
+        // Interruptor general de los botones de ayuda por módulo -- un
+        // comercio con años de uso no los necesita y pueden apagarse
+        // desde el mismo modal, reactivable desde Configuración.
+        ("help_buttons_enabled", "1"),
     ];
     for (key, value) in configs {
         conn.execute(

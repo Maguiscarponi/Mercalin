@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
 import type { CategoryStat } from "@/types";
 import { confirmAction, showToast } from "@/stores/dialogs";
+import HelpButton from "@/components/HelpModal";
 import clsx from "clsx";
 
 type Tab = "categorias" | "marcas";
@@ -12,7 +13,10 @@ export default function Categorias() {
 
   return (
     <div className="h-full flex flex-col p-4 gap-4">
-      <h1 className="text-xl font-semibold">Categorías y marcas</h1>
+      <div className="flex items-center gap-2">
+        <h1 className="text-xl font-semibold">Categorías y marcas</h1>
+        <HelpButton module="categorias" />
+      </div>
 
       <div className="flex gap-1 border-b border-stone-200">
         {([

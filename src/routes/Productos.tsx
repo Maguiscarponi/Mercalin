@@ -277,6 +277,7 @@ export default function Productos() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <h1 className="text-xl font-semibold">Productos</h1>
+          <HelpButton module="productos" />
           {lowStock.length > 0 && (
             <button
               onClick={() => setTab(tab === "alertas" ? "todos" : "alertas")}
@@ -898,7 +899,6 @@ export default function Productos() {
         />
       )}
 
-      <HelpButton module="productos" />
     </div>
   );
 }

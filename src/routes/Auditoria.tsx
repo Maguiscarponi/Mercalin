@@ -7,6 +7,7 @@ import ModalCloseButton from "@/components/ui/ModalCloseButton";
 import TicketPrint from "@/components/TicketPrint";
 import { exportStyledExcel } from "@/lib/excelExport";
 import { showToast } from "@/stores/dialogs";
+import HelpButton from "@/components/HelpModal";
 import clsx from "clsx";
 
 const METHOD_LABELS: Record<string, string> = {
@@ -190,7 +191,10 @@ export default function Auditoria() {
     <div className="h-full flex flex-col p-4 gap-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold">Auditoría</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl font-semibold">Auditoría</h1>
+            <HelpButton module="auditoria" />
+          </div>
           <p className="text-sm text-stone-500 mt-0.5">Registro de acciones críticas del sistema — tocá una fila para ver el detalle completo</p>
         </div>
         <div className="flex items-center gap-2">

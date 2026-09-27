@@ -11,6 +11,7 @@ import { decideInvoiceType, condicionIvaClienteLabel } from "@/lib/facturacion";
 import { openSupportWhatsapp } from "@/lib/support";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import HelpImageButton from "@/components/ui/HelpImageButton";
+import HelpButton from "@/components/HelpModal";
 import imgCrearDn from "@/assets/ayuda-arca/wsass-crear-dn.png";
 import imgListaServicios from "@/assets/ayuda-arca/wsass-lista-servicios.png";
 import imgAutorizacion from "@/assets/ayuda-arca/wsass-autorizacion.png";
@@ -199,7 +200,10 @@ export default function Facturacion() {
     <div className="h-full flex flex-col">
       {/* Header con tabs */}
       <div className="bg-white border-b border-stone-200 px-6 pt-5 pb-0">
-        <h1 className="text-xl font-semibold mb-3">Facturación Electrónica</h1>
+        <div className="flex items-center gap-2 mb-3">
+          <h1 className="text-xl font-semibold">Facturación Electrónica</h1>
+          <HelpButton module="facturacion" />
+        </div>
         <div className="flex gap-1">
           {([
             { id: "facturas" as Tab, label: "Comprobantes" },

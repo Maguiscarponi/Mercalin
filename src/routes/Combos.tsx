@@ -5,6 +5,7 @@ import { confirmAction, showToast } from "@/stores/dialogs";
 import { useEscapeToClose } from "@/lib/useEscapeToClose";
 import ModalCloseButton from "@/components/ui/ModalCloseButton";
 import { useCombosEnabledStore } from "@/stores/combosEnabled";
+import HelpButton from "@/components/HelpModal";
 import type { Combo, ComboWithItems, NewCombo, NewComboItem, Product } from "@/types";
 import clsx from "clsx";
 
@@ -81,7 +82,10 @@ export default function Combos() {
     <div className="h-full flex flex-col p-4 gap-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold">Combos y packs</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl font-semibold">Combos y packs</h1>
+            <HelpButton module="combos" />
+          </div>
           <p className="text-xs text-stone-500 mt-0.5">Al vender un combo, el stock se descuenta de cada componente</p>
         </div>
         <div className="flex items-center gap-3">

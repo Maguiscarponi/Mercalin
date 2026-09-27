@@ -10,6 +10,7 @@ import ModalCloseButton from "@/components/ui/ModalCloseButton";
 import TicketPrint from "@/components/TicketPrint";
 import { exportStyledExcel, CURRENCY_FMT, INT_FMT, PCT_FMT, type ExcelSheet } from "@/lib/excelExport";
 import { Loader2 } from "lucide-react";
+import HelpButton from "@/components/HelpModal";
 import clsx from "clsx";
 
 const METHOD_LABELS: Record<string, string> = {
@@ -350,6 +351,7 @@ export default function Reportes() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3 flex-wrap">
           <h1 className="text-xl font-semibold">Reportes</h1>
+          <HelpButton module="reportes" />
           {/* Selector de período */}
           <div className="flex rounded-md border border-stone-200 overflow-hidden text-xs">
             {PERIODS.map((p) => (

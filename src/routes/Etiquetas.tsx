@@ -9,6 +9,7 @@ import { useEscapeToClose } from "@/lib/useEscapeToClose";
 import ModalCloseButton from "@/components/ui/ModalCloseButton";
 import { useStockTrackingStore } from "@/stores/stockTracking";
 import { useCombosEnabledStore } from "@/stores/combosEnabled";
+import HelpButton from "@/components/HelpModal";
 import type { ComboWithItems, Product } from "@/types";
 
 // Los combos no son productos, pero para reusar toda la lógica de plantillas/impresión
@@ -699,7 +700,10 @@ export default function Etiquetas() {
     <div className="h-full flex flex-col p-4 gap-3">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Etiquetas para góndola</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-xl font-semibold">Etiquetas para góndola</h1>
+          <HelpButton module="etiquetas" />
+        </div>
         <div className="flex gap-2">
           {stockTrackingEnabled && (
             <button

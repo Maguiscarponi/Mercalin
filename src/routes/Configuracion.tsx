@@ -11,12 +11,14 @@ import { useUpdaterStore } from "@/stores/updater";
 import { useStockTrackingStore } from "@/stores/stockTracking";
 import { useCombosEnabledStore } from "@/stores/combosEnabled";
 import { useInsightsStore } from "@/stores/insights";
+import { useHelpEnabledStore } from "@/stores/helpEnabled";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { getVersion } from "@tauri-apps/api/app";
 import { openSupportWhatsapp } from "@/lib/support";
 import { useAuthStore } from "@/stores/auth";
 import Field from "@/components/ui/Field";
+import HelpButton from "@/components/HelpModal";
 import clsx from "clsx";
 
 type Tab = "general" | "finanzas" | "backup" | "sistema";
@@ -56,6 +58,7 @@ export default function Configuracion() {
   const updater = useUpdaterStore();
   const stockTrackingEnabled = useStockTrackingStore((s) => s.enabled);
   const combosEnabled = useCombosEnabledStore((s) => s.enabled);
+  const helpButtonsEnabled = useHelpEnabledStore((s) => s.enabled);
 
   const [licenseStatus, setLicenseStatus] = useState<LicenseStatus | null>(null);
   const [licenseKeyInput, setLicenseKeyInput] = useState("");
@@ -332,7 +335,10 @@ export default function Configuracion() {
       {/* Header con tabs */}
       <div className="bg-white border-b border-stone-200 px-6 pt-5 pb-0 flex items-end justify-between">
         <div>
-          <h1 className="text-xl font-semibold mb-3">Configuración</h1>
+          <div className="flex items-center gap-2 mb-3">
+            <h1 className="text-xl font-semibold">Configuración</h1>
+            <HelpButton module="configuracion" />
+          </div>
           <div className="flex gap-1">
             {TABS.map((t) => (
               <button
@@ -473,6 +479,24 @@ export default function Configuracion() {
                   </div>
                 </div>
               )}
+            </section>
+
+            <section className="card p-5">
+              <div className="flex items-center justify-between mb-1">
+                <h2 className="font-semibold text-sm">❓ Botones de ayuda</h2>
+                <label className="relative inline-flex cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="sr-only peer"
+                    checked={helpButtonsEnabled}
+                    onChange={(e) => useHelpEnabledStore.getState().setEnabled(e.target.checked)}
+                  />
+                  <div className="w-9 h-5 bg-stone-200 peer-checked:bg-sky-500 rounded-full transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:w-4 after:h-4 after:transition-all peer-checked:after:translate-x-4" />
+                </label>
+              </div>
+              <p className="text-xs text-stone-400">
+                El circulito con "?" que aparece al lado del título en cada pantalla, con instrucciones de cómo usarla. Apagalo si ya conocés el sistema y no lo necesitás más.
+              </p>
             </section>
 
             <section className="card p-5">

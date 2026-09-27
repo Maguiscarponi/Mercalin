@@ -5,6 +5,7 @@ import type { CashSession, CashMovement } from "@/types";
 import { CashSessionPanel, OpenCashForm } from "./Caja_Sesion";
 import { useEscapeToClose } from "@/lib/useEscapeToClose";
 import ModalCloseButton from "@/components/ui/ModalCloseButton";
+import HelpButton from "@/components/HelpModal";
 import clsx from "clsx";
 
 export default function CajaGestion() {
@@ -49,7 +50,10 @@ export default function CajaGestion() {
   return (
     <div className="h-full flex flex-col p-4 gap-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Gestión de Caja</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-xl font-semibold">Gestión de Caja</h1>
+          <HelpButton module="caja-gestion" />
+        </div>
         {session === undefined ? null : session ? (
           <button onClick={() => setShowPanel(true)} className="btn btn-primary">
             Ver caja abierta

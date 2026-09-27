@@ -183,7 +183,10 @@ export default function Inventario() {
       <div className="h-full flex flex-col items-center justify-center p-8 gap-6">
         <div className="text-center max-w-md">
           <div className="text-5xl mb-4">📦</div>
-          <h1 className="text-2xl font-bold mb-2">Conteo de inventario</h1>
+          <h1 className="text-2xl font-bold mb-2 flex items-center justify-center gap-2">
+            Conteo de inventario
+            <HelpButton module="inventario" />
+          </h1>
           <p className="text-stone-500 text-sm">
             El sistema cargará todos los productos activos. Ingresás la cantidad contada físicamente
             para cada uno, y el sistema registra los ajustes automáticamente.
@@ -196,7 +199,6 @@ export default function Inventario() {
         >
           {loading ? "Cargando…" : "Iniciar conteo"}
         </button>
-        <HelpButton module="inventario" />
       </div>
     );
   }
@@ -217,7 +219,6 @@ export default function Inventario() {
         >
           Nuevo conteo
         </button>
-        <HelpButton module="inventario" />
       </div>
     );
   }
@@ -227,8 +228,9 @@ export default function Inventario() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold">
+          <h1 className="text-xl font-semibold flex items-center gap-2">
             {step === "contando" ? "Conteo de inventario" : "Revisión de diferencias"}
+            <HelpButton module="inventario" />
           </h1>
           <p className="text-sm text-stone-500 mt-0.5">
             {countedCount} / {products.length} contados · {diffCount} diferencia{diffCount !== 1 ? "s" : ""}
@@ -386,8 +388,6 @@ export default function Inventario() {
           </div>
         )}
       </div>
-
-      <HelpButton module="inventario" />
     </div>
   );
 }

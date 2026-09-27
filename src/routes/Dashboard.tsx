@@ -12,6 +12,7 @@ import { useEscapeToClose } from "@/lib/useEscapeToClose";
 import OnboardingChecklist from "@/components/OnboardingChecklist";
 import { AllInsightsModal, InsightRow, LEVEL_LABEL, BADGE_CLASS } from "@/components/InsightsPanel";
 import { useInsightsStore } from "@/stores/insights";
+import HelpButton from "@/components/HelpModal";
 import type { DashboardData, Insight, CriticalStockItem, ExpiringAlertItem, OverdueAccountItem } from "@/types";
 
 type AlertEntry =
@@ -347,8 +348,9 @@ export default function Dashboard() {
         <div className="flex items-center gap-2.5">
           <GreetingIcon className="w-4 h-4 text-stone-400" />
           <div>
-            <div className="text-sm font-semibold text-stone-800">
+            <div className="text-sm font-semibold text-stone-800 flex items-center gap-2">
               {greetingTime()} · <span className="capitalize">{dateStr}</span>
+              <HelpButton module="dashboard" />
             </div>
             {lastUpdate && (
               <div className="text-[11px] text-stone-400 mt-0.5">

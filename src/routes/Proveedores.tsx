@@ -6,6 +6,7 @@ import Field from "@/components/ui/Field";
 import { useEscapeToClose } from "@/lib/useEscapeToClose";
 import ModalCloseButton from "@/components/ui/ModalCloseButton";
 import { useStockTrackingStore } from "@/stores/stockTracking";
+import HelpButton from "@/components/HelpModal";
 import type { NewSupplier, Product, PurchaseOrder, PurchaseOrderItem, Supplier, PurchaseProjection, SupplierLeadTime, CostInflationItem, SupplierRiskScore } from "@/types";
 
 export default function Proveedores() {
@@ -139,6 +140,7 @@ export default function Proveedores() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <h1 className="text-xl font-semibold">Proveedores</h1>
+          <HelpButton module="proveedores" />
           {pending.length > 0 && (
             <span className="px-2.5 py-1 bg-amber-50 text-amber-700 text-xs font-medium rounded-md border border-amber-200">
               {pending.length} órdenes pendientes

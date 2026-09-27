@@ -7,6 +7,7 @@ import Field from "@/components/ui/Field";
 import { useEscapeToClose } from "@/lib/useEscapeToClose";
 import ModalCloseButton from "@/components/ui/ModalCloseButton";
 import type { NewUser, User, UserRole } from "@/types";
+import HelpButton from "@/components/HelpModal";
 import clsx from "clsx";
 
 const ROLES: { id: UserRole; label: string; desc: string }[] = [
@@ -90,7 +91,10 @@ export default function Usuarios() {
   return (
     <div className="h-full flex flex-col p-4 gap-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Usuarios y Permisos</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-xl font-semibold">Usuarios y Permisos</h1>
+          <HelpButton module="usuarios" />
+        </div>
         <button
           onClick={() => setEditing({ role: "cajero" })}
           className="btn btn-primary"

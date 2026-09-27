@@ -10,7 +10,6 @@ import clsx from "clsx";
 import PaymentModal from "@/components/PaymentModal";
 import TicketPrint from "@/components/TicketPrint";
 import { CashSessionPanel, OpenCashForm } from "./Caja_Sesion";
-import HelpButton from "@/components/HelpModal";
 import { confirmAction, showToast } from "@/stores/dialogs";
 import { useStockTrackingStore } from "@/stores/stockTracking";
 import { useCombosEnabledStore } from "@/stores/combosEnabled";
@@ -1119,8 +1118,6 @@ ${itemsHtml}
           {promoToast}
         </div>
       )}
-
-      <HelpButton module="caja" />
 
     </div>
   );

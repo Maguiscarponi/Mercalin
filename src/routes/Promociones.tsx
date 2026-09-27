@@ -5,6 +5,7 @@ import { confirmAction, showToast } from "@/stores/dialogs";
 import Field from "@/components/ui/Field";
 import { useEscapeToClose } from "@/lib/useEscapeToClose";
 import ModalCloseButton from "@/components/ui/ModalCloseButton";
+import HelpButton from "@/components/HelpModal";
 import type { NewPromotion, Product, Promotion, PromoAppliesTo, PromoType } from "@/types";
 import clsx from "clsx";
 
@@ -97,7 +98,10 @@ export default function Promociones() {
   return (
     <div className="h-full flex flex-col p-4 gap-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Promociones y Descuentos</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-xl font-semibold">Promociones y Descuentos</h1>
+          <HelpButton module="promociones" />
+        </div>
         <button
           onClick={() =>
             setEditing({ promo_type: "pct", applies_to: "all", value: 0, active: true })

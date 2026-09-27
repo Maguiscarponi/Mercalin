@@ -8,6 +8,7 @@ import ModalCloseButton from "@/components/ui/ModalCloseButton";
 import { exportStyledExcel, CURRENCY_FMT } from "@/lib/excelExport";
 import { printHtml } from "@/lib/printHtml";
 import { Loader2 } from "lucide-react";
+import HelpButton from "@/components/HelpModal";
 import type { Client, ClientAccountEntry, ClientRfm, ClientSegment, NewClient } from "@/types";
 import clsx from "clsx";
 
@@ -172,6 +173,7 @@ export default function Clientes() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <h1 className="text-xl font-semibold">Clientes</h1>
+          <HelpButton module="clientes" />
           {debtors.length > 0 && (
             <button
               onClick={() => setDebtFilter((f) => !f)}

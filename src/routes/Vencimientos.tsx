@@ -5,6 +5,7 @@ import { confirmAction, showToast } from "@/stores/dialogs";
 import { useEscapeToClose } from "@/lib/useEscapeToClose";
 import ModalCloseButton from "@/components/ui/ModalCloseButton";
 import type { ExpiringLot, NewProductLot, Product } from "@/types";
+import HelpButton from "@/components/HelpModal";
 import clsx from "clsx";
 
 function daysLabel(days: number) {
@@ -90,7 +91,10 @@ export default function Vencimientos() {
     <div className="h-full flex flex-col p-4 gap-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold">Vencimientos</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl font-semibold">Vencimientos</h1>
+            <HelpButton module="vencimientos" />
+          </div>
           <p className="text-sm text-stone-500 mt-0.5">
             Hoy: {formatDate(today + "T00:00:00")} — Cada fila es un lote separado (FEFO)
           </p>

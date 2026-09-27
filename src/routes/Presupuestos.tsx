@@ -7,6 +7,7 @@ import { printHtml } from "@/lib/printHtml";
 import { useEscapeToClose } from "@/lib/useEscapeToClose";
 import ModalCloseButton from "@/components/ui/ModalCloseButton";
 import { useCart } from "@/stores/cart";
+import HelpButton from "@/components/HelpModal";
 import type { CartItem, Client, NewQuote, NewQuoteItem, Product, Quote, QuoteWithItems, QuoteStatus } from "@/types";
 import clsx from "clsx";
 
@@ -90,6 +91,7 @@ export default function Presupuestos() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <h1 className="text-xl font-semibold">Presupuestos</h1>
+          <HelpButton module="presupuestos" />
           <div className="flex rounded-md border border-stone-200 overflow-hidden text-xs">
             <button
               onClick={() => setStatusFilter("")}

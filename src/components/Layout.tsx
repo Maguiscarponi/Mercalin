@@ -4,7 +4,7 @@ import clsx from "clsx";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   LogOut, Maximize2, Minimize2, ChevronLeft, ChevronRight, ArrowLeft,
-  Store, Search, Bell, AlertTriangle, KeyRound,
+  Store, Search, Bell, AlertTriangle, KeyRound, HelpCircle,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
@@ -14,6 +14,8 @@ import { useUpdaterStore } from "@/stores/updater";
 import { useStockTrackingStore } from "@/stores/stockTracking";
 import { useCombosEnabledStore } from "@/stores/combosEnabled";
 import { useInsightsStore } from "@/stores/insights";
+import { useHelpEnabledStore } from "@/stores/helpEnabled";
+import { HelpModalContent, useShowHelpButton } from "@/components/HelpModal";
 import { Download } from "lucide-react";
 import { useCommandPaletteStore } from "@/stores/commandPalette";
 import { NAV_GROUPS, KEY_ROUTES, ALT_KEY_ROUTES, ROLE_LABEL, hasAccess } from "@/lib/navigation";
@@ -68,12 +70,14 @@ const GROUP_ACCENT: Record<string, GroupAccent> = {
 // (por ahora solo Caja: es donde más importa durante una venta con el cliente esperando).
 // El resto de los módulos mantiene el menú lateral para poder saltar de uno a otro directo.
 const FOCUS_MODE_ROUTES = new Set(["/caja"]);
+const FOCUS_MODE_HELP_MODULE: Record<string, string> = { "/caja": "caja" };
 
 export default function Layout() {
   const [businessName, setBusinessName] = useState("Punto Simple");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showInsights, setShowInsights] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   const [showCloseCajaWarning, setShowCloseCajaWarning] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
@@ -91,6 +95,8 @@ export default function Layout() {
   const insights = useInsightsStore((s) => s.insights);
   const isFocusMode = FOCUS_MODE_ROUTES.has(location.pathname);
   const focusLabel = NAV_GROUPS.flatMap((g) => g.links).find((l) => l.to === location.pathname)?.label ?? "";
+  const focusHelpModule = FOCUS_MODE_HELP_MODULE[location.pathname] ?? "";
+  const showFocusHelp = useShowHelpButton(focusHelpModule);
 
   useEffect(() => {
     api.getConfig("business_name").then((n) => { if (n) setBusinessName(n); }).catch(console.error);
@@ -102,6 +108,7 @@ export default function Layout() {
   useEffect(() => { api.getLicenseStatus().then(setLicenseStatus).catch(() => {}); }, []);
   useEffect(() => { useStockTrackingStore.getState().hydrate(); }, []);
   useEffect(() => { useCombosEnabledStore.getState().hydrate(); }, []);
+  useEffect(() => { useHelpEnabledStore.getState().hydrate(); }, []);
 
   // Los consejos se recalculan solos al abrir la app y después cada 10 min
   // — así la campanita tiene datos frescos aunque nunca se entre al Dashboard.
@@ -444,6 +451,15 @@ export default function Layout() {
                 )} />
               </span>
             )}
+            {showFocusHelp && (
+              <button
+                onClick={() => setShowHelp(true)}
+                title="Ayuda de este módulo"
+                className="text-white/70 hover:text-white hover:bg-white/10 transition-colors rounded-md w-8 h-8 flex items-center justify-center shrink-0"
+              >
+                <HelpCircle size={15} />
+              </button>
+            )}
             <button
               onClick={() => setShowInsights(true)}
               title="Consejos del día"
@@ -495,6 +511,7 @@ export default function Layout() {
       {availableUpdate && !updateDismissed && (
         <UpdateModal update={availableUpdate} onDismiss={() => setUpdateDismissed(true)} />
       )}
+      <HelpModalContent module={focusHelpModule} open={showHelp} onClose={() => setShowHelp(false)} />
     </div>
   );
 }

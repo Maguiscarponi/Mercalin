@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { centsToARS, formatDateTime } from "@/lib/format";
 import type { Client, ElectronicInvoice, NewReturnItem, ReturnRecord, Sale, SaleWithItems } from "@/types";
+import HelpButton from "@/components/HelpModal";
 import clsx from "clsx";
 
 type Tab = "nueva" | "historial";
@@ -276,7 +277,10 @@ export default function Devoluciones() {
   return (
     <div className="h-full flex flex-col p-4 gap-3">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Devoluciones</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-xl font-semibold">Devoluciones</h1>
+          <HelpButton module="devoluciones" />
+        </div>
         <div className="flex rounded-md border border-stone-200 overflow-hidden text-xs">
           {(["nueva", "historial"] as Tab[]).map((t) => (
             <button
