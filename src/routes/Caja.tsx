@@ -33,7 +33,7 @@ export default function Caja() {
   const [showClientSearch, setShowClientSearch] = useState(false);
   const [discountStr, setDiscountStr] = useState("");
   const [showPriceCheck, setShowPriceCheck] = useState(false);
-  const [businessName, setBusinessName] = useState("Punto Simple POS");
+  const [businessName, setBusinessName] = useState("Mercalin");
   const [businessAddress, setBusinessAddress] = useState("");
   const [ticketFooter, setTicketFooter] = useState("¡Gracias por su compra!");
   const [lastSale, setLastSale] = useState<SaleWithItems | null>(null);

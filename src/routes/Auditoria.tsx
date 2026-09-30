@@ -355,7 +355,7 @@ function AuditDetailModal({ entry, onClose }: { entry: AuditEntry; onClose: () =
   const [sessionTotal, setSessionTotal] = useState(0);
 
   const [showTicket, setShowTicket] = useState(false);
-  const [businessInfo, setBusinessInfo] = useState({ name: "Punto Simple POS", address: "", footer: "¡Gracias por su compra!" });
+  const [businessInfo, setBusinessInfo] = useState({ name: "Mercalin", address: "", footer: "¡Gracias por su compra!" });
 
   useEffect(() => {
     if (!kind || entry.entity_id == null) return;
@@ -399,7 +399,7 @@ function AuditDetailModal({ entry, onClose }: { entry: AuditEntry; onClose: () =
         api.getConfig("ticket_footer"),
       ]);
       setBusinessInfo({
-        name: name || "Punto Simple POS",
+        name: name || "Mercalin",
         address: addr || "",
         footer: footer || "¡Gracias por su compra!",
       });

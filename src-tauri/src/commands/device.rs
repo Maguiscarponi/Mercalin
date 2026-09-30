@@ -182,7 +182,7 @@ pub fn bootstrap_from_server(server_addr: String, token: String, state: State<Ap
     cfg.network_token = Some(token);
     write_device_config(&app_dir, &cfg)?;
 
-    Ok("Descarga completa. Reiniciá Punto Simple para terminar de conectar esta caja.".to_string())
+    Ok("Descarga completa. Reiniciá Mercalin para terminar de conectar esta caja.".to_string())
 }
 
 // Vuelve esta caja a modo standalone (no toca la base local -- solo deja de

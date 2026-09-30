@@ -974,7 +974,7 @@ export default function Configuracion() {
               <h2 className="font-semibold text-sm mb-3">ℹ️ Acerca del sistema</h2>
               <dl className="text-sm space-y-1.5 text-stone-600">
                 <div className="flex justify-between"><dt>Versión</dt><dd className="font-mono">{appVersion || "…"}</dd></div>
-                <div className="flex justify-between"><dt>Sistema</dt><dd>Punto Simple POS</dd></div>
+                <div className="flex justify-between"><dt>Sistema</dt><dd>Mercalin</dd></div>
                 <div className="flex justify-between"><dt>Motor de DB</dt><dd>SQLite (local)</dd></div>
               </dl>
 

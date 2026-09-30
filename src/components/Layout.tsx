@@ -73,7 +73,7 @@ const FOCUS_MODE_ROUTES = new Set(["/caja"]);
 const FOCUS_MODE_HELP_MODULE: Record<string, string> = { "/caja": "caja" };
 
 export default function Layout() {
-  const [businessName, setBusinessName] = useState("Punto Simple");
+  const [businessName, setBusinessName] = useState("Mercalin");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showInsights, setShowInsights] = useState(false);
@@ -194,7 +194,7 @@ export default function Layout() {
           {sidebarOpen && (
             <div className="flex-1 min-w-0">
               <div className="font-bold text-sm text-stone-900 truncate leading-tight">{businessName}</div>
-              <div className="text-[10px] text-stone-400 mt-0.5 tracking-wide">Punto Simple POS</div>
+              <div className="text-[10px] text-stone-400 mt-0.5 tracking-wide">Mercalin</div>
             </div>
           )}
           {sidebarOpen && (

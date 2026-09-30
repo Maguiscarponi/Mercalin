@@ -72,7 +72,7 @@ export default function Reportes() {
   const [loadingAffinity, setLoadingAffinity] = useState(false);
   const [exportingExcel, setExportingExcel] = useState(false);
   const [exportingIva, setExportingIva] = useState(false);
-  const [businessName, setBusinessName] = useState("Punto Simple POS");
+  const [businessName, setBusinessName] = useState("Mercalin");
   const [businessAddress, setBusinessAddress] = useState("");
   const [ticketFooter, setTicketFooter] = useState("¡Gracias por su compra!");
   const [reprintSale, setReprintSale] = useState<SaleWithItems | null>(null);
@@ -1217,7 +1217,7 @@ function PrintReport({
           <div style={{ color: "#4b5563", fontSize: "12pt", marginTop: "4px" }}>Período: {periodLabel}</div>
         </div>
         <div style={{ textAlign: "right", color: "#6b7280", fontSize: "10pt" }}>
-          <div>Punto Simple POS</div>
+          <div>Mercalin</div>
           <div>Generado: {new Date().toLocaleString("es-AR")}</div>
         </div>
       </div>
@@ -1353,7 +1353,7 @@ function PrintReport({
 
       {/* Pie */}
       <div style={{ marginTop: "40px", borderTop: "1px solid #e5e7eb", paddingTop: "12px", color: "#9ca3af", fontSize: "9pt", display: "flex", justifyContent: "space-between" }}>
-        <span>Punto Simple POS — {periodLabel}</span>
+        <span>Mercalin — {periodLabel}</span>
         <span>{validSales.length} ventas válidas · Total: {centsToARS(report.total_cents)}</span>
       </div>
     </div>

@@ -297,7 +297,7 @@ function QuoteDetailModal({
       <div class="header">
         <h1>Presupuesto #${quote.id}</h1>
         <div class="meta">
-          <div>Punto Simple POS</div>
+          <div>Mercalin</div>
           <div>${new Date().toLocaleDateString("es-AR")}</div>
         </div>
       </div>
@@ -314,7 +314,7 @@ function QuoteDetailModal({
       </table>
       ${quote.discount_cents > 0 ? `<p class="right discount">Descuento: -$${(quote.discount_cents / 100).toFixed(2)}</p>` : ""}
       <div class="totalbox"><div>TOTAL: $${(quote.total_cents / 100).toFixed(2)}</div></div>
-      <div class="footer">Presupuesto generado por Punto Simple POS</div>
+      <div class="footer">Presupuesto generado por Mercalin</div>
       </body></html>`;
     printHtml(html);
   }

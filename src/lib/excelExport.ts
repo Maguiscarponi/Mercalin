@@ -30,7 +30,7 @@ export const PCT_FMT = '0.0"%"';
 
 export async function exportStyledExcel(sheets: ExcelSheet[], filename: string) {
   const wb = new ExcelJS.Workbook();
-  wb.creator = "Punto Simple POS";
+  wb.creator = "Mercalin";
   wb.created = new Date();
 
   for (const sheet of sheets) {

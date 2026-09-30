@@ -117,7 +117,7 @@ export default function Activation({ onActivated }: { onActivated: (status: Lice
         </div>
 
         <p className="text-center text-xs text-stone-400 mt-6">
-          ¿No tenés una clave? Escribinos para comprar Punto Simple POS.
+          ¿No tenés una clave? Escribinos para comprar Mercalin.
         </p>
       </div>
     </div>

@@ -50,7 +50,7 @@ fn tablet_html(ip: &str, port: u16) -> String {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Punto Simple — Vista Tablet</title>
+<title>Mercalin — Vista Tablet</title>
 <style>
   *{{box-sizing:border-box;margin:0;padding:0}}
   body{{font-family:system-ui,sans-serif;background:#f5f5f4;color:#1c1917;min-height:100vh}}
@@ -77,7 +77,7 @@ fn tablet_html(ip: &str, port: u16) -> String {
 <body>
 <div class="header">
   <div>
-    <h1>Punto Simple POS</h1>
+    <h1>Mercalin</h1>
     <div class="sub">Vista tablet — {ip}:{port}</div>
   </div>
   <button class="refresh" onclick="loadAll()">↻ Actualizar</button>

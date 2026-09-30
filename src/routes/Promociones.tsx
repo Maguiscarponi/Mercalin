@@ -285,13 +285,17 @@ function ProductPicker({
   const [showDrop, setShowDrop] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
+  // Con un producto ya elegido no se busca de nuevo: elegirlo cambia el texto
+  // del campo, y eso volvía a abrir la lista de sugerencias encima del resto
+  // del formulario. Si se vuelve a escribir, onChangeText borra la elección y
+  // la búsqueda vuelve a funcionar.
   useEffect(() => {
-    if (!value.trim()) { setResults([]); return; }
+    if (!value.trim() || hasSelection) { setResults([]); setShowDrop(false); return; }
     const t = setTimeout(() => {
       api.listProducts(value).then((r) => { setResults(r.slice(0, 8)); setShowDrop(r.length > 0); }).catch(() => {});
     }, 200);
     return () => clearTimeout(t);
-  }, [value]);
+  }, [value, hasSelection]);
 
   return (
     <div className="relative" ref={ref}>

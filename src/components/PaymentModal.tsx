@@ -81,7 +81,7 @@ export default function PaymentModal({ totalCents, sessionId, isRi, onClose, onC
   const [submitting, setSubmitting] = useState(false);
   const [completedSale, setCompletedSale] = useState<SaleWithItems | null>(null);
   const [showTicket, setShowTicket] = useState(false);
-  const [businessName, setBusinessName]   = useState("Punto Simple POS");
+  const [businessName, setBusinessName]   = useState("Mercalin");
   const [businessAddress, setBusinessAddress] = useState("");
   const [ticketFooter, setTicketFooter]   = useState("¡Gracias por su compra!");
   const [arcaConfig, setArcaConfig] = useState<ArcaConfig | null>(null);
