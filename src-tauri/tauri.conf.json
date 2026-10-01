@@ -29,6 +29,12 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "publisher": "Mercalin",
+    "copyright": "© 2026 Mercalin",
+    "category": "Business",
+    "shortDescription": "Sistema de gestión y punto de venta para comercios",
+    "longDescription": "Mercalin es un sistema de gestión y punto de venta para kioscos, almacenes y comercios: caja, stock, clientes, promociones, reportes y facturación electrónica ARCA.",
+    "homepage": "https://www.mercalinonline.com",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
