@@ -1,0 +1,11 @@
+{
+  "version": "1.6.2",
+  "notes": "- Promociones: cartel para la góndola listo para imprimir\n- Facturación ARCA: elegir si se factura sola al cobrar o a mano",
+  "pub_date": "2026-10-01T01:41:42Z",
+  "platforms": {
+    "windows-x86_64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRaWhIVW5uSC9FZnovRy9yQk5IV0lzSzVmTWdETzdhSUtMb1c4VGZRRUpxRGh6K2tmRGR1OGxuKy9pMEhLSklVTWNXcU9pU0dRSHRQaTNKWk1oQTJKdk5aSDdzN2xmeGdnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwODE4OTAyCWZpbGU6TWVyY2FsaW5fMS42LjJfeDY0LXNldHVwLmV4ZQprZXNIeDQxMjZ2N0d1eFNrNnh5c1Vmb1JTQ2xHWGhVS05LdFB3d3ZLalhCWXRVZVdRaEg0UFp6M3d4Um5CN0h2SXdoVDhOcWgzR1psUHB4QUZ3U25EZz09Cg==",
+      "url": "https://raw.githubusercontent.com/Maguiscarponi/Mercalin/dist/Mercalin_1.6.2_x64-setup.exe"
+    }
+  }
+}
