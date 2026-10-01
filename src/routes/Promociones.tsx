@@ -6,6 +6,7 @@ import Field from "@/components/ui/Field";
 import { useEscapeToClose } from "@/lib/useEscapeToClose";
 import ModalCloseButton from "@/components/ui/ModalCloseButton";
 import HelpButton from "@/components/HelpModal";
+import CartelPromoModal from "@/components/CartelPromo";
 import type { NewPromotion, Product, Promotion, PromoAppliesTo, PromoType } from "@/types";
 import clsx from "clsx";
 
@@ -41,6 +42,8 @@ function targetLabel(p: Promotion): string {
 export default function Promociones() {
   const [promos, setPromos] = useState<Promotion[]>([]);
   const [editing, setEditing] = useState<Partial<Promotion> | null>(null);
+  // Promo de la que se está armando el cartel para la góndola.
+  const [cartel, setCartel] = useState<Promotion | null>(null);
 
   async function load() {
     try {
@@ -74,16 +77,15 @@ export default function Promociones() {
     }
   }
 
-  async function handleSave(promo: Partial<Promotion>) {
+  async function handleSave(promo: Partial<Promotion>, conCartel: boolean) {
     try {
-      if (promo.id) {
-        await api.updatePromotion(promo as Promotion);
-      } else {
-        await api.createPromotion(promo as NewPromotion);
-      }
+      const saved = promo.id
+        ? await api.updatePromotion(promo as Promotion)
+        : await api.createPromotion(promo as NewPromotion);
       setEditing(null);
       load();
-      showToast({ message: "Promoción guardada", tone: "success" });
+      if (conCartel) setCartel(saved);
+      else showToast({ message: "Promoción guardada", tone: "success", actionLabel: "🏷️ Hacer cartel", onAction: () => setCartel(saved) });
     } catch (err) {
       console.error(err);
       showToast({ message: "No se pudo guardar la promoción", tone: "danger" });
@@ -131,6 +133,7 @@ export default function Promociones() {
                   today={today}
                   onToggle={() => handleToggle(p.id)}
                   onEdit={() => setEditing(p)}
+                  onCartel={() => setCartel(p)}
                   onDelete={() => handleDelete(p.id)}
                 />
               ))}
@@ -152,6 +155,7 @@ export default function Promociones() {
                   today={today}
                   onToggle={() => handleToggle(p.id)}
                   onEdit={() => setEditing(p)}
+                  onCartel={() => setCartel(p)}
                   onDelete={() => handleDelete(p.id)}
                 />
               ))}
@@ -173,6 +177,7 @@ export default function Promociones() {
                   today={today}
                   onToggle={() => handleToggle(p.id)}
                   onEdit={() => setEditing(p)}
+                  onCartel={() => setCartel(p)}
                   onDelete={() => handleDelete(p.id)}
                 />
               ))}
@@ -188,6 +193,8 @@ export default function Promociones() {
           onCancel={() => setEditing(null)}
         />
       )}
+
+      {cartel && <CartelPromoModal promo={cartel} onClose={() => setCartel(null)} />}
     </div>
   );
 }
@@ -215,12 +222,14 @@ function PromoCard({
   today,
   onToggle,
   onEdit,
+  onCartel,
   onDelete,
 }: {
   promo: Promotion;
   today: string;
   onToggle: () => void;
   onEdit: () => void;
+  onCartel: () => void;
   onDelete: () => void;
 }) {
   const expired = promo.ends_at && promo.ends_at < today;
@@ -263,6 +272,7 @@ function PromoCard({
         >
           {promo.active ? "Activa" : "Inactiva"}
         </button>
+        <button onClick={onCartel} className="btn-table-neutral" title="Imprimir el cartel de esta promo para la góndola">🏷️ Cartel</button>
         <button onClick={onEdit} className="btn-table-neutral">Editar</button>
         <button onClick={onDelete} className="btn-table-danger">Eliminar</button>
       </div>
@@ -333,7 +343,7 @@ function PromoForm({
   onCancel,
 }: {
   promo: Partial<Promotion>;
-  onSave: (p: Partial<Promotion>) => void;
+  onSave: (p: Partial<Promotion>, conCartel: boolean) => void;
   onCancel: () => void;
 }) {
   const [form, setForm] = useState<Partial<Promotion>>({
@@ -365,7 +375,7 @@ function PromoForm({
     set("days_of_week", next.length > 0 ? JSON.stringify(next) : null as unknown as string);
   }
 
-  function submit() {
+  function submit(conCartel = false) {
     if (!form.name?.trim()) { showToast({ message: "El nombre es obligatorio", tone: "danger" }); return; }
     if (form.applies_to === "product" && !form.target_id) {
       showToast({ message: "Elegí el producto de la lista de sugerencias — si solo escribís el nombre, la promoción no se va a aplicar en la caja.", tone: "danger" });
@@ -376,7 +386,7 @@ function PromoForm({
       return;
     }
     const value = form.promo_type === "fixed" ? arsStringToCents(valueStr) : parseFloat(valueStr) || 0;
-    onSave({ ...form, value });
+    onSave({ ...form, value }, conCartel);
   }
 
   const selectedDays: number[] = form.days_of_week ? (() => { try { return JSON.parse(form.days_of_week); } catch { return []; } })() : [];
@@ -490,8 +500,11 @@ function PromoForm({
         </div>
 
         <div className="flex gap-2 mt-6">
-          <button onClick={onCancel} className="btn btn-secondary flex-1">Cancelar</button>
-          <button onClick={submit} className="btn btn-primary flex-1">{isNew ? "Crear" : "Guardar"}</button>
+          <button onClick={onCancel} className="btn btn-secondary">Cancelar</button>
+          <button onClick={() => submit(true)} className="btn btn-secondary flex-1" title="Guarda la promoción y abre su cartel para imprimir y pegar en la góndola">
+            🏷️ {isNew ? "Crear" : "Guardar"} y ver cartel
+          </button>
+          <button onClick={() => submit()} className="btn btn-primary flex-1">{isNew ? "Crear" : "Guardar"}</button>
         </div>
       </div>
     </div>

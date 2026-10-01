@@ -943,6 +943,21 @@ export const helpContent: Record<string, HelpContent> = {
         ],
       },
       {
+        title: "Cartel para la góndola",
+        items: [
+          {
+            label: "Botón '🏷️ Cartel'",
+            description:
+              "Cada promoción tiene su cartel listo para imprimir y pegar en la góndola o en la vidriera, así el cliente se entera. Muestra la promo bien grande, el producto, el precio de antes y el de ahora, los días y horarios, y hasta cuándo vale. Elegís hoja entera, media hoja o etiqueta chica para el estante.",
+          },
+          {
+            label: "Al crear la promoción",
+            description:
+              "Tocá '🏷️ Crear y ver cartel' en vez de 'Crear' y se abre el cartel apenas se guarda — en dos clics la tenés impresa.",
+          },
+        ],
+      },
+      {
         title: "Vigencia y condiciones avanzadas",
         items: [
           {
@@ -986,9 +1001,9 @@ export const helpContent: Record<string, HelpContent> = {
         title: "Cómo se generan las facturas",
         items: [
           {
-            label: "Automáticas",
+            label: "Automáticas o manuales",
             description:
-              "Una vez que la Facturación Electrónica está configurada y funcionando, cada venta que hacés en Caja genera su factura sola — no tenés que hacer nada extra al vender.",
+              "Una vez que la Facturación Electrónica está configurada y funcionando, cada venta que hacés en Caja genera su factura sola — no tenés que hacer nada extra al vender. Si preferís decidir venta por venta, en Configuración ARCA → '¿Cuándo se hace la factura?' elegí 'Manual': al terminar la venta aparece el botón 'Facturar con ARCA' (tecla F) y solo se factura si lo tocás.",
           },
           {
             label: "Botón '+ Nueva factura'",
