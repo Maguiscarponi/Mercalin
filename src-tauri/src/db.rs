@@ -435,6 +435,11 @@ fn open_and_migrate_inner(path: &Path) -> Result<Connection> {
     // Actividades aparecen siempre junto al CUIT del emisor).
     let _ = conn.execute_batch("ALTER TABLE arca_config ADD COLUMN ingresos_brutos TEXT;");
     let _ = conn.execute_batch("ALTER TABLE arca_config ADD COLUMN inicio_actividades TEXT;");
+    // Cuándo se emite la factura de una venta de Caja: 1 = sola al cobrar
+    // (como fue siempre), 0 = solo cuando se toca "Facturar" en la pantalla
+    // de venta confirmada. Arranca en automática para no cambiarle nada a
+    // quien ya venía facturando.
+    let _ = conn.execute_batch("ALTER TABLE arca_config ADD COLUMN emision_automatica INTEGER NOT NULL DEFAULT 1;");
     // Descripción de qué se factura -- solo se usa para mostrarla en el
     // detalle impreso de facturas creadas a mano (sin venta de Caja detrás).
     let _ = conn.execute_batch("ALTER TABLE electronic_invoices ADD COLUMN concepto TEXT;");

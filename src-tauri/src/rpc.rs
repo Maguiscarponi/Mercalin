@@ -213,6 +213,7 @@ pub fn dispatch(app: &AppHandle, command: &str, body: Value) -> RpcResult {
         // ARCA / facturación electrónica
         "get_arca_config" => crate::commands::arca::get_arca_config[],
         "save_arca_config" => crate::commands::arca::save_arca_config[input: crate::models::ArcaConfigInput, session_token: Option<String>],
+        "set_arca_emision_automatica" => crate::commands::arca::set_arca_emision_automatica[enabled: bool, session_token: Option<String>],
         "reset_arca_data" => crate::commands::arca::reset_arca_data[session_token: Option<String>],
         "generate_arca_keypair" => crate::commands::arca::generate_arca_keypair[],
         "load_arca_certificate" => crate::commands::arca::load_arca_certificate[cert_pem: String],

@@ -720,6 +720,7 @@ pub fn run() {
             // ARCA — Facturación electrónica
             commands::arca::get_arca_config,
             commands::arca::save_arca_config,
+            commands::arca::set_arca_emision_automatica,
             commands::arca::reset_arca_data,
             commands::arca::generate_arca_keypair,
             commands::arca::load_arca_certificate,

@@ -308,7 +308,9 @@ export default function Facturacion() {
                 {invoices.length === 0 ? (
                   <div className="flex flex-col items-center justify-center h-full text-stone-400 text-sm gap-2">
                     <span className="text-3xl">🧾</span>
-                    Las facturas se generan solas después de cada venta, o hacé clic en "+ Nueva factura" para emitir una suelta.
+                    {arcaConfig?.emision_automatica === false
+                      ? 'Las facturas se hacen al tocar "Facturar" cuando termina cada venta, o con "+ Nueva factura" para emitir una suelta.'
+                      : 'Las facturas se generan solas después de cada venta, o hacé clic en "+ Nueva factura" para emitir una suelta.'}
                   </div>
                 ) : filteredInvoices.length === 0 ? (
                   <div className="flex flex-col items-center justify-center h-full text-stone-400 text-sm gap-2">
@@ -642,7 +644,24 @@ function ArcaSetup({ arcaConfig, onRefresh }: { arcaConfig: ArcaConfig | null; o
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
   const [resetting, setResetting] = useState(false);
+  const [savingModo, setSavingModo] = useState(false);
   const certInputRef = useRef<HTMLInputElement>(null);
+  const canEditModo = currentRole === "admin" || currentRole === "supervisor";
+  const emisionAutomatica = arcaConfig?.emision_automatica !== false;
+
+  async function saveModo(automatica: boolean) {
+    if (savingModo || automatica === emisionAutomatica) return;
+    setSavingModo(true);
+    try {
+      await api.setArcaEmisionAutomatica(automatica);
+      onRefresh();
+      showToast({
+        message: automatica ? "Listo: cada venta se factura sola al cobrar" : 'Listo: solo se factura cuando tocás "Facturar"',
+        tone: "success",
+      });
+    } catch (e) { showToast({ message: `Error: ${e}`, tone: "danger" }); }
+    finally { setSavingModo(false); }
+  }
 
   async function saveCfg() {
     setSavingCfg(true);
@@ -738,6 +757,46 @@ function ArcaSetup({ arcaConfig, onRefresh }: { arcaConfig: ArcaConfig | null; o
           💬 ¿Necesitás ayuda?
         </button>
       </div>
+
+      {/* Automática o manual -- arriba de los pasos para encontrarlo sin
+          recorrer el wizard otra vez; antes de tener el certificado cargado
+          no hay nada que elegir. */}
+      {step2Done && (
+        <div className="card p-6 mb-4">
+          <p className="font-semibold text-stone-800 mb-1">¿Cuándo se hace la factura?</p>
+          <p className="text-sm text-stone-500 mb-4">Elegí si la factura sale sola en cada venta de Caja, o solo cuando vos la pedís.</p>
+          <div className="grid grid-cols-2 gap-3">
+            {([
+              { auto: true, title: "Automática", sub: "Al cobrar, la factura de la venta se emite sola. Es lo recomendado." },
+              { auto: false, title: "Manual", sub: 'Al terminar la venta aparece el botón "Facturar con ARCA" (tecla F). Solo se factura si lo tocás.' },
+            ]).map((o) => {
+              const activo = emisionAutomatica === o.auto;
+              return (
+                <button key={o.title} onClick={() => saveModo(o.auto)} disabled={!canEditModo || savingModo}
+                  className={clsx("text-left rounded-lg border-2 p-4 transition-colors disabled:cursor-not-allowed",
+                    activo ? "border-red-600 bg-red-50" : "border-stone-200 bg-white hover:border-stone-300",
+                    !canEditModo && !activo && "opacity-60")}>
+                  <span className="flex items-center gap-2 font-semibold text-stone-800">
+                    <span className={clsx("w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0",
+                      activo ? "border-red-600" : "border-stone-300")}>
+                      {activo && <span className="w-2 h-2 rounded-full bg-red-600" />}
+                    </span>
+                    {o.title}
+                  </span>
+                  <span className="text-sm text-stone-500 block mt-1">{o.sub}</span>
+                </button>
+              );
+            })}
+          </div>
+          <p className="text-sm text-stone-400 mt-3">
+            Tené en cuenta que ARCA pide un comprobante por cada venta, también a Consumidor Final. El modo manual sirve,
+            por ejemplo, si algunas ventas las facturás por otro lado. Si se te pasó una, la podés hacer después con "+ Nueva factura".
+          </p>
+          {!canEditModo && (
+            <p className="text-sm text-stone-400 mt-2">Solo un supervisor o el administrador puede cambiar esto.</p>
+          )}
+        </div>
+      )}
 
       <p className="text-sm text-stone-500 mb-4">
         Emitís facturas A, B y C directamente — sin intermediarios ni costo por factura. Configuración única por negocio.

@@ -126,8 +126,9 @@ export default function PaymentModal({ totalCents, sessionId, isRi, onClose, onC
       if (addr)   setBusinessAddress(addr);
       if (footer) setTicketFooter(footer);
     }).catch(console.error);
-    // Si ARCA está configurada (certificado cargado), después de cobrar se
-    // intenta emitir el comprobante solo -- si esto falla (sin internet, sin
+    // Si ARCA está configurada (certificado cargado) y en modo automático,
+    // después de cobrar se intenta emitir el comprobante solo; en modo manual
+    // queda el botón "Facturar" -- si esto falla (sin internet, sin
     // config completa, ARCA caída), la venta ya quedó guardada igual: no se
     // bloquea el cobro por un problema de facturación electrónica.
     api.getArcaConfig().then(setArcaConfig).catch(() => setArcaConfig(null)).finally(() => setArcaConfigLoaded(true));
@@ -209,7 +210,9 @@ export default function PaymentModal({ totalCents, sessionId, isRi, onClose, onC
       // estado hacía que la factura se saltara en silencio, sin avisar nada.
       const freshArcaConfig = await api.getArcaConfig().catch(() => null);
       setArcaConfig(freshArcaConfig);
-      if (freshArcaConfig?.has_certificate) {
+      // `!== false`: si la terminal habla con un servidor de una versión
+      // anterior (que no manda este dato), se sigue facturando sola como antes.
+      if (freshArcaConfig?.has_certificate && freshArcaConfig.emision_automatica !== false) {
         setInvoiceState("issuing");
         try {
           const emitted = await issueInvoiceForSale(sw.sale, cart.client_id, freshArcaConfig.condicion_iva);
@@ -360,9 +363,15 @@ export default function PaymentModal({ totalCents, sessionId, isRi, onClose, onC
 
         {arcaConfigLoaded && (
           arcaConfig?.has_certificate ? (
-            <p className="text-xs text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-md px-2.5 py-1.5 mb-3">
-              🧾 Esta venta se va a facturar con ARCA automáticamente al cobrar.
-            </p>
+            arcaConfig.emision_automatica !== false ? (
+              <p className="text-xs text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-md px-2.5 py-1.5 mb-3">
+                🧾 Esta venta se va a facturar con ARCA automáticamente al cobrar.
+              </p>
+            ) : (
+              <p className="text-xs text-stone-500 bg-stone-50 border border-stone-200 rounded-md px-2.5 py-1.5 mb-3">
+                🧾 Facturación manual: después de cobrar vas a poder facturar esta venta con el botón "Facturar con ARCA" (tecla F).
+              </p>
+            )
           ) : (
             <div className="flex items-center justify-between gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2.5 py-1.5 mb-3">
               <span>⚠ Facturación ARCA no configurada — esta venta no va a tener factura electrónica.</span>

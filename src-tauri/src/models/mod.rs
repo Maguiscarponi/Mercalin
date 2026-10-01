@@ -1084,6 +1084,7 @@ pub struct ArcaConfig {
     pub domicilio: Option<String>,
     pub ingresos_brutos: Option<String>,
     pub inicio_actividades: Option<String>,
+    pub emision_automatica: bool,   // false = solo al tocar "Facturar"
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

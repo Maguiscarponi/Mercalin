@@ -491,6 +491,8 @@ export interface ArcaConfig {
   domicilio: string | null;
   ingresos_brutos: string | null;
   inicio_actividades: string | null;
+  /** false = la factura de una venta de Caja se emite solo al tocar "Facturar" */
+  emision_automatica: boolean;
 }
 
 export interface ArcaConfigInput {

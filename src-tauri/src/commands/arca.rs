@@ -41,7 +41,7 @@ fn nc_cbte_tipo(invoice_type: &str) -> i64 {
 pub fn get_arca_config(state: State<AppState>) -> CmdResult<Option<ArcaConfig>> {
     let conn = state.db.lock();
     let row = conn.query_row(
-        "SELECT cuit, razon_social, punto_venta, private_key_pem, certificate_pem, environment, token, token_expires_at, condicion_iva, domicilio, ingresos_brutos, inicio_actividades
+        "SELECT cuit, razon_social, punto_venta, private_key_pem, certificate_pem, environment, token, token_expires_at, condicion_iva, domicilio, ingresos_brutos, inicio_actividades, emision_automatica
          FROM arca_config WHERE id=1",
         [],
         |r| Ok((
@@ -57,11 +57,12 @@ pub fn get_arca_config(state: State<AppState>) -> CmdResult<Option<ArcaConfig>> 
             r.get::<_, Option<String>>(9)?,
             r.get::<_, Option<String>>(10)?,
             r.get::<_, Option<String>>(11)?,
+            r.get::<_, i64>(12)?,
         )),
     );
     match row {
         Err(_) => Ok(None),
-        Ok((cuit, razon_social, punto_venta, private_key, certificate, environment, token, token_expires_at, condicion_iva, domicilio, ingresos_brutos, inicio_actividades)) => {
+        Ok((cuit, razon_social, punto_venta, private_key, certificate, environment, token, token_expires_at, condicion_iva, domicilio, ingresos_brutos, inicio_actividades, emision_automatica)) => {
             if cuit.is_empty() { return Ok(None); }
             let token_valid = match &token_expires_at {
                 None => false,
@@ -80,6 +81,7 @@ pub fn get_arca_config(state: State<AppState>) -> CmdResult<Option<ArcaConfig>> 
                 domicilio,
                 ingresos_brutos,
                 inicio_actividades,
+                emision_automatica: emision_automatica != 0,
             }))
         }
     }
@@ -109,6 +111,25 @@ pub fn save_arca_config(input: ArcaConfigInput, session_token: Option<String>, s
         ],
     ).map_err(err)?;
     log_action(&conn, actor_id, "editar", "arca_config", None, Some(&format!("CUIT: {}, razón social: {}", input.cuit, input.razon_social.as_deref().unwrap_or("—"))));
+    Ok(())
+}
+
+// Automática (la factura se emite sola al cobrar en Caja) o manual (solo
+// cuando se toca "Facturar" en la pantalla de venta confirmada). Va aparte de
+// save_arca_config para cambiarlo con un clic, sin reenviar los datos fiscales.
+#[tauri::command]
+pub fn set_arca_emision_automatica(enabled: bool, session_token: Option<String>, state: State<AppState>) -> CmdResult<()> {
+    let conn = state.db.lock();
+    let actor_id = Some(require_role(&conn, &state.sessions, session_token.as_deref(), "supervisor")?);
+    let changed = conn.execute(
+        "UPDATE arca_config SET emision_automatica=?1, updated_at=CURRENT_TIMESTAMP WHERE id=1",
+        params![enabled as i64],
+    ).map_err(err)?;
+    if changed == 0 {
+        return Err("Primero completá y guardá tus datos de ARCA (Paso 1).".to_string());
+    }
+    let detalle = if enabled { "Facturación automática: se factura cada venta al cobrar" } else { "Facturación manual: solo cuando se toca \"Facturar\"" };
+    log_action(&conn, actor_id, "editar", "arca_config", None, Some(detalle));
     Ok(())
 }
 

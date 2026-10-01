@@ -543,6 +543,9 @@ export const api = {
   saveArcaConfig: (input: ArcaConfigInput) =>
     rpc<void>("save_arca_config", { input, sessionToken: currentSessionToken() }),
 
+  setArcaEmisionAutomatica: (enabled: boolean) =>
+    rpc<void>("set_arca_emision_automatica", { enabled, sessionToken: currentSessionToken() }),
+
   resetArcaData: () =>
     rpc<void>("reset_arca_data", { sessionToken: currentSessionToken() }),
 
