@@ -885,7 +885,10 @@ function ArcaSetup({ arcaConfig, onRefresh }: { arcaConfig: ArcaConfig | null; o
                 <span className="text-sm font-medium text-stone-600 block mb-1">Inicio de actividades</span>
                 <input className="input text-sm" type="date" value={form.inicio_actividades || ""}
                   onChange={(e) => setForm((f) => ({ ...f, inicio_actividades: e.target.value }))} />
-                <span className="text-sm text-stone-400 block mt-1">Fecha que figura en tu constancia de ARCA.</span>
+                <span className="text-sm text-stone-400 block mt-1">
+                  Está en tu Constancia de Inscripción de ARCA, al lado de tu actividad ("Mes de inicio"). Si solo dice mes y
+                  año, poné el día 1 de ese mes.
+                </span>
               </label>
             </div>
             <label className="block">
