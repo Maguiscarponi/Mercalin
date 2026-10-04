@@ -4,7 +4,9 @@ import { api } from "@/lib/api";
 import mercalinLogo from "@/assets/mercalin-logo.svg";
 import type { LicenseStatus } from "@/types";
 
-const STORE_URL = "https://mercalinonline.com";
+// Directo a la página de compra, no a la portada: quien llega acá ya probó
+// el sistema y lo que necesita es pagar.
+const STORE_URL = "https://www.mercalinonline.com/carrito?product=mercalin";
 
 // Pantalla de bloqueo cuando venció el período de prueba. No borra ni toca
 // nada de la base local -- solo bloquea el acceso hasta pegar una clave
@@ -26,7 +28,7 @@ export default function TrialExpired({
     try {
       await openUrl(STORE_URL);
     } catch {
-      setError(`No se pudo abrir el navegador. Visitá ${STORE_URL} manualmente.`);
+      setError("No se pudo abrir el navegador. Entrá a mercalinonline.com desde cualquier navegador para comprar.");
     }
   }
 

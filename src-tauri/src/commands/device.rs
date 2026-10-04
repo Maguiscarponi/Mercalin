@@ -362,6 +362,44 @@ pub fn activate_license(email: String, key: String, state: State<AppState>) -> C
 }
 
 #[cfg(test)]
+mod license_expiry_tests {
+    use super::{make_license_key, parse_and_verify_license_key, LicenseStatus};
+    use chrono::Utc;
+
+    const DIA: i64 = 24 * 60 * 60;
+
+    fn estado(kind: &str, expires_at: i64) -> LicenseStatus {
+        let key = make_license_key(kind, "duena@kiosco.com", expires_at);
+        LicenseStatus::from_info(parse_and_verify_license_key(&key).unwrap())
+    }
+
+    #[test]
+    fn la_prueba_sigue_activa_hasta_el_ultimo_minuto() {
+        let s = estado("trial", Utc::now().timestamp() + 60);
+        assert!(s.activated);
+        assert!(!s.expired);
+    }
+
+    #[test]
+    fn a_los_7_dias_la_prueba_queda_vencida_y_bloquea() {
+        // Una prueba generada hace 7 días y un minuto: es lo que ve la app
+        // justo después de cumplirse la semana.
+        let generada = Utc::now().timestamp() - 7 * DIA - 60;
+        let s = estado("trial", generada + 7 * DIA);
+        assert!(s.expired);
+        assert_eq!(s.kind.as_deref(), Some("trial"));
+    }
+
+    #[test]
+    fn la_licencia_comprada_no_vence_nunca() {
+        let s = estado("full", 0);
+        assert!(s.activated);
+        assert!(!s.expired);
+        assert_eq!(s.expires_at, None);
+    }
+}
+
+#[cfg(test)]
 mod network_token_tests {
     use super::{ensure_network_token, DeviceConfig};
 

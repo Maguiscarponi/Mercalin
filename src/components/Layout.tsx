@@ -16,7 +16,8 @@ import { useCombosEnabledStore } from "@/stores/combosEnabled";
 import { useInsightsStore } from "@/stores/insights";
 import { useHelpEnabledStore } from "@/stores/helpEnabled";
 import { HelpModalContent, useShowHelpButton } from "@/components/HelpModal";
-import { Download } from "lucide-react";
+import { Download, ShoppingCart } from "lucide-react";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { useCommandPaletteStore } from "@/stores/commandPalette";
 import { NAV_GROUPS, KEY_ROUTES, ALT_KEY_ROUTES, ROLE_LABEL, hasAccess } from "@/lib/navigation";
 import DialogHost from "@/components/DialogHost";
@@ -105,7 +106,14 @@ export default function Layout() {
   useEffect(() => { ensureCatalogImportListeners(); }, []);
   useEffect(() => { usePosModeStore.getState().hydrate(); ensureSyncStatusListener(); }, []);
   useEffect(() => { useUpdaterStore.getState().checkNow(); }, []);
-  useEffect(() => { api.getLicenseStatus().then(setLicenseStatus).catch(() => {}); }, []);
+  // Días que le quedan a la prueba, para el cartel del menú (null si no aplica).
+  const [diasDePrueba, setDiasDePrueba] = useState<number | null>(null);
+  useEffect(() => {
+    api.getLicenseStatus().then((s) => {
+      setLicenseStatus(s);
+      setDiasDePrueba(s.kind === "trial" && s.expiresAt ? Math.max(1, Math.ceil((s.expiresAt * 1000 - Date.now()) / 86400000)) : null);
+    }).catch(() => {});
+  }, []);
   useEffect(() => { useStockTrackingStore.getState().hydrate(); }, []);
   useEffect(() => { useCombosEnabledStore.getState().hydrate(); }, []);
   useEffect(() => { useHelpEnabledStore.getState().hydrate(); }, []);
@@ -367,6 +375,25 @@ export default function Layout() {
 
         {/* Prueba gratis activa: siempre visible, no escondido en Configuración
             -- si ya compró, tiene que poder activar la licencia sin buscarla. */}
+        {licenseStatus?.kind === "trial" && !licenseStatus.expired && (
+          <button
+            onClick={() => openUrl("https://www.mercalinonline.com/carrito?product=mercalin").catch(() => {})}
+            title={sidebarOpen ? undefined : "Comprar Mercalin"}
+            className={clsx(
+              "border-t border-stone-100 flex items-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 transition-colors text-emerald-800",
+              sidebarOpen ? "px-3.5 py-2" : "py-2 justify-center"
+            )}
+          >
+            <ShoppingCart size={13} className="shrink-0" />
+            {sidebarOpen && (
+              <span className="text-[11px] font-semibold">
+                {diasDePrueba === null
+                  ? "Comprar Mercalin"
+                  : `${diasDePrueba <= 1 ? "Último día de prueba" : `Quedan ${diasDePrueba} días de prueba`} · Comprar`}
+              </span>
+            )}
+          </button>
+        )}
         {licenseStatus?.kind === "trial" && !licenseStatus.expired && (
           <button
             onClick={() => navigate("/configuracion", { state: { tab: "sistema" } })}
