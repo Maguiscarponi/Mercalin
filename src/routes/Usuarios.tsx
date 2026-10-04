@@ -321,11 +321,13 @@ function UserForm({
 
 function ChangePasswordModal({ user, onClose }: { user: User; onClose: () => void }) {
   const [pw, setPw] = useState("");
+  const [pw2, setPw2] = useState("");
   const [saving, setSaving] = useState(false);
   useEscapeToClose(onClose);
 
   async function submit() {
     if (pw.length < 4) { showToast({ message: "Mínimo 4 caracteres", tone: "danger" }); return; }
+    if (pw !== pw2) { showToast({ message: "Las dos contraseñas no coinciden", tone: "danger" }); return; }
     setSaving(true);
     try {
       await api.changePassword(user.id, pw);
@@ -348,10 +350,17 @@ function ChangePasswordModal({ user, onClose }: { user: User; onClose: () => voi
         <input
           autoFocus
           type="password"
-          className="input mb-4"
+          className="input mb-3"
           placeholder="Nueva contraseña (mín. 4 caracteres)"
           value={pw}
           onChange={(e) => setPw(e.target.value)}
+        />
+        <input
+          type="password"
+          className="input mb-4"
+          placeholder="Repetila para confirmar"
+          value={pw2}
+          onChange={(e) => setPw2(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && submit()}
         />
         <div className="flex gap-2">

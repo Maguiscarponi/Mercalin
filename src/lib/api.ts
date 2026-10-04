@@ -530,6 +530,10 @@ export const api = {
   claimAdminAccount: (email: string, password: string) =>
     invoke<LoginResult>("claim_admin_account", { email, password }),
 
+  // "Olvidé mi contraseña": la clave de activación prueba que es el dueño.
+  resetPasswordWithLicenseKey: (email: string, key: string, newPassword: string) =>
+    invoke<void>("reset_password_with_license_key", { email, key, newPassword }),
+
   getSyncStatus: () =>
     invoke<"online" | "offline" | "syncing">("get_sync_status"),
 

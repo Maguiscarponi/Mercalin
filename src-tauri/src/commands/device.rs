@@ -252,7 +252,7 @@ fn hmac_verify(payload: &[u8], sig: &[u8]) -> Result<(), ()> {
 }
 
 #[allow(dead_code)]
-fn make_license_key(kind: &str, email: &str, expires_at: i64) -> String {
+pub(crate) fn make_license_key(kind: &str, email: &str, expires_at: i64) -> String {
     let payload = build_payload(kind, email, expires_at);
     let sig = hmac_sign(payload.as_bytes());
     format!("{}.{}", B64.encode(payload.as_bytes()), B64.encode(sig))

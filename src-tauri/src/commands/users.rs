@@ -256,6 +256,57 @@ pub fn claim_admin_account(email: String, password: String, state: State<AppStat
     Ok(LoginResult { user, session_token })
 }
 
+// "Olvidé mi contraseña", sin internet ni soporte: la clave de activación
+// (la que llegó por mail al pedir la prueba o al comprar) prueba que quien la
+// tiene es el dueño de esta instalación, así que alcanza para elegir una
+// contraseña nueva para su cuenta. Tiene que ser una clave firmada, del mismo
+// mail con el que está activado este Mercalin -- no sirve la de otro negocio.
+// No importa si la clave es de una prueba ya vencida: acá solo se usa como
+// prueba de identidad, no para activar nada. Devuelve el id del usuario.
+pub(crate) fn reset_password_with_license(
+    conn: &Connection,
+    licensed_email: Option<&str>,
+    email: &str,
+    key: &str,
+    new_password: &str,
+) -> CmdResult<i64> {
+    let normalized_email = email.trim().to_lowercase();
+    if normalized_email.is_empty() {
+        return Err("Ingresá tu mail.".to_string());
+    }
+    if new_password.len() < 4 {
+        return Err("La contraseña debe tener al menos 4 caracteres".to_string());
+    }
+    let info = crate::commands::device::parse_and_verify_license_key(key)
+        .map_err(|_| "La clave de activación no es válida. Copiala entera, tal como llegó en el mail.".to_string())?;
+    if info.email != normalized_email {
+        return Err("Esa clave no corresponde a ese mail. Revisá que estén bien escritos.".to_string());
+    }
+    if licensed_email.map(|e| e.trim().to_lowercase()) != Some(normalized_email.clone()) {
+        return Err("Este Mercalin está activado con otro mail.".to_string());
+    }
+    let user_id: i64 = conn
+        .query_row("SELECT id FROM users WHERE username=?1", params![normalized_email], |r| r.get(0))
+        .map_err(|_| "No hay una cuenta con ese mail en este Mercalin.".to_string())?;
+    let (hash, salt) = hash_password_new(new_password);
+    conn.execute(
+        "UPDATE users SET password_hash=?1, password_salt=?2 WHERE id=?3",
+        params![hash, salt, user_id],
+    )
+    .map_err(err)?;
+    Ok(user_id)
+}
+
+#[tauri::command]
+pub fn reset_password_with_license_key(email: String, key: String, new_password: String, state: State<AppState>) -> CmdResult<()> {
+    let app_dir = crate::commands::device::app_dir_of(&state)?;
+    let cfg = crate::commands::device::read_device_config(&app_dir);
+    let conn = state.db.lock();
+    let user_id = reset_password_with_license(&conn, cfg.license_email.as_deref(), &email, &key, &new_password)?;
+    log_action(&conn, Some(user_id), "restablecer_password", "usuario", Some(user_id), Some("con la clave de activación"));
+    Ok(())
+}
+
 #[tauri::command]
 pub fn login(username: String, password: String, state: State<AppState>) -> CmdResult<LoginResult> {
     let conn = state.db.lock();
@@ -299,6 +350,83 @@ pub fn login(username: String, password: String, state: State<AppState>) -> CmdR
 pub fn logout(session_token: String, state: State<AppState>) -> CmdResult<()> {
     invalidate_session(&state.sessions, &session_token);
     Ok(())
+}
+
+#[cfg(test)]
+mod reset_password_tests {
+    use super::*;
+    use crate::commands::device::make_license_key;
+
+    const MAIL: &str = "duena@kiosco.com";
+
+    fn db_con_admin() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE users (id INTEGER PRIMARY KEY, username TEXT, full_name TEXT, password_hash TEXT, password_salt TEXT, role TEXT, active INTEGER DEFAULT 1);",
+        )
+        .unwrap();
+        let (hash, salt) = hash_password_new("vieja");
+        conn.execute(
+            "INSERT INTO users (username,full_name,password_hash,password_salt,role) VALUES (?1,'Administrador',?2,?3,'admin')",
+            params![MAIL, hash, salt],
+        )
+        .unwrap();
+        conn
+    }
+
+    fn entra_con(conn: &Connection, pw: &str) -> bool {
+        let (hash, salt): (String, Option<String>) = conn
+            .query_row("SELECT password_hash, password_salt FROM users WHERE username=?1", params![MAIL], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap();
+        verify_password(pw, &hash, salt.as_deref())
+    }
+
+    #[test]
+    fn con_la_clave_de_compra_cambia_la_contrasena() {
+        let conn = db_con_admin();
+        let key = make_license_key("full", MAIL, 0);
+        reset_password_with_license(&conn, Some(MAIL), "  Duena@Kiosco.com ", &key, "nueva123").unwrap();
+        assert!(entra_con(&conn, "nueva123"));
+        assert!(!entra_con(&conn, "vieja"));
+    }
+
+    #[test]
+    fn sirve_tambien_una_clave_de_prueba_ya_vencida() {
+        // Solo prueba identidad: una prueba vencida sigue siendo la clave que
+        // le llegó a esa persona.
+        let conn = db_con_admin();
+        let key = make_license_key("trial", MAIL, 1_000);
+        reset_password_with_license(&conn, Some(MAIL), MAIL, &key, "nueva123").unwrap();
+        assert!(entra_con(&conn, "nueva123"));
+    }
+
+    #[test]
+    fn rechaza_una_clave_inventada_o_de_otro_mail() {
+        let conn = db_con_admin();
+        assert!(reset_password_with_license(&conn, Some(MAIL), MAIL, "cualquier.cosa", "nueva123").is_err());
+        let de_otro = make_license_key("full", "otro@negocio.com", 0);
+        assert!(reset_password_with_license(&conn, Some(MAIL), MAIL, &de_otro, "nueva123").is_err());
+        assert!(entra_con(&conn, "vieja"));
+    }
+
+    #[test]
+    fn rechaza_si_este_mercalin_esta_activado_con_otro_mail() {
+        // Una clave válida de otro negocio no puede tomar una cuenta de acá,
+        // aunque en esta base exista un usuario con ese mail.
+        let conn = db_con_admin();
+        let key = make_license_key("full", MAIL, 0);
+        assert!(reset_password_with_license(&conn, Some("otro@negocio.com"), MAIL, &key, "nueva123").is_err());
+        assert!(reset_password_with_license(&conn, None, MAIL, &key, "nueva123").is_err());
+        assert!(entra_con(&conn, "vieja"));
+    }
+
+    #[test]
+    fn rechaza_contrasena_muy_corta() {
+        let conn = db_con_admin();
+        let key = make_license_key("full", MAIL, 0);
+        assert!(reset_password_with_license(&conn, Some(MAIL), MAIL, &key, "123").is_err());
+        assert!(entra_con(&conn, "vieja"));
+    }
 }
 
 #[cfg(test)]

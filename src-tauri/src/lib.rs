@@ -635,6 +635,7 @@ pub fn run() {
             commands::users::login,
             commands::users::logout,
             commands::users::claim_admin_account,
+            commands::users::reset_password_with_license_key,
             // Promociones
             commands::promotions::list_promotions,
             commands::promotions::create_promotion,
