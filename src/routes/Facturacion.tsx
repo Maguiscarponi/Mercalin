@@ -23,6 +23,10 @@ import clsx from "clsx";
 // soporte para Testing/WSASS se deja funcionando en el código a propósito
 // (helper, constante, capturas, instrucciones) por si hace falta reactivarlo
 // más adelante -- alcanza con volver a mostrar el <select> de Entorno.
+// Consulta pública de la Constancia de Inscripción: se entra con el CUIT, sin
+// clave fiscal. De ahí salen la fecha de inicio de actividades y la condición
+// frente al IVA que pide el Paso 1.
+const CONSTANCIA_URL = "https://seti.afip.gob.ar/padron-puc-constancia-internet/ConsultaConstanciaAction.do";
 const WSASS_HOMO_URL = "https://wsass-homo.afip.gob.ar/wsass/portal/main.aspx";
 const ARCA_PORTAL_URL = "https://auth.afip.gob.ar";
 
@@ -194,7 +198,12 @@ export default function Facturacion() {
     }
   }
 
-  if (loading) return <div className="p-4 text-stone-400">Cargando…</div>;
+  // "Cargando…" solo la primera vez. En las recargas siguientes (después de
+  // guardar un paso de ARCA, de emitir una factura) la pantalla se queda
+  // como está y se actualiza sola: si se la reemplazara por el cartel, el
+  // asistente de ARCA se desarmaría y perdería lo que tiene a la vista --
+  // así se perdía el CSR recién generado, y parecía que el botón no hacía nada.
+  if (loading && arcaConfig === undefined) return <div className="p-4 text-stone-400">Cargando…</div>;
 
   return (
     <div className="h-full flex flex-col">
@@ -886,8 +895,11 @@ function ArcaSetup({ arcaConfig, onRefresh }: { arcaConfig: ArcaConfig | null; o
                 <input className="input text-sm" type="date" value={form.inicio_actividades || ""}
                   onChange={(e) => setForm((f) => ({ ...f, inicio_actividades: e.target.value }))} />
                 <span className="text-sm text-stone-400 block mt-1">
-                  Está en tu Constancia de Inscripción de ARCA, al lado de tu actividad ("Mes de inicio"). Si solo dice mes y
-                  año, poné el día 1 de ese mes.
+                  Está en tu Constancia de Inscripción, al lado de tu actividad ("Mes de inicio"). Si solo dice mes y
+                  año, poné el día 1 de ese mes.{" "}
+                  <button type="button" onClick={() => openUrl(CONSTANCIA_URL)} className="text-sky-600 hover:underline">
+                    Ver mi constancia (se entra con el CUIT, sin clave fiscal)
+                  </button>
                 </span>
               </label>
             </div>
@@ -895,7 +907,11 @@ function ArcaSetup({ arcaConfig, onRefresh }: { arcaConfig: ArcaConfig | null; o
               <span className="text-sm font-medium text-stone-600 block mb-1">Punto de venta</span>
               <input className="input text-sm tabular" type="number" min="1" max="999"
                 value={form.punto_venta} onChange={(e) => setForm((f) => ({ ...f, punto_venta: Number(e.target.value) }))} />
-              <span className="text-sm text-stone-400 block mt-1">El número que ARCA te asignó (casi siempre es el 1).</span>
+              <span className="text-sm text-stone-400 block mt-1">
+                El número del punto de venta que tenés en ARCA para facturar por "Web Services". Suele ser el 1; si el 1 ya
+                lo usás para facturar desde la página de ARCA, es el 2. Lo ves en ARCA, en "Administración de puntos de
+                venta y domicilios".
+              </span>
             </label>
             <div className="text-sm text-orange-700 bg-orange-50 border border-orange-200 rounded p-3">
               ⚠ Esta conexión es real: las facturas que emitas van a quedar en tu cuenta de ARCA de verdad.
@@ -932,15 +948,24 @@ function ArcaSetup({ arcaConfig, onRefresh }: { arcaConfig: ArcaConfig | null; o
               </button>
               {csr && (
                 <div className="mt-3 space-y-2">
+                  <div className="text-sm text-emerald-800 bg-emerald-50 border border-emerald-200 rounded px-3 py-2">
+                    ✓ Clave generada. Ahora descargá el archivo: es el que ARCA te va a pedir en el punto 2.
+                  </div>
+                  <button
+                    onClick={() => { downloadTextFile("mercalin.csr", csr); showToast({ message: "Se guardó mercalin.csr en tu carpeta Descargas", tone: "success" }); }}
+                    className="btn btn-primary w-full text-sm"
+                  >
+                    💾 Descargar el archivo mercalin.csr
+                  </button>
                   <div className="bg-stone-900 rounded p-2 max-h-20 overflow-y-auto">
                     <pre className="text-sm text-green-400 whitespace-pre-wrap break-all">{csr}</pre>
                   </div>
                   <div className="flex gap-3">
-                    <button onClick={() => navigator.clipboard.writeText(csr)} className="text-sm text-sky-600 hover:underline">
-                      📋 Copiar este texto
-                    </button>
-                    <button onClick={() => downloadTextFile("mercalin.csr", csr)} className="text-sm text-sky-600 hover:underline">
-                      💾 Descargar como archivo (.csr)
+                    <button
+                      onClick={() => { navigator.clipboard.writeText(csr); showToast({ message: "Texto copiado", tone: "success" }); }}
+                      className="text-sm text-sky-600 hover:underline"
+                    >
+                      📋 O copiar el texto
                     </button>
                   </div>
                   <p className="text-sm text-stone-400">Lo vas a necesitar en el Paso 2 — algunas pantallas de ARCA piden pegar el texto, otras piden subir el archivo.</p>
