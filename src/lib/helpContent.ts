@@ -1107,17 +1107,12 @@ export const helpContent: Record<string, HelpContent> = {
         ],
       },
       {
-        title: "Usuarios vs. Multicaja",
+        title: "¿Para qué sirven los usuarios?",
         items: [
           {
             label: "¿Sirve esto con una sola caja?",
             description:
               "Sí — los usuarios separan accesos y trazabilidad ('quién hizo esta venta') aunque tengas una única computadora vendiendo.",
-          },
-          {
-            label: "¿Y si sumo otra caja?",
-            description:
-              "Si en algún momento activás Multicaja (varias computadoras vendiendo a la vez) desde Configuración, los usuarios que ya creaste funcionan igual en todas las cajas conectadas — no hace falta cargarlos de nuevo.",
           },
         ],
       },
@@ -1309,7 +1304,7 @@ export const helpContent: Record<string, HelpContent> = {
   configuracion: {
     title: "Configuración — Ajustes generales del sistema",
     intro:
-      "Acá vive todo lo que configurás una sola vez (o casi): datos del negocio, funciones opcionales, metas, respaldos, licencia y Multicaja. Solo accesible para administradores.",
+      "Acá vive todo lo que configurás una sola vez (o casi): datos del negocio, funciones opcionales, metas, respaldos y licencia. Solo accesible para administradores.",
     sections: [
       {
         title: "Pestaña General",
@@ -1373,10 +1368,6 @@ export const helpContent: Record<string, HelpContent> = {
       {
         title: "Pestaña Sistema",
         items: [
-          {
-            label: "🖥️ Multicaja",
-            description: "Conectá varias computadoras vendiendo con el mismo stock: una hace de 'servidor' (te da una dirección y un código), y las demás se conectan como 'cliente' con esos datos.",
-          },
           {
             label: "🔑 Licencia",
             description: "Estado de tu prueba gratis o licencia completa, y el campo para activar un código nuevo cuando compres.",

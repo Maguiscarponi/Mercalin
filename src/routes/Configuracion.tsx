@@ -816,6 +816,12 @@ export default function Configuracion() {
               </div>
             </section>
 
+            {/* Multicaja está oculta: probada entre dos computadoras reales no
+                funcionó (la caja cliente no llega a hablar con la servidor y queda
+                trabajando sobre su copia local). Solo se muestra a quien ya la
+                había activado, para que pueda apagar el modo servidor o
+                desconectarse. Volver a mostrarla cuando esté arreglada y probada. */}
+            {deviceConfig && deviceConfig.mode !== "standalone" && (
             <section className="card p-5">
               <h2 className="font-semibold text-sm mb-1">🖥️ Multicaja (varias cajas en la misma red) — en desarrollo</h2>
               <p className="text-xs text-stone-500 mb-4">
@@ -920,6 +926,7 @@ export default function Configuracion() {
                 </div>
               )}
             </section>
+            )}
 
             <section className="card p-5">
               <h2 className="font-semibold text-sm mb-3">🔑 Licencia</h2>

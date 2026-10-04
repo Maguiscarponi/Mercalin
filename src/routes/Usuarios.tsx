@@ -120,10 +120,8 @@ export default function Usuarios() {
             "varias personas" (esto) con "varias computadoras" (Multicaja, en Configuración). */}
         {posMode === "standalone" ? (
           <div className="text-xs text-stone-500 bg-stone-50 border border-stone-200 rounded-md px-3 py-2">
-            ℹ️ Los usuarios sirven para separar accesos y saber quién hizo cada acción, aunque tengas
-            <strong> una sola caja</strong>. Si en algún momento sumás otra computadora vendiendo al mismo
-            tiempo, activá <strong>Multicaja</strong> en Configuración — los usuarios que ya creaste van a
-            funcionar igual ahí, no hace falta crearlos de nuevo.
+            ℹ️ Los usuarios sirven para separar accesos y saber quién hizo cada acción: cada persona
+            entra con el suyo y cada venta queda a su nombre.
           </div>
         ) : (
           <div className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md px-3 py-2">
