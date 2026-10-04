@@ -407,7 +407,49 @@ fn get_last_cbte_nro(cuit: &str, pv: i64, ct: i64, token: &str, sign: &str, env:
     if let Some(fault) = extract_xml_tag(&xml, "faultstring") {
         return Err(format!("ARCA rechazó la consulta: {fault}"));
     }
+    // Un punto de venta que no es de Web Services no da SOAP Fault: responde
+    // 200 con <Errors>. Sin este corte se seguía de largo con el número 0 y el
+    // rechazo aparecía recién al pedir el CAE, con un motivo menos claro.
+    if xml.contains("<Errors>") {
+        return Err(format!("ARCA rechazó la factura: {}", arca_rejection_reason(&xml)));
+    }
     Ok(extract_xml_tag(&xml, "CbteNro").and_then(|s| s.parse().ok()).unwrap_or(0))
+}
+
+// CAE con el que ARCA tiene registrado un comprobante (None si no existe).
+fn consultar_cae(cuit: &str, pv: i64, ct: i64, nro: i64, token: &str, sign: &str, env: &str) -> Result<Option<String>, String> {
+    let body = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ar="http://ar.gov.afip.dif.FEV1/">
+  <soapenv:Header/>
+  <soapenv:Body>
+    <ar:FECompConsultar>
+      <ar:Auth><ar:Token>{}</ar:Token><ar:Sign>{}</ar:Sign><ar:Cuit>{}</ar:Cuit></ar:Auth>
+      <ar:FeCompConsReq><ar:CbteTipo>{}</ar:CbteTipo><ar:CbteNro>{}</ar:CbteNro><ar:PtoVta>{}</ar:PtoVta></ar:FeCompConsReq>
+    </ar:FECompConsultar>
+  </soapenv:Body>
+</soapenv:Envelope>"#,
+        token, sign, cuit, ct, nro, pv
+    );
+    let xml = soap_post(wsfev1_url(env), "http://ar.gov.afip.dif.FEV1/FECompConsultar", &body)?;
+    Ok(extract_xml_tag(&xml, "CodAutorizacion"))
+}
+
+// Punto de venta con el que ARCA tiene de verdad la factura que se quiere
+// anular: el guardado en la fila o, si no coincide el CAE, el configurado hoy.
+fn locate_original_in_arca(state: &AppState, original: &ElectronicInvoice, cuit: &str, config_pv: i64) -> Result<i64, String> {
+    let (Some(nro), Some(cae)) = (original.cbte_nro, original.cae.as_deref()) else {
+        return Err("Esta factura no tiene número o CAE guardado, no se puede anular desde acá.".to_string());
+    };
+    let (token, sign, env) = get_or_refresh_token(state)?;
+    let mut candidatos = vec![original.punto_venta];
+    if config_pv != original.punto_venta { candidatos.push(config_pv); }
+    for pv in candidatos {
+        if consultar_cae(cuit, pv, original.cbte_tipo, nro, &token, &sign, &env)?.as_deref() == Some(cae) {
+            return Ok(pv);
+        }
+    }
+    Err("No se anuló nada: ARCA no tiene registrada esta factura con ese punto de venta y número. Escribinos por WhatsApp antes de volver a intentar.".to_string())
 }
 
 fn call_fecae_solicitar(
@@ -480,9 +522,8 @@ fn call_fecae_solicitar(
     if let Some(fault) = extract_xml_tag(&xml, "faultstring") {
         return Err(format!("ARCA rechazó la factura: {fault}"));
     }
-    if xml.contains("<Resultado>R</Resultado>") {
-        let obs = extract_xml_tag(&xml, "Msg").unwrap_or_else(|| "Error ARCA".to_string());
-        return Err(format!("ARCA rechazó la factura: {}", obs));
+    if xml.contains("<Resultado>R</Resultado>") || (xml.contains("<Errors>") && !xml.contains("<CAE>")) {
+        return Err(format!("ARCA rechazó la factura: {}", arca_rejection_reason(&xml)));
     }
     let cae = extract_xml_tag(&xml, "CAE").ok_or("ARCA no devolvió CAE")?;
     let vto = extract_xml_tag(&xml, "CAEFchVto").unwrap_or_default();
@@ -657,6 +698,30 @@ pub fn issue_credit_note(
         ).map_err(|_| "No hay configuración ARCA".to_string())?
     };
     let nc_ct = nc_cbte_tipo(&original.invoice_type);
+
+    // Antes de anular, se le pregunta a ARCA si la factura existe con ese
+    // punto de venta y número, comparando el CAE. Caso real: una factura
+    // rechazada con el punto de venta 2 se reintentó después de cambiar la
+    // configuración al 3; ARCA la autorizó como 0003-00000001 pero la fila
+    // quedó guardada con el 2. Sin este chequeo, la nota de crédito habría
+    // apuntado a la 0002-00000001, que es otra factura (hecha por la página
+    // de ARCA) y no tiene nada que ver con Mercalin.
+    let original = match locate_original_in_arca(&state, &original, &cuit, punto_venta) {
+        Ok(pv) if pv == original.punto_venta => original,
+        Ok(pv) => {
+            let conn = state.db.lock();
+            conn.execute("UPDATE electronic_invoices SET punto_venta=?1 WHERE id=?2", params![pv, invoice_id]).map_err(err)?;
+            drop(conn);
+            fetch_invoice(&state, invoice_id)?
+        }
+        // Sin internet no se puede verificar: se sigue como siempre (la nota
+        // queda pendiente) solo si no hay dudas sobre el punto de venta.
+        Err(e) if is_connectivity_error(&e) && original.punto_venta == punto_venta => original,
+        Err(e) if is_connectivity_error(&e) => {
+            return Err("No hay conexión con ARCA para verificar esta factura antes de anularla. Probá de nuevo cuando tengas internet.".to_string());
+        }
+        Err(e) => return Err(e),
+    };
     let cbte_asoc = (original.cbte_tipo, original.punto_venta, original.cbte_nro.unwrap_or(0));
 
     // Importe total de la NC: el completo de la factura salvo que se pida un
@@ -868,9 +933,13 @@ fn attempt_reissue(
     let conn = state.db.lock();
     match result {
         Ok((cbte_nro, cae, exp)) => {
+            // Se guarda también el punto de venta con el que ARCA la autorizó:
+            // si la configuración cambió entre el primer intento y este, la
+            // fila tenía el viejo y el comprobante se mostraba (y se anulaba)
+            // con un número que no era el suyo.
             conn.execute(
-                "UPDATE electronic_invoices SET cbte_nro=?1, cae=?2, cae_expires_at=?3, status='autorizada' WHERE id=?4",
-                params![cbte_nro, cae, exp, inv_id],
+                "UPDATE electronic_invoices SET cbte_nro=?1, cae=?2, cae_expires_at=?3, status='autorizada', punto_venta=?5, error_msg=NULL WHERE id=?4",
+                params![cbte_nro, cae, exp, inv_id, punto_venta],
             ).map_err(err)?;
             Ok(())
         }
@@ -922,6 +991,38 @@ fn row_to_invoice(row: &rusqlite::Row) -> rusqlite::Result<ElectronicInvoice> {
 fn is_connectivity_error(msg: &str) -> bool {
     msg.starts_with("Error conectando con ARCA")
         || msg.starts_with("Error leyendo la respuesta")
+}
+
+// Motivo real de un rechazo de WSFE. La respuesta trae hasta tres listas de
+// mensajes: <Observaciones> (del comprobante), <Events> (avisos generales que
+// ARCA manda a todos, como el de la RG 5616) y <Errors>. Antes se mostraba el
+// primer <Msg> que apareciera, que casi siempre es un aviso de <Events> -- la
+// comerciante leía un texto que no tenía nada que ver con su problema.
+fn arca_rejection_reason(xml: &str) -> String {
+    let mut motivos: Vec<String> = Vec::new();
+    for bloque in ["Errors", "Observaciones"] {
+        let Some(contenido) = extract_xml_tag(xml, bloque) else { continue };
+        let mut resto = contenido.as_str();
+        while let Some(msg) = extract_xml_tag(resto, "Msg") {
+            let hasta = resto.find("</Msg>").map(|i| i + "</Msg>".len()).unwrap_or(resto.len());
+            let code = extract_xml_tag(&resto[..hasta], "Code");
+            let texto = xml_unescape(&msg);
+            motivos.push(match code {
+                Some(c) => format!("{texto} (código {c})"),
+                None => texto,
+            });
+            resto = &resto[hasta..];
+        }
+    }
+    if motivos.is_empty() {
+        return "ARCA no informó el motivo.".to_string();
+    }
+    let mut texto = motivos.join(" · ");
+    let lower = texto.to_lowercase();
+    if lower.contains("punto de venta") || lower.contains("ptovta") {
+        texto.push_str(" — Revisá el punto de venta: para facturar desde Mercalin tiene que ser uno de tipo \"Web Services\", distinto del que usás en Comprobantes en línea.");
+    }
+    texto
 }
 
 fn extract_xml_tag(xml: &str, tag: &str) -> Option<String> {
@@ -977,6 +1078,31 @@ mod tests {
         assert!(is_connectivity_error("Error leyendo la respuesta de ARCA: conexión cerrada"));
         assert!(!is_connectivity_error("ARCA rechazó la factura: CUIT no autorizado"));
         assert!(!is_connectivity_error("No hay configuración ARCA"));
+    }
+
+    #[test]
+    fn el_motivo_del_rechazo_sale_de_errors_y_no_del_aviso_general() {
+        // Caso real: ARCA rechazó una Factura C y la app mostró el aviso de
+        // la RG 5616 (que viene en <Events>) en lugar del motivo.
+        let xml = "<FECAESolicitarResult><FeCabResp><Resultado>R</Resultado></FeCabResp>\
+            <Events><Evt><Code>39</Code><Msg>IMPORTANTE: El dia 6 de abril de 2025...</Msg></Evt></Events>\
+            <Errors><Err><Code>10005</Code><Msg>El punto de venta no se encuentra habilitado</Msg></Err></Errors>\
+            </FECAESolicitarResult>";
+        let motivo = arca_rejection_reason(xml);
+        assert!(motivo.starts_with("El punto de venta no se encuentra habilitado (código 10005)"));
+        assert!(!motivo.contains("IMPORTANTE"));
+        assert!(motivo.contains("Web Services"));
+    }
+
+    #[test]
+    fn el_motivo_del_rechazo_junta_observaciones_y_errores() {
+        let xml = "<FeDetResp><Observaciones><Obs><Code>10015</Code><Msg>DocNro inv&amp;aacute;lido</Msg></Obs>\
+            <Obs><Code>10016</Code><Msg>Fecha fuera de rango</Msg></Obs></Observaciones></FeDetResp>\
+            <Events><Evt><Code>39</Code><Msg>Aviso</Msg></Evt></Events>";
+        let motivo = arca_rejection_reason(xml);
+        assert!(motivo.contains("(código 10015)") && motivo.contains("Fecha fuera de rango (código 10016)"));
+        assert!(!motivo.contains("Aviso"));
+        assert_eq!(arca_rejection_reason("<Events><Evt><Msg>Aviso</Msg></Evt></Events>"), "ARCA no informó el motivo.");
     }
 
     #[test]

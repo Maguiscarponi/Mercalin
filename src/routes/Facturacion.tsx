@@ -908,9 +908,12 @@ function ArcaSetup({ arcaConfig, onRefresh }: { arcaConfig: ArcaConfig | null; o
               <input className="input text-sm tabular" type="number" min="1" max="999"
                 value={form.punto_venta} onChange={(e) => setForm((f) => ({ ...f, punto_venta: Number(e.target.value) }))} />
               <span className="text-sm text-stone-400 block mt-1">
-                El número del punto de venta que tenés en ARCA para facturar por "Web Services". Suele ser el 1; si el 1 ya
-                lo usás para facturar desde la página de ARCA, es el 2. Lo ves en ARCA, en "Administración de puntos de
-                venta y domicilios".
+                Mercalin necesita un punto de venta propio, de tipo "Web Services". <strong>No sirve el que usás para
+                facturar desde la página de ARCA</strong> (ese dice "Factura en Línea"). Se crea en ARCA, en
+                "Administración de puntos de venta y domicilios" → "A/B/M de puntos de venta" → "Agregar": poné el
+                número que sigue al último que tengas y, en Sistema, elegí
+                {" "}<strong>"Factura Electrónica - Monotributo - Web Services"</strong> (si sos Responsable Inscripto,
+                "RECE para aplicativo y web services"). Ese número es el que va acá.
               </span>
             </label>
             <div className="text-sm text-orange-700 bg-orange-50 border border-orange-200 rounded p-3">
