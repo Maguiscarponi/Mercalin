@@ -1099,6 +1099,25 @@ pub struct ArcaConfigInput {
     pub inicio_actividades: Option<String>,
 }
 
+/// Un renglón de la revisión de ARCA. `estado`: "ok" | "falta" | "duda" |
+/// "sin_probar". `codigo` le dice a la pantalla qué pasos mostrar.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ArcaCheck {
+    pub estado: String,
+    pub codigo: String,
+    pub detalle: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ArcaDiagnosis {
+    pub certificado: ArcaCheck,
+    pub autorizacion: ArcaCheck,
+    pub punto_venta: ArcaCheck,
+    pub punto_venta_configurado: i64,
+    /// Los que ARCA informa como habilitados para Web Services (puede venir vacía).
+    pub puntos_venta_ws: Vec<i64>,
+}
+
 /// Tipos de comprobante ARCA
 /// 1=Factura A, 2=Nota Débito A, 3=Nota Crédito A
 /// 6=Factura B, 7=Nota Débito B, 8=Nota Crédito B

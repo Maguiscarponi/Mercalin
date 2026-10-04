@@ -1055,6 +1055,21 @@ export const helpContent: Record<string, HelpContent> = {
               "La pantalla te guía paso a paso (Datos → Certificado → Verificar) y te dice en criollo, arriba de todo, qué te falta para terminar. Podés volver a un paso ya hecho para corregir algo cuando quieras.",
           },
           {
+            label: "Botón 'Revisar mi configuración' (paso 3)",
+            description:
+              "Mercalin le pregunta a ARCA y te muestra tres renglones: el certificado, el permiso para facturar y el punto de venta. El que quede en rojo es lo que falta, y ahí mismo te muestra los pasos para resolverlo. Revisar no hace ninguna factura ni cambia nada en ARCA.",
+          },
+          {
+            label: "Los dos trámites en la página de ARCA",
+            description:
+              "Hay dos cosas que solo podés hacer vos, entrando a ARCA con tu Clave Fiscal, y se hacen una sola vez: darle permiso a Mercalin para facturar (Trámite A) y crear un punto de venta de tipo 'Web Services' (Trámite B). El que usás para facturar desde la página de ARCA no sirve para un sistema. En el paso 3 están los pasos de cada trámite, clic por clic y con imágenes.",
+          },
+          {
+            label: "¿No ves la factura en 'Mis Comprobantes' de ARCA?",
+            description:
+              "Es normal: ARCA tarda en mostrar ahí lo que se factura desde un sistema, a veces hasta el día siguiente. Para comprobarla al instante, abrí la factura con 'Ver' y tocá '¿No la ves en Mis Comprobantes de ARCA?': te da los datos y el link de la consulta de ARCA por CAE.",
+          },
+          {
             label: "💬 ¿Necesitás ayuda?",
             description:
               "Si te trabás en cualquier paso de la configuración con ARCA, este botón te abre un WhatsApp directo con soporte.",

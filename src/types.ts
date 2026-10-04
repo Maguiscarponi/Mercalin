@@ -495,6 +495,23 @@ export interface ArcaConfig {
   emision_automatica: boolean;
 }
 
+/** Un renglón de la revisión de ARCA (ver RevisionArca). */
+export interface ArcaCheck {
+  estado: 'ok' | 'falta' | 'duda' | 'sin_probar';
+  /** Motivo, para decidir qué pasos mostrar: 'no_autorizado', 'no_sirve', 'ninguno'… */
+  codigo: string;
+  detalle: string;
+}
+
+export interface ArcaDiagnosis {
+  certificado: ArcaCheck;
+  autorizacion: ArcaCheck;
+  punto_venta: ArcaCheck;
+  punto_venta_configurado: number;
+  /** Los que ARCA informa como habilitados para Web Services (puede venir vacía). */
+  puntos_venta_ws: number[];
+}
+
 export interface ArcaConfigInput {
   cuit: string;
   razon_social: string | null;

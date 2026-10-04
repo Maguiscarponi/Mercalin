@@ -726,6 +726,8 @@ pub fn run() {
             commands::arca::generate_arca_keypair,
             commands::arca::load_arca_certificate,
             commands::arca::test_arca_connection,
+            commands::arca::diagnose_arca,
+            commands::arca::set_arca_punto_venta,
             commands::arca::issue_electronic_invoice,
             commands::arca::issue_credit_note,
             commands::arca::list_electronic_invoices,

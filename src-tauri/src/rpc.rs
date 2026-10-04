@@ -218,6 +218,8 @@ pub fn dispatch(app: &AppHandle, command: &str, body: Value) -> RpcResult {
         "generate_arca_keypair" => crate::commands::arca::generate_arca_keypair[],
         "load_arca_certificate" => crate::commands::arca::load_arca_certificate[cert_pem: String],
         "test_arca_connection" => crate::commands::arca::test_arca_connection[],
+        "diagnose_arca" => crate::commands::arca::diagnose_arca[],
+        "set_arca_punto_venta" => crate::commands::arca::set_arca_punto_venta[punto_venta: i64, session_token: Option<String>],
         "issue_electronic_invoice" => crate::commands::arca::issue_electronic_invoice[input: crate::models::InvoiceInput],
         "issue_credit_note" => crate::commands::arca::issue_credit_note[invoice_id: i64, amount_cents: Option<i64>, return_id: Option<i64>],
         "list_electronic_invoices" => crate::commands::arca::list_electronic_invoices[limit: i64],

@@ -1,5 +1,5 @@
 use crate::commands::{audit::log_action, err, require_role, CmdResult};
-use crate::models::{ArcaConfig, ArcaConfigInput, ElectronicInvoice, InvoiceInput};
+use crate::models::{ArcaCheck, ArcaConfig, ArcaConfigInput, ArcaDiagnosis, ElectronicInvoice, InvoiceInput};
 use crate::AppState;
 use base64::{engine::general_purpose::STANDARD as B64, Engine};
 use openssl::hash::MessageDigest;
@@ -222,6 +222,14 @@ pub fn load_arca_certificate(cert_pem: String, state: State<AppState>) -> CmdRes
     if !has_key {
         return Err("Generá primero el par de claves antes de cargar el certificado".into());
     }
+    // Trampa común: tocar "Generar de nuevo" después de haber pedido el
+    // certificado en ARCA. El archivo que baja ARCA corresponde a la clave
+    // vieja y ARCA lo rechaza recién al facturar, con un error de firma que
+    // no dice nada. Mejor avisarlo acá, en el momento de cargarlo.
+    let key_pem: String = conn.query_row("SELECT private_key_pem FROM arca_config WHERE id=1", [], |r| r.get(0)).map_err(err)?;
+    if !cert_matches_key(&cert_pem, &key_pem) {
+        return Err("Este certificado no corresponde a la clave generada en esta computadora. Pasa si tocaste \"Generar de nuevo\" después de pedirlo en ARCA, o si es un archivo de otra compu. Descargá de nuevo el archivo mercalin.csr, cargalo en ARCA en un alias nuevo y subí acá el certificado que te dé.".into());
+    }
     conn.execute(
         "UPDATE arca_config SET certificate_pem=?1, token=NULL, sign=NULL, token_expires_at=NULL, updated_at=CURRENT_TIMESTAMP WHERE id=1",
         params![cert_pem],
@@ -311,7 +319,13 @@ fn parse_wsaa_response(xml: &str) -> Result<(String, String, String), String> {
     let unescaped = xml_unescape(xml);
 
     if let Some(fault) = extract_xml_tag(&unescaped, "faultstring") {
-        return Err(format!("ARCA rechazó la autenticación: {fault}"));
+        // El texto de ARCA solo ("Computador no autorizado a acceder al
+        // servicio") no le dice nada a un comerciante: se le agrega qué hacer.
+        let ayuda = match classify_wsaa_error(&fault) {
+            "no_autorizado" => " — A Mercalin le falta el permiso para facturar a tu nombre. Se da una sola vez en la página de ARCA: andá a Facturación → Configuración ARCA → paso 3 y seguí el \"Trámite A\".",
+            _ => "",
+        };
+        return Err(format!("ARCA rechazó la autenticación: {fault}{ayuda}"));
     }
 
     let token = extract_xml_tag(&unescaped, "token")
@@ -384,6 +398,218 @@ fn get_or_refresh_token(state: &AppState) -> Result<(String, String, String), St
 pub fn test_arca_connection(state: State<AppState>) -> CmdResult<String> {
     get_or_refresh_token(&state)
         .map(|_| "Conexión con ARCA exitosa — token obtenido correctamente".to_string())
+}
+
+// ─── Revisión de la configuración ────────────────────────────────────────────
+//
+// "Probar conexión" solo decía si anduvo o no. Probando con un CUIT real, la
+// dueña se trabó en tres lugares distintos (certificado, permiso en ARCA y
+// punto de venta) y cada vez el cartel era el texto crudo de ARCA. Esta
+// revisión mira las tres cosas por separado y le dice a la pantalla cuál
+// falta, para que muestre los pasos de ESE trámite y no de todos.
+
+fn check(estado: &str, codigo: &str, detalle: impl Into<String>) -> ArcaCheck {
+    ArcaCheck { estado: estado.to_string(), codigo: codigo.to_string(), detalle: detalle.into() }
+}
+
+fn cert_matches_key(cert_pem: &str, key_pem: &str) -> bool {
+    let (Ok(cert), Ok(key)) = (X509::from_pem(cert_pem.as_bytes()), PKey::private_key_from_pem(key_pem.as_bytes())) else {
+        return false;
+    };
+    cert.public_key().map(|pk| pk.public_eq(&key)).unwrap_or(false)
+}
+
+fn cert_expired(cert_pem: &str) -> bool {
+    let Ok(cert) = X509::from_pem(cert_pem.as_bytes()) else { return false };
+    openssl::asn1::Asn1Time::days_from_now(0)
+        .map(|now| cert.not_after() < now)
+        .unwrap_or(false)
+}
+
+// Motivo de un rechazo de WSAA (el servicio de ARCA que da el permiso para
+// usar los demás), a partir del texto que devuelve. El orden importa: "no
+// autorizado" va primero porque es, por lejos, el caso más común.
+fn classify_wsaa_error(msg: &str) -> &'static str {
+    let m = msg.to_lowercase();
+    if is_connectivity_error(msg) { "sin_internet" }
+    else if m.contains("no autorizado") || m.contains("notauthorized") { "no_autorizado" }
+    else if m.contains("ya posee un ta") || m.contains("alreadyauthenticated") { "ya_tiene_permiso" }
+    else if m.contains("expirado") || m.contains("cert.expired") { "certificado_vencido" }
+    else if m.contains("confianza") || m.contains("untrusted") { "certificado_ajeno" }
+    else if m.contains("generationtime") || m.contains("expirationtime") { "reloj" }
+    else if m.contains("firma") || m.contains("sign.invalid") || m.contains("cms") { "certificado_no_coincide" }
+    else { "otro" }
+}
+
+fn evaluar_autorizacion(resultado: &Result<(), String>) -> ArcaCheck {
+    let Err(e) = resultado else {
+        return check("ok", "ok", "ARCA le dio permiso a Mercalin para facturar a tu nombre.");
+    };
+    let codigo = classify_wsaa_error(e);
+    let detalle = match codigo {
+        "sin_internet" => "No se pudo llegar a ARCA. Revisá que esta computadora tenga internet y volvé a probar. A veces la página de ARCA se cae un rato: si tenés internet, esperá unos minutos.".to_string(),
+        "no_autorizado" => "El certificado está bien, pero ARCA todavía no le dio permiso a Mercalin para facturar. Falta hacer el Trámite A.".to_string(),
+        "ya_tiene_permiso" => "ARCA dice que ya dio un permiso hace muy poco y no quiere dar otro todavía. No es un error tuyo: esperá 10 minutos y volvé a tocar el botón.".to_string(),
+        "certificado_vencido" => "El certificado venció (duran dos años). Hay que pedir uno nuevo: volvé al paso 2 y hacelo otra vez.".to_string(),
+        "certificado_ajeno" => "ARCA no reconoce este certificado. Tiene que ser el que se descarga de \"Administración de Certificados Digitales\". Volvé al paso 2 y hacelo de nuevo.".to_string(),
+        "reloj" => "La fecha o la hora de esta computadora están mal y ARCA rechaza el pedido. Poné la hora automática en Windows (clic derecho en el reloj de abajo a la derecha → \"Ajustar fecha y hora\") y volvé a probar.".to_string(),
+        "certificado_no_coincide" => "El certificado no corresponde a la clave de esta computadora. Volvé al paso 2 y hacelo de nuevo, sin tocar \"Generar de nuevo\" después de descargar el archivo.".to_string(),
+        _ => format!("ARCA contestó algo que Mercalin no conoce: {e}"),
+    };
+    let estado = if matches!(codigo, "sin_internet" | "ya_tiene_permiso") { "duda" } else { "falta" };
+    check(estado, codigo, detalle)
+}
+
+// Puntos de venta habilitados para Web Services según FEParamGetPtosVenta
+// (los bloqueados o dados de baja no cuentan).
+fn parse_ptos_venta(xml: &str) -> Vec<i64> {
+    let mut out = Vec::new();
+    let mut resto = xml;
+    while let Some(bloque) = extract_xml_tag(resto, "PtoVenta") {
+        let hasta = resto.find("</PtoVenta>").map(|i| i + "</PtoVenta>".len()).unwrap_or(resto.len());
+        let bloqueado = extract_xml_tag(&bloque, "Bloqueado").map(|b| b.eq_ignore_ascii_case("S")).unwrap_or(false);
+        let baja = extract_xml_tag(&bloque, "FchBaja").map(|f| !f.is_empty() && !f.eq_ignore_ascii_case("NULL")).unwrap_or(false);
+        if let Some(nro) = extract_xml_tag(&bloque, "Nro").and_then(|n| n.parse::<i64>().ok()) {
+            if !bloqueado && !baja && !out.contains(&nro) { out.push(nro); }
+        }
+        resto = &resto[hasta..];
+    }
+    out.sort_unstable();
+    out
+}
+
+fn get_ptos_venta_ws(cuit: &str, token: &str, sign: &str, env: &str) -> Result<Vec<i64>, String> {
+    let body = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ar="http://ar.gov.afip.dif.FEV1/">
+  <soapenv:Header/>
+  <soapenv:Body>
+    <ar:FEParamGetPtosVenta>
+      <ar:Auth><ar:Token>{}</ar:Token><ar:Sign>{}</ar:Sign><ar:Cuit>{}</ar:Cuit></ar:Auth>
+    </ar:FEParamGetPtosVenta>
+  </soapenv:Body>
+</soapenv:Envelope>"#,
+        token, sign, cuit
+    );
+    let xml = soap_post(wsfev1_url(env), "http://ar.gov.afip.dif.FEV1/FEParamGetPtosVenta", &body)?;
+    if let Some(fault) = extract_xml_tag(&xml, "faultstring") {
+        return Err(format!("ARCA rechazó la consulta: {fault}"));
+    }
+    Ok(parse_ptos_venta(&xml))
+}
+
+// Veredicto sobre el punto de venta configurado, con dos fuentes: la lista
+// que da ARCA de los que sirven para Web Services y la consulta del último
+// comprobante de ese punto de venta (la misma que se hace antes de facturar).
+// La lista manda cuando viene con algo; si viene vacía se mira la consulta.
+fn evaluar_punto_venta(pv: i64, lista: &Result<Vec<i64>, String>, ultimo: &Result<i64, String>) -> ArcaCheck {
+    let sin_internet = |e: &String| is_connectivity_error(e);
+    if lista.as_ref().err().map(sin_internet).unwrap_or(false) || ultimo.as_ref().err().map(sin_internet).unwrap_or(false) {
+        return check("duda", "sin_internet", "No se pudo llegar a ARCA para revisar el punto de venta. Revisá el internet y volvé a probar.");
+    }
+    let disponibles = lista.as_ref().map(|l| l.as_slice()).unwrap_or(&[]);
+    if disponibles.contains(&pv) {
+        return check("ok", "ok", format!("El punto de venta {pv} sirve para facturar desde Mercalin."));
+    }
+    if !disponibles.is_empty() {
+        let lista_txt = disponibles.iter().map(|n| n.to_string()).collect::<Vec<_>>().join(", ");
+        return check("falta", "no_sirve", format!(
+            "El punto de venta {pv} no sirve para facturar desde un sistema. Según ARCA, el que sirve es: {lista_txt}. Elegilo acá abajo."
+        ));
+    }
+    match ultimo {
+        Err(e) => check("falta", "ninguno", format!(
+            "El punto de venta {pv} no sirve para facturar desde Mercalin y ARCA no informa ninguno que sirva. Hay que crear uno nuevo: es el Trámite B. (ARCA dijo: {})",
+            e.trim_start_matches("ARCA rechazó la factura: ").trim_start_matches("ARCA rechazó la consulta: ")
+        )),
+        Ok(_) => check("duda", "sin_confirmar", format!(
+            "ARCA no nos mostró la lista de puntos de venta, así que no pudimos confirmar si el {pv} sirve. Si lo creaste recién, esperá 10 minutos y volvé a revisar. Si no, miralo vos siguiendo el Trámite B: tiene que decir \"Web Services\"."
+        )),
+    }
+}
+
+#[tauri::command]
+pub fn diagnose_arca(state: State<AppState>) -> CmdResult<ArcaDiagnosis> {
+    let fila = {
+        let conn = state.db.lock();
+        conn.query_row(
+            "SELECT cuit, punto_venta, condicion_iva, private_key_pem, certificate_pem FROM arca_config WHERE id=1",
+            [],
+            |r| Ok((
+                r.get::<_, String>(0)?, r.get::<_, i64>(1)?, r.get::<_, String>(2)?,
+                r.get::<_, Option<String>>(3)?, r.get::<_, Option<String>>(4)?,
+            )),
+        ).ok()
+    };
+    let sin_probar = |motivo: &str| check("sin_probar", "sin_probar", motivo);
+    let Some((cuit, pv, condicion_iva, key_pem, cert_pem)) = fila.filter(|f| !f.0.trim().is_empty()) else {
+        return Ok(ArcaDiagnosis {
+            certificado: check("falta", "sin_datos", "Todavía no cargaste tus datos. Empezá por el paso 1."),
+            autorizacion: sin_probar("Se revisa cuando esté lo de arriba."),
+            punto_venta: sin_probar("Se revisa cuando esté lo de arriba."),
+            punto_venta_configurado: 0,
+            puntos_venta_ws: vec![],
+        });
+    };
+
+    let certificado = match (&key_pem, &cert_pem) {
+        (Some(k), Some(c)) if !cert_matches_key(c, k) => check("falta", "certificado_no_coincide",
+            "El certificado cargado no corresponde a la clave de esta computadora. Volvé al paso 2 y hacelo de nuevo."),
+        (Some(_), Some(c)) if cert_expired(c) => check("falta", "certificado_vencido",
+            "El certificado venció (duran dos años). Volvé al paso 2 y pedí uno nuevo."),
+        (Some(_), Some(_)) => check("ok", "ok", "El certificado está cargado en Mercalin."),
+        _ => check("falta", "sin_certificado", "Todavía no cargaste el certificado. Es el paso 2."),
+    };
+    if certificado.estado != "ok" {
+        return Ok(ArcaDiagnosis {
+            certificado,
+            autorizacion: sin_probar("Se revisa cuando el certificado esté bien."),
+            punto_venta: sin_probar("Se revisa cuando el certificado esté bien."),
+            punto_venta_configurado: pv,
+            puntos_venta_ws: vec![],
+        });
+    }
+
+    let acceso = get_or_refresh_token(&state);
+    let autorizacion = evaluar_autorizacion(&acceso.as_ref().map(|_| ()).map_err(|e| e.clone()));
+    let Ok((token, sign, env)) = acceso else {
+        return Ok(ArcaDiagnosis {
+            certificado, autorizacion,
+            punto_venta: sin_probar("Se revisa cuando ARCA le dé permiso a Mercalin."),
+            punto_venta_configurado: pv,
+            puntos_venta_ws: vec![],
+        });
+    };
+
+    let lista = get_ptos_venta_ws(&cuit, &token, &sign, &env);
+    let tipo = if condicion_iva == "responsable_inscripto" { cbte_tipo("B") } else { cbte_tipo("C") };
+    let ultimo = get_last_cbte_nro(&cuit, pv, tipo, &token, &sign, &env);
+    Ok(ArcaDiagnosis {
+        certificado, autorizacion,
+        punto_venta: evaluar_punto_venta(pv, &lista, &ultimo),
+        punto_venta_configurado: pv,
+        puntos_venta_ws: lista.unwrap_or_default(),
+    })
+}
+
+// Cambia solo el punto de venta, sin reenviar el resto de los datos fiscales
+// (para elegirlo con un clic entre los que ARCA informa que sirven).
+#[tauri::command]
+pub fn set_arca_punto_venta(punto_venta: i64, session_token: Option<String>, state: State<AppState>) -> CmdResult<()> {
+    if !(1..=99998).contains(&punto_venta) {
+        return Err("El punto de venta tiene que ser un número entre 1 y 99998.".to_string());
+    }
+    let conn = state.db.lock();
+    let actor_id = Some(require_role(&conn, &state.sessions, session_token.as_deref(), "supervisor")?);
+    let changed = conn.execute(
+        "UPDATE arca_config SET punto_venta=?1, updated_at=CURRENT_TIMESTAMP WHERE id=1",
+        params![punto_venta],
+    ).map_err(err)?;
+    if changed == 0 {
+        return Err("Primero completá y guardá tus datos de ARCA (Paso 1).".to_string());
+    }
+    log_action(&conn, actor_id, "editar", "arca_config", None, Some(&format!("Punto de venta para facturar: {punto_venta}")));
+    Ok(())
 }
 
 // ─── WSFEV1 — Emisión ────────────────────────────────────────────────────────
@@ -1103,6 +1329,81 @@ mod tests {
         assert!(motivo.contains("(código 10015)") && motivo.contains("Fecha fuera de rango (código 10016)"));
         assert!(!motivo.contains("Aviso"));
         assert_eq!(arca_rejection_reason("<Events><Evt><Msg>Aviso</Msg></Evt></Events>"), "ARCA no informó el motivo.");
+    }
+
+    #[test]
+    fn clasifica_los_rechazos_de_wsaa() {
+        // Texto real que devolvió ARCA con el certificado bien cargado pero
+        // sin la relación de Facturación Electrónica.
+        assert_eq!(classify_wsaa_error("Computador no autorizado a acceder al servicio"), "no_autorizado");
+        assert_eq!(classify_wsaa_error("El CEE ya posee un TA valido para el acceso al WSN solicitado"), "ya_tiene_permiso");
+        assert_eq!(classify_wsaa_error("Certificado expirado"), "certificado_vencido");
+        assert_eq!(classify_wsaa_error("Certificado no emitido por AC de confianza"), "certificado_ajeno");
+        assert_eq!(classify_wsaa_error("Firma inválida o algoritmo no soportado"), "certificado_no_coincide");
+        assert_eq!(classify_wsaa_error("Error conectando con ARCA: timeout"), "sin_internet");
+        assert_eq!(classify_wsaa_error("algo nuevo"), "otro");
+
+        // El cartel que se ve al facturar ya trae qué hacer, y se sigue clasificando igual.
+        let err = parse_wsaa_response("<faultstring>Computador no autorizado a acceder al servicio</faultstring>").unwrap_err();
+        assert!(err.contains("Trámite A"));
+        assert_eq!(evaluar_autorizacion(&Err(err)).codigo, "no_autorizado");
+        assert_eq!(evaluar_autorizacion(&Ok(())).estado, "ok");
+        assert_eq!(evaluar_autorizacion(&Err("Error conectando con ARCA: x".into())).estado, "duda");
+    }
+
+    #[test]
+    fn lee_los_puntos_de_venta_que_sirven_para_web_services() {
+        let xml = "<ResultGet>\
+            <PtoVenta><Nro>3</Nro><EmisionTipo>CAE</EmisionTipo><Bloqueado>N</Bloqueado><FchBaja>NULL</FchBaja></PtoVenta>\
+            <PtoVenta><Nro>5</Nro><EmisionTipo>CAE</EmisionTipo><Bloqueado>S</Bloqueado><FchBaja>NULL</FchBaja></PtoVenta>\
+            <PtoVenta><Nro>4</Nro><EmisionTipo>CAE</EmisionTipo><Bloqueado>N</Bloqueado><FchBaja>20250101</FchBaja></PtoVenta>\
+            <PtoVenta><Nro>1</Nro><EmisionTipo>CAE</EmisionTipo><Bloqueado>N</Bloqueado><FchBaja></FchBaja></PtoVenta>\
+            </ResultGet>";
+        assert_eq!(parse_ptos_venta(xml), vec![1, 3]);
+        assert!(parse_ptos_venta("<Errors><Err><Code>602</Code><Msg>Sin Resultados</Msg></Err></Errors>").is_empty());
+    }
+
+    #[test]
+    fn veredicto_del_punto_de_venta() {
+        // Caso real: configurado el 2 (Factura en Línea) y el único de Web Services es el 3.
+        let v = evaluar_punto_venta(2, &Ok(vec![3]), &Ok(15));
+        assert_eq!((v.estado.as_str(), v.codigo.as_str()), ("falta", "no_sirve"));
+        assert!(v.detalle.contains("3"));
+
+        assert_eq!(evaluar_punto_venta(3, &Ok(vec![3]), &Ok(1)).estado, "ok");
+        // Sin ninguno de Web Services: hay que crearlo.
+        let v = evaluar_punto_venta(2, &Ok(vec![]), &Err("ARCA rechazó la factura: no habilitado (código 11002)".into()));
+        assert_eq!(v.codigo, "ninguno");
+        assert!(v.detalle.contains("no habilitado") && !v.detalle.contains("rechazó la factura"));
+        // La lista no vino pero la consulta respondió bien: no se afirma nada.
+        assert_eq!(evaluar_punto_venta(3, &Ok(vec![]), &Ok(1)).estado, "duda");
+        assert_eq!(evaluar_punto_venta(3, &Err("Error conectando con ARCA: x".into()), &Ok(1)).codigo, "sin_internet");
+    }
+
+    #[test]
+    fn el_certificado_tiene_que_ser_de_la_clave_de_esta_compu() {
+        let cert_de = |pkey: &PKey<openssl::pkey::Private>, dias: u32| {
+            let mut name_builder = X509NameBuilder::new().unwrap();
+            name_builder.append_entry_by_text("CN", "Test").unwrap();
+            let name = name_builder.build();
+            let mut b = X509Builder::new().unwrap();
+            b.set_subject_name(&name).unwrap();
+            b.set_issuer_name(&name).unwrap();
+            b.set_pubkey(pkey).unwrap();
+            b.set_not_before(&Asn1Time::days_from_now(0).unwrap()).unwrap();
+            b.set_not_after(&Asn1Time::days_from_now(dias).unwrap()).unwrap();
+            b.sign(pkey, MessageDigest::sha256()).unwrap();
+            String::from_utf8(b.build().to_pem().unwrap()).unwrap()
+        };
+        let clave = PKey::from_rsa(Rsa::generate(2048).unwrap()).unwrap();
+        let otra = PKey::from_rsa(Rsa::generate(2048).unwrap()).unwrap();
+        let clave_pem = String::from_utf8(clave.private_key_to_pem_pkcs8().unwrap()).unwrap();
+
+        assert!(cert_matches_key(&cert_de(&clave, 365), &clave_pem));
+        // Caso real a evitar: se tocó "Generar de nuevo" después de pedir el certificado.
+        assert!(!cert_matches_key(&cert_de(&otra, 365), &clave_pem));
+        assert!(!cert_matches_key("no es un certificado", &clave_pem));
+        assert!(!cert_expired(&cert_de(&clave, 365)));
     }
 
     #[test]

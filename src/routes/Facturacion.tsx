@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
-import { centsToARS, arsStringToCents } from "@/lib/format";
+import { centsToARS, arsStringToCents, dateToLocalISO, parseUtcTimestamp, todayISO } from "@/lib/format";
 import type { ArcaConfig, ArcaConfigInput, Client, CondicionIvaCliente, ElectronicInvoice } from "@/types";
 import { showToast, confirmAction } from "@/stores/dialogs";
 import { useEscapeToClose } from "@/lib/useEscapeToClose";
@@ -15,6 +15,8 @@ import HelpButton from "@/components/HelpModal";
 import imgCrearDn from "@/assets/ayuda-arca/wsass-crear-dn.png";
 import imgListaServicios from "@/assets/ayuda-arca/wsass-lista-servicios.png";
 import imgAutorizacion from "@/assets/ayuda-arca/wsass-autorizacion.png";
+import RevisionArca from "@/components/arca/RevisionArca";
+import { GuiaCertificado } from "@/components/arca/GuiasArca";
 import clsx from "clsx";
 
 // El wizard conecta siempre contra ARCA Producción -- no se le muestra la
@@ -28,7 +30,10 @@ import clsx from "clsx";
 // frente al IVA que pide el Paso 1.
 const CONSTANCIA_URL = "https://seti.afip.gob.ar/padron-puc-constancia-internet/ConsultaConstanciaAction.do";
 const WSASS_HOMO_URL = "https://wsass-homo.afip.gob.ar/wsass/portal/main.aspx";
-const ARCA_PORTAL_URL = "https://auth.afip.gob.ar";
+// Consulta pública de ARCA para comprobar un comprobante por su CAE: responde
+// al instante, mientras que "Mis Comprobantes" tarda en mostrar lo que se
+// emite desde un sistema (a veces hasta el día siguiente).
+const CONSTATACION_URL = "https://serviciosweb.afip.gob.ar/genericos/comprobantes/cae.aspx";
 
 type Tab = "facturas" | "configuracion";
 
@@ -138,9 +143,11 @@ export default function Facturacion() {
   const pendientes = invoices.filter((i) => i.status === "pendiente");
   const autorizadas = invoices.filter((i) => i.status === "autorizada");
   const errores = invoices.filter((i) => i.status === "error");
-  const today = new Date().toISOString().split("T")[0];
-  const hoy = invoices.filter((i) => i.created_at.startsWith(today) && i.status === "autorizada");
-  const totalHoy = hoy.reduce((s, i) => s + i.total_cents, 0);
+  const today = todayISO();
+  const hoy = invoices.filter((i) => dateToLocalISO(parseUtcTimestamp(i.created_at)) === today && i.status === "autorizada");
+  // Las notas de crédito restan: una factura de $100 anulada deja el día en
+  // $0, no en $200.
+  const totalHoy = hoy.reduce((s, i) => s + (i.credited_invoice_id != null ? -i.total_cents : i.total_cents), 0);
 
   // Facturas que ya tienen una Nota de Crédito emitida (autorizada o en
   // camino) -- no se puede anular dos veces la misma factura.
@@ -170,7 +177,7 @@ export default function Facturacion() {
     const esNC = inv.credited_invoice_id != null;
     if (filterType === "NC" && !esNC) return false;
     if (filterType !== "all" && filterType !== "NC" && (esNC || inv.invoice_type !== filterType)) return false;
-    if (rangeStart && new Date(inv.created_at) < rangeStart) return false;
+    if (rangeStart && parseUtcTimestamp(inv.created_at) < rangeStart) return false;
     if (filterQuery.trim()) {
       const q = filterQuery.trim().toLowerCase();
       const haystack = `${inv.client_name || ""} ${inv.client_cuit || ""} ${formatCbteNro(inv.cbte_nro, inv.punto_venta)}`.toLowerCase();
@@ -365,7 +372,7 @@ export default function Facturacion() {
                               {STATUS_LABEL[inv.status]}
                             </span>
                           </td>
-                          <td className="py-2.5 px-4 text-xs text-stone-400">{new Date(inv.created_at).toLocaleDateString("es-AR")}</td>
+                          <td className="py-2.5 px-4 text-xs text-stone-400">{parseUtcTimestamp(inv.created_at).toLocaleDateString("es-AR")}</td>
                           <td className="py-2.5 px-4 whitespace-nowrap">
                             <button onClick={() => setSelected(inv)} className="text-xs text-stone-400 hover:text-stone-700 mr-2">Ver</button>
                             {inv.status === "autorizada" && (
@@ -406,6 +413,7 @@ export default function Facturacion() {
           <div className="p-5">
             <ArcaSetup
               arcaConfig={arcaConfig || null}
+              yaFacturo={autorizadas.length > 0}
               onRefresh={load}
             />
           </div>
@@ -415,6 +423,7 @@ export default function Facturacion() {
       {selected && (
         <InvoiceDetail
           inv={selected}
+          emisorCuit={arcaConfig?.cuit}
           onClose={() => setSelected(null)}
           onPrint={selected.status === "autorizada" ? () => { setPrinting(selected); setSelected(null); } : undefined}
         />
@@ -632,7 +641,7 @@ function NuevaFacturaModal({ arcaConfig, onClose, onIssued }: { arcaConfig: Arca
 
 // ── Wizard de configuración ARCA ────────────────────────────────────────────
 
-function ArcaSetup({ arcaConfig, onRefresh }: { arcaConfig: ArcaConfig | null; onRefresh: () => void }) {
+function ArcaSetup({ arcaConfig, yaFacturo, onRefresh }: { arcaConfig: ArcaConfig | null; yaFacturo: boolean; onRefresh: () => void }) {
   const currentRole = useAuthStore((s) => s.user?.role ?? null);
   const [form, setForm] = useState<ArcaConfigInput>({
     cuit: arcaConfig?.cuit || "",
@@ -721,7 +730,10 @@ function ArcaSetup({ arcaConfig, onRefresh }: { arcaConfig: ArcaConfig | null; o
 
   const step1Done = !!arcaConfig;
   const step2Done = !!arcaConfig?.has_certificate;
-  const tokenValid = !!arcaConfig?.token_valid;
+  // El permiso que da ARCA dura 12 horas y se renueva solo al facturar: que
+  // esté vencido no quiere decir que falte configurar algo. Si ya salió una
+  // factura autorizada, la configuración está probada.
+  const tokenValid = !!arcaConfig?.token_valid || (step2Done && yaFacturo);
 
   // Un solo estado en criollo, arriba de todo -- para que quien no entiende
   // nada de ARCA sepa de un vistazo qué le falta, sin tener que leer los 3
@@ -731,7 +743,7 @@ function ArcaSetup({ arcaConfig, onRefresh }: { arcaConfig: ArcaConfig | null; o
     : !step2Done
     ? { text: "Falta cargar el certificado", sub: "Generá la clave y subí el archivo que te da ARCA en el Paso 2.", ok: false }
     : !tokenValid
-    ? { text: "Falta probar la conexión", sub: "Con el certificado cargado, probá la conexión en el Paso 3 para terminar.", ok: false }
+    ? { text: "Faltan los trámites en ARCA", sub: 'Andá al Paso 3: están los pasos, y el botón "Revisar mi configuración" te dice qué falta.', ok: false }
     : { text: "Todo listo — ya podés facturar", sub: "La Facturación Electrónica está activa y funcionando.", ok: true };
 
   // Wizard guiado: se muestra un paso por vez en vez de los 3 juntos, así no
@@ -903,19 +915,10 @@ function ArcaSetup({ arcaConfig, onRefresh }: { arcaConfig: ArcaConfig | null; o
                 </span>
               </label>
             </div>
-            <label className="block">
-              <span className="text-sm font-medium text-stone-600 block mb-1">Punto de venta</span>
-              <input className="input text-sm tabular" type="number" min="1" max="999"
-                value={form.punto_venta} onChange={(e) => setForm((f) => ({ ...f, punto_venta: Number(e.target.value) }))} />
-              <span className="text-sm text-stone-400 block mt-1">
-                Mercalin necesita un punto de venta propio, de tipo "Web Services". <strong>No sirve el que usás para
-                facturar desde la página de ARCA</strong> (ese dice "Factura en Línea"). Se crea en ARCA, en
-                "Administración de puntos de venta y domicilios" → "A/B/M de puntos de venta" → "Agregar": poné el
-                número que sigue al último que tengas y, en Sistema, elegí
-                {" "}<strong>"Factura Electrónica - Monotributo - Web Services"</strong> (si sos Responsable Inscripto,
-                "RECE para aplicativo y web services"). Ese número es el que va acá.
-              </span>
-            </label>
+            {/* El punto de venta ya no se pide acá: se elige en el Paso 3,
+                donde están los pasos para crearlo en ARCA y la revisión que
+                dice si el elegido sirve. Pedirlo de entrada hacía que se
+                cargara el de "Factura en Línea", que ARCA rechaza. */}
             <div className="text-sm text-orange-700 bg-orange-50 border border-orange-200 rounded p-3">
               ⚠ Esta conexión es real: las facturas que emitas van a quedar en tu cuenta de ARCA de verdad.
             </div>
@@ -945,7 +948,11 @@ function ArcaSetup({ arcaConfig, onRefresh }: { arcaConfig: ArcaConfig | null; o
 
             {/* Sub-paso 1: generar clave */}
             <div>
-              <p className="text-base font-semibold text-stone-700 mb-2">1. Generá tu clave (acá, en esta app)</p>
+              <p className="text-base font-semibold text-stone-700 mb-1">1. Generá tu clave (acá, en Mercalin)</p>
+              <p className="text-sm text-stone-500 mb-2">
+                Tocá el botón de abajo. Después va a aparecer otro botón rojo para <strong>descargar un archivo</strong> que
+                se llama mercalin.csr: tocalo también. Ese archivo es el que le vas a dar a ARCA en el punto 2.
+              </p>
               <button onClick={generateKey} disabled={generatingKey} className="btn btn-secondary w-full text-sm disabled:opacity-50">
                 {generatingKey ? "Generando…" : csr || step2Done ? "Generar de nuevo" : "Generar clave y CSR"}
               </button>
@@ -971,7 +978,7 @@ function ArcaSetup({ arcaConfig, onRefresh }: { arcaConfig: ArcaConfig | null; o
                       📋 O copiar el texto
                     </button>
                   </div>
-                  <p className="text-sm text-stone-400">Lo vas a necesitar en el Paso 2 — algunas pantallas de ARCA piden pegar el texto, otras piden subir el archivo.</p>
+                  <p className="text-sm text-stone-400">El archivo queda en tu carpeta "Descargas". ARCA normalmente pide el archivo; "copiar el texto" es solo por si alguna pantalla pide pegarlo.</p>
                 </div>
               )}
             </div>
@@ -980,35 +987,12 @@ function ArcaSetup({ arcaConfig, onRefresh }: { arcaConfig: ArcaConfig | null; o
                 Testing y Producción son trámites DISTINTOS en ARCA (nombres de menú distintos), no la misma
                 pantalla con otra URL -- por eso las instrucciones cambian según el entorno elegido. */}
             <div>
-              <p className="text-base font-semibold text-stone-700 mb-2">2. Pedí el certificado en la web de ARCA</p>
+              <p className="text-base font-semibold text-stone-700 mb-1">2. Pedí el certificado en la página de ARCA</p>
+              <p className="text-sm text-stone-500 mb-2">
+                Seguí estos pasos en orden, de a uno. Al final vas a tener un archivo nuevo, que termina en ".crt".
+              </p>
               {form.environment === "prod" ? (
-                <div className="text-sm text-stone-600 bg-amber-50 border border-amber-200 rounded-lg p-4 space-y-4">
-                  <div className="bg-orange-50 border border-orange-200 text-orange-700 rounded p-2.5 font-medium">
-                    ⚠ Estás en Producción: el certificado que generes acá va a poder emitir facturas reales.
-                  </div>
-                  <button
-                    onClick={() => openUrl(ARCA_PORTAL_URL)}
-                    className="w-full text-left bg-white border border-amber-300 rounded px-3 py-2.5 text-amber-800 font-medium hover:bg-amber-100"
-                  >
-                    🔗 Abrir el portal de ARCA
-                  </button>
-                  <div className="text-sm text-stone-400">
-                    Si el botón no abre nada, copiá y pegá esta dirección en el navegador:<br />
-                    <code className="select-all bg-white border border-stone-200 rounded px-1.5 py-0.5 inline-block mt-1 break-all">{ARCA_PORTAL_URL}</code>
-                  </div>
-                  <div className="space-y-2.5">
-                    <NumberedStep n={1}>Ingresá con tu <strong>Clave Fiscal</strong> (nivel 3 o superior).</NumberedStep>
-                    <NumberedStep n={2}>En el buscador de servicios de ARCA, escribí y abrí <strong>"Administración de Certificados Digitales"</strong>. Si no te aparece en la lista, primero hay que sumarlo desde "Administrador de Relaciones de Clave Fiscal" → buscarlo y adherirlo.</NumberedStep>
-                    <NumberedStep n={3}>Si tenés más de una empresa/CUIT a tu nombre, seleccioná la que corresponde.</NumberedStep>
-                    <NumberedStep n={4}>Tocá <strong>"Agregar alias"</strong>.</NumberedStep>
-                    <NumberedStep n={5}>Completá el campo <strong>"Alias"</strong> con un nombre para reconocerlo (por ejemplo el nombre de tu negocio, solo letras y números).</NumberedStep>
-                    <NumberedStep n={6}>Te va a pedir el archivo del CSR — usá el que descargaste en el Paso 1 ("mercalin.csr"). Si en cambio te pide pegar el texto, usá el botón "Copiar" de arriba.</NumberedStep>
-                    <NumberedStep n={7}>Confirmá con <strong>"Agregar Alias"</strong>. En la lista que aparece, tocá <strong>"Ver"</strong> y después <strong>"Descargar"</strong> — ese archivo es tu certificado.</NumberedStep>
-                  </div>
-                  <p className="text-sm text-stone-500 pt-2 border-t border-amber-200">
-                    Estos nombres de menú pueden variar un poco según cómo esté organizado tu ARCA. Si te trabás, tocá "¿Necesitás ayuda?" arriba de todo y escribinos.
-                  </p>
-                </div>
+                <GuiaCertificado />
               ) : (
                 <div className="text-sm text-stone-600 bg-amber-50 border border-amber-200 rounded-lg p-4 space-y-4">
                   <button
@@ -1038,13 +1022,17 @@ function ArcaSetup({ arcaConfig, onRefresh }: { arcaConfig: ArcaConfig | null; o
 
             {/* Sub-paso 3: subir el archivo */}
             <div>
-              <p className="text-base font-semibold text-stone-700 mb-2">3. Subí ese archivo acá</p>
+              <p className="text-base font-semibold text-stone-700 mb-1">3. Subí el certificado acá</p>
+              <p className="text-sm text-stone-500 mb-2">
+                Tocá el botón de abajo. Se abre una ventana de Windows: a la izquierda hacé clic en "Descargas", buscá
+                el archivo que bajaste de ARCA (termina en ".crt"), hacele un clic y tocá "Abrir".
+              </p>
               <input ref={certInputRef} type="file" accept=".crt,.pem,.cer" className="hidden"
                 onChange={(e) => { const f = e.target.files?.[0]; if (f) loadCert(f); }} />
               <button onClick={() => certInputRef.current?.click()} disabled={loadingCert} className="btn btn-secondary w-full text-sm">
                 {loadingCert ? "Cargando…" : step2Done ? "✓ Cargado — reemplazar" : "Cargar el archivo que descargaste"}
               </button>
-              <span className="text-sm text-stone-400 block mt-1">Es el archivo que bajaste en el Paso 2, adentro de ARCA.</span>
+              <span className="text-sm text-stone-400 block mt-1">Ojo: no es el mercalin.csr del punto 1. Es el que te dio ARCA al final del punto 2.</span>
             </div>
 
             <div className="flex gap-2 pt-1 border-t border-stone-100">
@@ -1063,37 +1051,16 @@ function ArcaSetup({ arcaConfig, onRefresh }: { arcaConfig: ArcaConfig | null; o
         {activeStep === 3 && (
         <div className="card p-6">
           <div className="space-y-6">
-            <div className="text-sm text-stone-600 bg-stone-50 border border-stone-200 rounded p-4 leading-relaxed">
-              <strong>Un paso más antes de probar:</strong> tenés que decirle a ARCA que ese certificado puede usarse
-              específicamente para facturar (no alcanza con haberlo creado).
-            </div>
-            {form.environment === "prod" ? (
-              <div className="text-sm text-stone-600 bg-amber-50 border border-amber-200 rounded-lg p-4 space-y-4">
-                <button
-                  onClick={() => openUrl(ARCA_PORTAL_URL)}
-                  className="w-full text-left bg-white border border-amber-300 rounded px-3 py-2.5 text-amber-800 font-medium hover:bg-amber-100"
-                >
-                  🔗 Abrir el portal de ARCA
-                </button>
-                <div className="text-sm text-stone-400">
-                  Si el botón no abre nada, copiá y pegá esta dirección en el navegador:<br />
-                  <code className="select-all bg-white border border-stone-200 rounded px-1.5 py-0.5 inline-block mt-1 break-all">{ARCA_PORTAL_URL}</code>
-                </div>
-                <div className="space-y-2.5">
-                  <NumberedStep n={1}>Ingresá con tu Clave Fiscal (si te la pide de nuevo).</NumberedStep>
-                  <NumberedStep n={2}>En el buscador de servicios, escribí y abrí <strong>"Administrador de Relaciones de Clave Fiscal"</strong>.</NumberedStep>
-                  <NumberedStep n={3}>Si administrás más de un CUIT, seleccioná el que corresponde.</NumberedStep>
-                  <NumberedStep n={4}>Tocá <strong>"Nueva Relación"</strong>.</NumberedStep>
-                  <NumberedStep n={5}>En "Representado" va a aparecer tu propio CUIT por defecto — dejalo así.</NumberedStep>
-                  <NumberedStep n={6}>Tocá el primer botón <strong>"Buscar"</strong>, abrí "ARCA {'>'} Web Services" y elegí <strong>"Facturación Electrónica"</strong>.</NumberedStep>
-                  <NumberedStep n={7}>Tocá el segundo botón <strong>"Buscar"</strong> y elegí el certificado (el alias) que creaste en el Paso 2.</NumberedStep>
-                  <NumberedStep n={8}>Tocá <strong>"Confirmar"</strong>, y confirmá otra vez cuando te lo vuelva a pedir. Con eso queda autorizado.</NumberedStep>
-                </div>
-                <p className="text-sm text-stone-500 pt-2 border-t border-amber-200">
-                  ¿Te trabaste en algún punto? Tocá "¿Necesitás ayuda?" arriba de todo y escribinos por WhatsApp.
-                </p>
-              </div>
+            {form.environment === "prod" && arcaConfig ? (
+              <RevisionArca
+                arcaConfig={arcaConfig}
+                puedeEditar={canEditModo}
+                onRefresh={onRefresh}
+                onPuntoVentaGuardado={(pv) => setForm((f) => ({ ...f, punto_venta: pv }))}
+                onIrAPaso={setActiveStep}
+              />
             ) : (
+              <>
               <div className="text-sm text-stone-600 bg-amber-50 border border-amber-200 rounded-lg p-4 space-y-4">
                 <button
                   onClick={() => openUrl(WSASS_HOMO_URL)}
@@ -1117,7 +1084,6 @@ function ArcaSetup({ arcaConfig, onRefresh }: { arcaConfig: ArcaConfig | null; o
                   ¿Te trabaste en algún punto? Tocá "¿Necesitás ayuda?" arriba de todo y escribinos por WhatsApp.
                 </p>
               </div>
-            )}
             <p className="text-sm text-stone-500">
               Recién ahora tiene sentido probar. Necesitás conexión a internet.
             </p>
@@ -1129,9 +1095,11 @@ function ArcaSetup({ arcaConfig, onRefresh }: { arcaConfig: ArcaConfig | null; o
                 {testResult.ok ? "✓ " : "✗ "}{testResult.msg}
               </div>
             )}
+              </>
+            )}
             {arcaConfig?.token_expires_at && (
               <p className="text-sm text-stone-500">
-                Token válido hasta{" "}
+                Permiso de ARCA vigente hasta las{" "}
                 <span className="font-medium">{new Date(arcaConfig.token_expires_at).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })}</span>
                 {" "}· se renueva solo
               </p>
@@ -1170,9 +1138,60 @@ function ArcaSetup({ arcaConfig, onRefresh }: { arcaConfig: ArcaConfig | null; o
   );
 }
 
+// ── "No la veo en ARCA" ──────────────────────────────────────────────────────
+//
+// Caso real: una factura autorizada no aparecía en "Mis Comprobantes" y la
+// dueña creyó que no existía. ARCA tarda en mostrar ahí lo emitido desde un
+// sistema; la consulta por CAE, en cambio, responde al instante.
+function ComprobarEnArca({ inv, emisorCuit }: { inv: ElectronicInvoice; emisorCuit: string }) {
+  const [open, setOpen] = useState(false);
+  const esNC = inv.credited_invoice_id != null;
+  const datos: [string, string][] = [
+    ["CUIT del emisor", emisorCuit],
+    ["CAE", inv.cae || ""],
+    ["Fecha de emisión", parseUtcTimestamp(inv.created_at).toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" })],
+    ["Tipo de comprobante", `${esNC ? "Nota de Crédito" : "Factura"} ${inv.invoice_type}`],
+    ["Punto de venta", String(inv.punto_venta)],
+    ["Número", String(inv.cbte_nro ?? "")],
+    ["Importe total", (inv.total_cents / 100).toFixed(2).replace(".", ",")],
+    ["Documento del receptor", inv.client_cuit ? inv.client_cuit : 'tipo "Otro" o "Sin identificar", número 0'],
+  ];
+  return (
+    <div className="mt-3 text-sm">
+      <button type="button" onClick={() => setOpen((v) => !v)} className="text-sky-700 hover:underline">
+        {open ? "▾" : "▸"} ¿No la ves en "Mis Comprobantes" de ARCA?
+      </button>
+      {open && (
+        <div className="mt-2 bg-sky-50 border border-sky-200 rounded p-3 space-y-2 text-stone-600 leading-relaxed">
+          <p>
+            <strong>Es normal.</strong> ARCA tarda en mostrar en "Mis Comprobantes" lo que se factura desde un sistema:
+            puede aparecer recién al día siguiente. Si acá dice <strong>Autorizada</strong> y tiene CAE, la factura existe.
+          </p>
+          <p>¿Querés comprobarlo ahora? ARCA tiene una consulta que responde al instante. Tocá el botón y completá con estos datos:</p>
+          <dl className="bg-white border border-sky-100 rounded p-2 space-y-1 text-xs">
+            {datos.map(([k, v]) => (
+              <div key={k} className="flex justify-between gap-3">
+                <dt className="text-stone-500">{k}</dt>
+                <dd className="font-mono text-stone-800 select-all text-right">{v}</dd>
+              </div>
+            ))}
+          </dl>
+          <button onClick={() => openUrl(CONSTATACION_URL)} className="btn btn-secondary text-sm w-full">
+            🔗 Abrir la consulta de ARCA
+          </button>
+          <p className="text-xs text-stone-500">
+            Después de completar, escribí el código de seguridad que te muestra y tocá "Consultar". Tiene que decir que
+            los datos coinciden con una autorización otorgada por ARCA. Esa consulta solo mira: no cambia nada.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Modal detalle de factura ─────────────────────────────────────────────────
 
-function InvoiceDetail({ inv, onClose, onPrint }: { inv: ElectronicInvoice; onClose: () => void; onPrint?: () => void }) {
+function InvoiceDetail({ inv, emisorCuit, onClose, onPrint }: { inv: ElectronicInvoice; emisorCuit?: string; onClose: () => void; onPrint?: () => void }) {
   const ivaRate = inv.neto_cents > 0 ? ((inv.iva_cents / inv.neto_cents) * 100).toFixed(0) : "0";
   useEscapeToClose(onClose);
   return (
@@ -1198,11 +1217,14 @@ function InvoiceDetail({ inv, onClose, onPrint }: { inv: ElectronicInvoice; onCl
             <div className="flex justify-between border-t border-stone-100 pt-2"><dt className="text-stone-500">CAE</dt><dd className="font-mono text-xs">{inv.cae}</dd></div>
             <div className="flex justify-between"><dt className="text-stone-500">Vto. CAE</dt><dd className="text-xs">{inv.cae_expires_at}</dd></div>
           </>}
-          {inv.error_msg && <div className="mt-2 p-3 bg-orange-50 text-orange-700 text-xs rounded border border-orange-200">{inv.error_msg}</div>}
+          {/* Un comprobante autorizado en un reintento puede conservar el
+              motivo del primer rechazo: ya no dice nada y asusta. */}
+          {inv.error_msg && inv.status !== "autorizada" && <div className="mt-2 p-3 bg-orange-50 text-orange-700 text-xs rounded border border-orange-200">{inv.error_msg}</div>}
           <div className="flex justify-between text-xs text-stone-400 border-t border-stone-100 pt-2">
-            <dt>Emitida</dt><dd>{new Date(inv.created_at).toLocaleString("es-AR")}</dd>
+            <dt>Emitida</dt><dd>{parseUtcTimestamp(inv.created_at).toLocaleString("es-AR")}</dd>
           </div>
         </dl>
+        {inv.status === "autorizada" && inv.cae && emisorCuit && <ComprobarEnArca inv={inv} emisorCuit={emisorCuit} />}
         <div className="flex gap-2 mt-5">
           <button onClick={onClose} className="btn btn-secondary flex-1">Cerrar</button>
           {onPrint && <button onClick={onPrint} className="btn btn-primary flex-1">🖨️ Ver factura</button>}

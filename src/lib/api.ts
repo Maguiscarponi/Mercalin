@@ -18,7 +18,7 @@ function currentSessionToken(): string | null {
 }
 import type {
   DeviceConfig, PendingSyncOp, LicenseStatus,
-  ArcaConfig, ArcaConfigInput, ElectronicInvoice, InvoiceInput,
+  ArcaConfig, ArcaConfigInput, ArcaDiagnosis, ElectronicInvoice, InvoiceInput,
   AuditEntry,
   BackupInfo,
   BulkPriceInput, BulkPricePreviewItem, BulkStockInput, BulkStockPreviewItem,
@@ -561,6 +561,12 @@ export const api = {
 
   testArcaConnection: () =>
     rpc<string>("test_arca_connection"),
+
+  diagnoseArca: () =>
+    rpc<ArcaDiagnosis>("diagnose_arca"),
+
+  setArcaPuntoVenta: (puntoVenta: number) =>
+    rpc<void>("set_arca_punto_venta", { puntoVenta, sessionToken: currentSessionToken() }),
 
   issueElectronicInvoice: (input: InvoiceInput) =>
     rpc<ElectronicInvoice>("issue_electronic_invoice", { input }),
