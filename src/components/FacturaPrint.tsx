@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { centsToARS } from "@/lib/format";
+import { centsToARS, parseUtcTimestamp } from "@/lib/format";
 import { printHtml } from "@/lib/printHtml";
 import { buildAfipQrDataUrl } from "@/lib/afipQr";
 import { labelForCondicionIvaReceptorId, LEYENDA_FACTURA_A_MONOTRIBUTO } from "@/lib/facturacion";
@@ -72,7 +72,7 @@ function buildFacturaHtml(p: Props): string {
   const { invoice: inv, emisor, items, qrDataUrl, associatedInvoice } = p;
   const esNC = inv.credited_invoice_id != null;
   const cod = String(inv.cbte_tipo).padStart(2, "0");
-  const fecha = new Date(inv.created_at).toLocaleDateString("es-AR");
+  const fecha = parseUtcTimestamp(inv.created_at).toLocaleDateString("es-AR");
   // Solo Factura/NC A y B discriminan IVA -- C nunca, así que esas dos
   // columnas del detalle no tienen sentido en un comprobante C.
   const discriminaIva = inv.invoice_type === "A" || inv.invoice_type === "B";

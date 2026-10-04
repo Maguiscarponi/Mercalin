@@ -58,6 +58,16 @@ export function dateToLocalISO(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
+// Las tablas que guardan la fecha con CURRENT_TIMESTAMP de SQLite (por ejemplo
+// los comprobantes de ARCA) la guardan en hora UTC sin decirlo: "2026-10-04
+// 22:46:27". Leído tal cual, el navegador lo toma como hora local -- tres horas
+// adelantado y, después de las 21:00, con la fecha del día siguiente. Así la
+// fecha impresa en una factura no coincidía con la que tiene ARCA.
+export function parseUtcTimestamp(s: string): Date {
+  if (/[zZ]$|[+-]\d\d:?\d\d$/.test(s)) return new Date(s);
+  return new Date(s.replace(" ", "T") + "Z");
+}
+
 export function todayISO(): string {
   return dateToLocalISO(new Date());
 }
