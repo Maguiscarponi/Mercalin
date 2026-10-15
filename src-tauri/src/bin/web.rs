@@ -9,7 +9,8 @@
 //   - Una base SQLite por comercio (igual que en su compu), en
 //     <datos>/comercios/<id>/kiosco.db, creada desde la misma plantilla con
 //     el catálogo de 7.500 productos.
-//   - Entrada con un código de 6 dígitos al mail (sin contraseñas que olvidar).
+//   - Entrada con mail y contraseña; si se la olvida, un código de 6 dígitos
+//     al mail para elegir una nueva.
 //   - /api/rpc/<comando>: el mismo canal que ya usa la app en modo multicaja.
 //   - Sirve la app (el build web de React) y la página de entrada.
 //
@@ -354,6 +355,7 @@ struct Server {
     accounts: Mutex<Connection>,
     tenants: Tenants,
     signup_hits: Mutex<HashMap<String, Vec<i64>>>,
+    login_fails: Mutex<HashMap<String, Vec<i64>>>,
 }
 
 type Shared = Arc<Server>;
@@ -422,7 +424,9 @@ impl Server {
         Some((account, hash))
     }
 
-    fn create_account(&self, email: &str, business_name: &str, phone: Option<&str>, source: &str) -> Result<Account, String> {
+    /// Crea la cuenta, la base del comercio y el usuario dueño (con el mail
+    /// y la contraseña que eligió). Devuelve la cuenta y el login del dueño.
+    fn create_account(&self, email: &str, business_name: &str, phone: Option<&str>, password: &str, source: &str) -> Result<(Account, Value), String> {
         let id = random_hex(12);
         let created = now();
         let trial_ends = created + self.cfg.trial_days * 86400;
@@ -437,13 +441,21 @@ impl Server {
             )
             .map_err(|e| e.to_string())?;
         }
-        if let Err(e) = self.tenants.create(&id, business_name, phone) {
-            let conn = self.accounts.lock();
-            let _ = conn.execute("DELETE FROM accounts WHERE id=?1", params![id]);
-            return Err(e);
-        }
+        let owner = self.tenants.create(&id, business_name, phone).and_then(|_| {
+            let state = self.tenants.get(&id)?;
+            let result = commands::users::claim_admin_account(email.to_string(), password.to_string(), &state)?;
+            serde_json::to_value(result).map_err(|e| e.to_string())
+        });
+        let owner = match owner {
+            Ok(v) => v,
+            Err(e) => {
+                let conn = self.accounts.lock();
+                let _ = conn.execute("DELETE FROM accounts WHERE id=?1", params![id]);
+                return Err(e);
+            }
+        };
         println!("[mercalin-web] Comercio nuevo: {} ({}) desde {}", business_name, email, source);
-        Ok(Account {
+        Ok((Account {
             id,
             email: email.to_string(),
             business_name: business_name.to_string(),
@@ -451,7 +463,20 @@ impl Server {
             created_at: created,
             trial_ends_at: trial_ends,
             plan: "prueba".into(),
-        })
+        }, owner))
+    }
+
+    /// Demasiados intentos fallidos de contraseña para ese mail en 15 minutos.
+    fn too_many_login_fails(&self, email: &str) -> bool {
+        let mut fails = self.login_fails.lock();
+        let list = fails.entry(email.to_string()).or_default();
+        let since = now() - 15 * 60;
+        list.retain(|t| *t > since);
+        list.len() >= 8
+    }
+
+    fn record_login_fail(&self, email: &str) {
+        self.login_fails.lock().entry(email.to_string()).or_default().push(now());
     }
 
     fn too_many_signups(&self, ip: &str) -> bool {
@@ -514,9 +539,23 @@ struct SignupBody {
     business_name: String,
     #[serde(default)]
     phone: Option<String>,
+    #[serde(default)]
+    password: Option<String>,
 }
 
-fn clean_signup(body: &SignupBody) -> Result<(String, String, Option<String>), &'static str> {
+const MIN_PASSWORD: usize = 6;
+
+fn check_password(password: &str) -> Result<(), &'static str> {
+    if password.chars().count() < MIN_PASSWORD {
+        return Err("La contraseña tiene que tener al menos 6 caracteres.");
+    }
+    if password.len() > 200 {
+        return Err("La contraseña es muy larga.");
+    }
+    Ok(())
+}
+
+fn clean_signup(body: &SignupBody) -> Result<(String, String, Option<String>, String), &'static str> {
     let email = normalize_email(&body.email);
     if !valid_email(&email) {
         return Err("Revisá el mail: parece que está mal escrito.");
@@ -534,12 +573,14 @@ fn clean_signup(body: &SignupBody) -> Result<(String, String, Option<String>), &
         .map(|p| p.trim().chars().filter(|c| c.is_ascii_digit() || *c == '+' || *c == ' ' || *c == '-').collect::<String>())
         .filter(|p| !p.is_empty())
         .map(|p| p.chars().take(30).collect());
-    Ok((email, business.to_string(), phone))
+    let password = body.password.clone().unwrap_or_default();
+    check_password(&password)?;
+    Ok((email, business.to_string(), phone, password))
 }
 
 // Registro desde la propia app (pantalla "Probar gratis" en app.mercalin...).
 async fn signup(AxState(s): AxState<Shared>, headers: HeaderMap, Json(body): Json<SignupBody>) -> Response {
-    let (email, business, phone) = match clean_signup(&body) {
+    let (email, business, phone, password) = match clean_signup(&body) {
         Ok(v) => v,
         Err(e) => return json_error(StatusCode::BAD_REQUEST, e),
     };
@@ -547,17 +588,17 @@ async fn signup(AxState(s): AxState<Shared>, headers: HeaderMap, Json(body): Jso
         return json_error(StatusCode::TOO_MANY_REQUESTS, "Demasiados intentos. Probá de nuevo en un rato.");
     }
     let s2 = Arc::clone(&s);
-    let result = tokio::task::spawn_blocking(move || s2.create_account(&email, &business, phone.as_deref(), "app")).await;
+    let result = tokio::task::spawn_blocking(move || s2.create_account(&email, &business, phone.as_deref(), &password, "app")).await;
     match result {
-        Ok(Ok(account)) => {
-            let token = s.new_web_session(&account.id, true);
-            let mut res = Json(json!({ "ok": true, "account": account.to_json() })).into_response();
+        Ok(Ok((account, login))) => {
+            let token = s.new_web_session(&account.id, false);
+            let mut res = Json(json!({ "ok": true, "account": account.to_json(), "login": login })).into_response();
             res.headers_mut().insert(header::SET_COOKIE, s.set_cookie(&token));
             res
         }
         Ok(Err(e)) if e == "exists" => (
             StatusCode::CONFLICT,
-            Json(json!({ "ok": false, "exists": true, "error": "Ya hay una cuenta con ese mail. Entrá con un código a tu mail." })),
+            Json(json!({ "ok": false, "exists": true, "error": "Ya hay una cuenta con ese mail. Entrá con tu mail y tu contraseña." })),
         )
             .into_response(),
         Ok(Err(e)) => {
@@ -579,15 +620,15 @@ async fn signup_link(AxState(s): AxState<Shared>, headers: HeaderMap, Json(body)
     if sha256_hex(provided) != sha256_hex(secret) {
         return json_error(StatusCode::UNAUTHORIZED, "No autorizado.");
     }
-    let (email, business, phone) = match clean_signup(&body) {
+    let (email, business, phone, password) = match clean_signup(&body) {
         Ok(v) => v,
         Err(e) => return json_error(StatusCode::BAD_REQUEST, e),
     };
     let s2 = Arc::clone(&s);
     let email2 = email.clone();
-    let result = tokio::task::spawn_blocking(move || s2.create_account(&email2, &business, phone.as_deref(), "web")).await;
+    let result = tokio::task::spawn_blocking(move || s2.create_account(&email2, &business, phone.as_deref(), &password, "web")).await;
     match result {
-        Ok(Ok(account)) => {
+        Ok(Ok((account, _))) => {
             let token = random_hex(32);
             {
                 let conn = s.accounts.lock();
@@ -832,6 +873,90 @@ fn login_as_owner(state: &AppState, email: &str) -> Result<Value, String> {
     }
 }
 
+#[derive(Deserialize)]
+struct LoginBody {
+    email: String,
+    password: String,
+}
+
+// Entrada de todos los días: mail y contraseña del dueño. Deja este navegador
+// adentro de la cuenta y además logueado en el sistema, en un solo paso.
+async fn login(AxState(s): AxState<Shared>, Json(body): Json<LoginBody>) -> Response {
+    let email = normalize_email(&body.email);
+    if s.too_many_login_fails(&email) {
+        return json_error(StatusCode::TOO_MANY_REQUESTS, "Demasiados intentos. Esperá unos minutos o recuperá tu contraseña.");
+    }
+    let account = {
+        let conn = s.accounts.lock();
+        account_by_email(&conn, &email)
+    };
+    let Some(account) = account else {
+        s.record_login_fail(&email);
+        return json_error(StatusCode::UNAUTHORIZED, "Mail o contraseña incorrectos.");
+    };
+    let state = match s.tenants.get(&account.id) {
+        Ok(st) => st,
+        Err(e) => return json_error(StatusCode::INTERNAL_SERVER_ERROR, &e),
+    };
+    let email2 = email.clone();
+    let password = body.password;
+    let result = tokio::task::spawn_blocking(move || commands::users::login(email2, password, &state)).await;
+    match result {
+        Ok(Ok(login)) => {
+            let token = s.new_web_session(&account.id, false);
+            let mut res = Json(json!({ "ok": true, "login": login })).into_response();
+            res.headers_mut().insert(header::SET_COOKIE, s.set_cookie(&token));
+            res
+        }
+        Ok(Err(_)) => {
+            s.record_login_fail(&email);
+            json_error(StatusCode::UNAUTHORIZED, "Mail o contraseña incorrectos.")
+        }
+        Err(_) => json_error(StatusCode::INTERNAL_SERVER_ERROR, "Error interno."),
+    }
+}
+
+#[derive(Deserialize)]
+struct SetPasswordBody {
+    password: String,
+}
+
+// "Olvidé mi contraseña": después de comprobar el mail con el código, elige
+// una contraseña nueva y queda adentro.
+async fn set_password(AxState(s): AxState<Shared>, headers: HeaderMap, Json(body): Json<SetPasswordBody>) -> Response {
+    if let Err(e) = check_password(&body.password) {
+        return json_error(StatusCode::BAD_REQUEST, e);
+    }
+    let Some((account, hash)) = s.session_account(&headers) else {
+        return json_error(StatusCode::UNAUTHORIZED, "Volvé a pedir el código.");
+    };
+    let pending: bool = {
+        let conn = s.accounts.lock();
+        let p = conn
+            .query_row("SELECT owner_pending FROM web_sessions WHERE token_hash=?1", params![hash], |r| r.get::<_, i64>(0))
+            .map(|v| v == 1)
+            .unwrap_or(false);
+        if p {
+            let _ = conn.execute("UPDATE web_sessions SET owner_pending=0 WHERE token_hash=?1", params![hash]);
+        }
+        p
+    };
+    if !pending {
+        return json_error(StatusCode::FORBIDDEN, "Para cambiar la contraseña, pedí un código a tu mail.");
+    }
+    let state = match s.tenants.get(&account.id) {
+        Ok(st) => st,
+        Err(e) => return json_error(StatusCode::INTERNAL_SERVER_ERROR, &e),
+    };
+    let email = account.email.clone();
+    let result = tokio::task::spawn_blocking(move || commands::users::claim_admin_account(email, body.password, &state)).await;
+    match result {
+        Ok(Ok(login)) => Json(json!({ "ok": true, "login": login })).into_response(),
+        Ok(Err(e)) => json_error(StatusCode::BAD_REQUEST, &e),
+        Err(_) => json_error(StatusCode::INTERNAL_SERVER_ERROR, "Error interno."),
+    }
+}
+
 async fn logout(AxState(s): AxState<Shared>, headers: HeaderMap) -> Response {
     if let Some(token) = cookie_value(&headers) {
         let conn = s.accounts.lock();
@@ -1058,6 +1183,7 @@ async fn main() {
         },
         accounts: Mutex::new(accounts),
         signup_hits: Mutex::new(HashMap::new()),
+        login_fails: Mutex::new(HashMap::new()),
         cfg,
     });
 
@@ -1069,6 +1195,8 @@ async fn main() {
         .route("/api/web/code/request", post(code_request))
         .route("/api/web/code/verify", post(code_verify))
         .route("/api/web/owner-login", post(owner_login))
+        .route("/api/web/login", post(login))
+        .route("/api/web/set-password", post(set_password))
         .route("/api/web/logout", post(logout))
         .route("/api/web/backup-download", get(backup_download))
         .route("/api/rpc/:command", post(rpc_handler))

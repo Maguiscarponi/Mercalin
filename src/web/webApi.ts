@@ -43,8 +43,16 @@ export const webApi = {
     }
   },
 
-  async signup(email: string, businessName: string, phone: string) {
-    return post<{ exists?: boolean }>("/api/web/signup", { email, businessName, phone: phone || null });
+  async signup(email: string, businessName: string, phone: string, password: string) {
+    return post<{ exists?: boolean; login?: LoginResult }>("/api/web/signup", { email, businessName, phone: phone || null, password });
+  },
+
+  async login(email: string, password: string) {
+    return post<{ login?: LoginResult }>("/api/web/login", { email, password });
+  },
+
+  async setPassword(password: string) {
+    return post<{ login?: LoginResult }>("/api/web/set-password", { password });
   },
 
   async requestCode(email: string) {

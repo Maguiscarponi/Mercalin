@@ -4,8 +4,7 @@ import { useAuthStore } from "@/stores/auth";
 import mercalinLogo from "@/assets/mercalin-logo.svg";
 import { IS_WEB } from "@/web/platform";
 import { useWebAccount } from "@/web/WebGate";
-import CodeLogin from "@/web/CodeLogin";
-import { webApi } from "@/web/webApi";
+import RecoverPassword from "@/web/RecoverPassword";
 
 export default function Login() {
   const setSession = useAuthStore((s) => s.setSession);
@@ -121,7 +120,7 @@ export default function Login() {
             }}
             className="block w-full text-center text-sm text-stone-500 hover:text-stone-800 underline underline-offset-2 mt-5"
           >
-            {IS_WEB ? "Soy el dueño: entrar con un código a mi mail" : "¿Olvidaste tu contraseña?"}
+            ¿Olvidaste tu contraseña?
           </button>
         </div>
         {IS_WEB && <SalirDeLaCuenta />}
@@ -268,31 +267,21 @@ function RecuperarContrasena({
   );
 }
 
-// Versión web: el dueño entra con un código a su mail (no hay clave de
-// activación como en la app de escritorio).
+// Versión web: el dueño recupera la contraseña con un código a su mail (no
+// hay clave de activación como en la app de escritorio).
 function EntrarComoDueno({ onVolver }: { onVolver: () => void }) {
   const web = useWebAccount();
   const setSession = useAuthStore((s) => s.setSession);
-  const [error, setError] = useState<string | null>(null);
 
   return (
     <div className="min-h-[100dvh] flex items-center justify-center bg-stone-100 px-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
           <img src={mercalinLogo} alt="Mercalin" className="h-14 mx-auto mb-4" />
-          <p className="text-stone-500 text-sm mt-1">Te mandamos un código al mail del dueño.</p>
+          <p className="text-stone-500 text-sm mt-1">Recuperá la contraseña del dueño.</p>
         </div>
         <div className="bg-white rounded-2xl shadow-sm border border-stone-200 p-6 sm:p-8">
-          <CodeLogin
-            initialEmail={web?.account.email ?? ""}
-            lockEmail
-            onVerified={async () => {
-              const result = await webApi.ownerLogin();
-              if (result) setSession(result);
-              else setError("No se pudo entrar. Probá de nuevo.");
-            }}
-          />
-          {error && <div className="bg-orange-50 text-orange-700 border border-orange-200 rounded-lg px-4 py-3 text-sm mt-4">{error}</div>}
+          <RecoverPassword initialEmail={web?.account.email ?? ""} lockEmail onDone={(login) => setSession(login)} />
           <button type="button" onClick={onVolver} className="block w-full text-center text-sm text-stone-500 hover:text-stone-800 underline underline-offset-2 mt-5">
             Volver
           </button>

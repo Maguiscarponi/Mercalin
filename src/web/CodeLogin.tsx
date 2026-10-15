@@ -122,7 +122,7 @@ export default function CodeLogin({
       </div>
       {error && <div className="bg-orange-50 text-orange-700 border border-orange-200 rounded-lg px-4 py-3 text-sm">{error}</div>}
       <button type="submit" disabled={loading || code.length < 6} className="btn btn-primary w-full py-2.5 text-base disabled:opacity-40">
-        {loading ? "Entrando…" : "Entrar"}
+        {loading ? "Revisando…" : "Continuar"}
       </button>
       <div className="flex justify-between text-sm">
         {!lockEmail ? (

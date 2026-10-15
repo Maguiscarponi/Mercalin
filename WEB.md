@@ -13,10 +13,11 @@ Los 19 módulos son los mismos de la app de escritorio, con la misma lógica
   servidor (`<datos>/comercios/<id>/kiosco.db`), creada desde la misma
   plantilla con los 7.500 productos.
 - **Cuentas y entrada** (`src-tauri/src/bin/web.rs`): registro con mail,
-  negocio y teléfono (opcional); prueba de 7 días; para volver a entrar, un
-  código de 6 números al mail. El dueño entra directo después de registrarse o
-  de poner el código; los empleados entran con su usuario y contraseña, como
-  en la app de escritorio.
+  negocio, contraseña y teléfono (opcional), y entra al toque; prueba de 7
+  días; para volver a entrar, mail y contraseña. Si se olvida la contraseña,
+  un código de 6 números al mail para elegir una nueva. La contraseña es la del
+  usuario dueño adentro del sistema; los empleados entran con su usuario y
+  contraseña, como en la app de escritorio.
 - **ARCA:** la clave privada de cada comercio se guarda encriptada en el
   servidor (`src-tauri/src/secret.rs`). En la app de escritorio no cambia nada.
 - **Frontend:** es el mismo código de React. `npm run build:web` reemplaza los
@@ -36,8 +37,8 @@ con las variables `MERCALIN_APP_URL`, `NEXT_PUBLIC_MERCALIN_APP_URL` y
 `MERCALIN_SIGNUP_SECRET` en su `.env.local`, el "Probar gratis" de
 http://localhost:3000/prueba-gratis crea la cuenta y entra directo.
 
-Sin `RESEND_API_KEY`, los códigos para entrar se muestran en la consola del
-servidor.
+Sin `RESEND_API_KEY`, los códigos para recuperar la contraseña se muestran en
+la consola del servidor.
 
 Para trabajar en la pantalla con recarga automática: dejá el servidor
 corriendo y en otra terminal `npm run dev:web` (http://localhost:1430).

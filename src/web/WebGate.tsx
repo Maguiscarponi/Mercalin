@@ -4,11 +4,12 @@ import { SESSION_LOST_EVENT } from "./shims/core";
 import WebEntry from "./WebEntry";
 import { webApi, type WebAccount } from "./webApi";
 import { invoke } from "@tauri-apps/api/core";
+import type { LoginResult } from "@/types";
 
 // Envuelve la app en la versión web: si este navegador no entró a ninguna
-// cuenta, muestra la pantalla de entrada/registro. Si entró recién (registro,
-// link desde la web o código al mail), entra directo como dueño, sin pedir
-// contraseña.
+// cuenta, muestra la pantalla de entrada/registro. Al registrarse o entrar con
+// mail y contraseña, queda logueado como dueño en el mismo paso; si llega con
+// el link de un solo uso de mercalinonline.com, entra directo como dueño.
 interface WebContextValue {
   account: WebAccount;
   refresh: () => Promise<void>;
@@ -74,7 +75,12 @@ export default function WebGate({ children }: { children: React.ReactNode }) {
   }, []);
 
   if (status === "cargando") return <div className="h-[100dvh] bg-stone-100" />;
-  if (status === "afuera" || !account) return <WebEntry onEntered={refresh} />;
+  const entered = async (login?: LoginResult) => {
+    if (login) setSession(login);
+    await refresh();
+  };
+
+  if (status === "afuera" || !account) return <WebEntry onEntered={entered} />;
 
   return <WebContext.Provider value={{ account, refresh, signOutEverywhere }}>{children}</WebContext.Provider>;
 }

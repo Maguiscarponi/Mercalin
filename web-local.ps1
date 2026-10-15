@@ -31,7 +31,7 @@ if (-not $env:MERCALIN_SIGNUP_SECRET) {
 if (-not $env:LICENSE_SECRET) { $env:LICENSE_SECRET = "solo-local" }
 
 # Los datos de prueba quedan en src-tauri\mercalin-web-data (no se suben a git).
-# Sin RESEND_API_KEY, los códigos para entrar se muestran en esta consola.
+# Sin RESEND_API_KEY, los códigos para recuperar la contraseña se muestran en esta consola.
 Write-Host "Iniciando el servidor (la primera vez tarda unos minutos en compilar)..." -ForegroundColor Cyan
 Set-Location src-tauri
 cargo run --release --no-default-features --features server --bin mercalin-web
