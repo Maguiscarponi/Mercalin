@@ -4,8 +4,11 @@ import clsx from "clsx";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   LogOut, Maximize2, Minimize2, ChevronLeft, ChevronRight, ArrowLeft,
-  Store, Search, Bell, AlertTriangle, KeyRound, HelpCircle,
+  Store, Search, Bell, AlertTriangle, KeyRound, HelpCircle, Menu, X,
 } from "lucide-react";
+import { useIsMobile } from "@/lib/useIsMobile";
+import { IS_WEB } from "@/web/platform";
+import { openSupportWhatsapp } from "@/lib/support";
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
 import { ensureCatalogImportListeners } from "@/stores/catalogImport";
@@ -76,6 +79,10 @@ const FOCUS_MODE_HELP_MODULE: Record<string, string> = { "/caja": "caja" };
 export default function Layout() {
   const [businessName, setBusinessName] = useState("Mercalin");
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  // Celular: el menú es un panel que se abre con el botón ☰ y tapa la
+  // pantalla; en la compu queda como siempre, fijo a la izquierda.
+  const isMobile = useIsMobile();
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showInsights, setShowInsights] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
@@ -98,6 +105,9 @@ export default function Layout() {
   const focusLabel = NAV_GROUPS.flatMap((g) => g.links).find((l) => l.to === location.pathname)?.label ?? "";
   const focusHelpModule = FOCUS_MODE_HELP_MODULE[location.pathname] ?? "";
   const showFocusHelp = useShowHelpButton(focusHelpModule);
+
+  // Al cambiar de pantalla en el celular, se cierra el menú.
+  useEffect(() => { setMobileNavOpen(false); }, [location.pathname]);
 
   useEffect(() => {
     api.getConfig("business_name").then((n) => { if (n) setBusinessName(n); }).catch(console.error);
@@ -181,41 +191,50 @@ export default function Layout() {
     else document.exitFullscreen().catch(console.error);
   }
 
+  const navExpanded = sidebarOpen || isMobile;
+
   return (
-    <div className="h-screen flex bg-stone-100">
+    <div className="h-[100dvh] flex bg-stone-100">
+
+      {/* Celular: fondo oscuro detrás del menú abierto */}
+      {isMobile && mobileNavOpen && (
+        <div className="fixed inset-0 bg-black/40 z-40" onClick={() => setMobileNavOpen(false)} aria-hidden="true" />
+      )}
 
       {/* ── Sidebar (oculto en modo foco) ──────────────────────── */}
-      {!isFocusMode && (
+      {(!isFocusMode || isMobile) && (
       <aside className={clsx(
         "bg-white border-r border-stone-200 flex flex-col shrink-0 transition-all duration-200",
-        sidebarOpen ? "w-56" : "w-16"
+        isMobile
+          ? clsx("fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] shadow-2xl", mobileNavOpen ? "translate-x-0" : "-translate-x-full")
+          : navExpanded ? "w-56" : "w-16"
       )}>
 
         {/* Logo / nombre */}
         <div className={clsx(
           "border-b border-stone-100 flex items-center",
-          sidebarOpen ? "px-3 py-4 gap-2.5" : "px-0 py-4 justify-center"
+          navExpanded ? "px-3 py-4 gap-2.5" : "px-0 py-4 justify-center"
         )}>
           <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-red-500 to-red-700 flex items-center justify-center shrink-0 shadow-sm shadow-red-200">
             <Store size={18} strokeWidth={2.25} className="text-white" />
           </div>
-          {sidebarOpen && (
+          {navExpanded && (
             <div className="flex-1 min-w-0">
               <div className="font-bold text-sm text-stone-900 truncate leading-tight">{businessName}</div>
               <div className="text-[10px] text-stone-400 mt-0.5 tracking-wide">Mercalin</div>
             </div>
           )}
-          {sidebarOpen && (
+          {navExpanded && (
             <button
-              onClick={() => setSidebarOpen((o) => !o)}
+              onClick={() => (isMobile ? setMobileNavOpen(false) : setSidebarOpen((o) => !o))}
               className="text-stone-400 hover:text-stone-700 transition-colors shrink-0 w-7 h-7 flex items-center justify-center rounded-md hover:bg-stone-100"
-              title="Colapsar"
+              title={isMobile ? "Cerrar menú" : "Colapsar"}
             >
-              <ChevronLeft size={14} />
+              {isMobile ? <X size={16} /> : <ChevronLeft size={14} />}
             </button>
           )}
         </div>
-        {!sidebarOpen && (
+        {!navExpanded && (
           <button
             onClick={() => setSidebarOpen(true)}
             className="text-stone-400 hover:text-stone-700 transition-colors mx-auto mt-1.5 w-7 h-7 flex items-center justify-center rounded-md hover:bg-stone-100"
@@ -226,17 +245,17 @@ export default function Layout() {
         )}
 
         {/* Paleta de comandos + consejos */}
-        <div className={clsx("px-2 pt-2 space-y-1", !sidebarOpen && "px-1.5")}>
+        <div className={clsx("px-2 pt-2 space-y-1", !navExpanded && "px-1.5")}>
           <button
             onClick={() => useCommandPaletteStore.getState().setOpen(true)}
             title="Buscar (Ctrl+K)"
             className={clsx(
               "w-full flex items-center gap-2 text-stone-400 hover:text-stone-600 bg-stone-50 hover:bg-stone-100 rounded-lg transition-colors",
-              sidebarOpen ? "px-2.5 py-1.5" : "justify-center py-2"
+              navExpanded ? "px-2.5 py-1.5" : "justify-center py-2"
             )}
           >
             <Search size={13} />
-            {sidebarOpen && (
+            {navExpanded && (
               <>
                 <span className="text-xs">Buscar…</span>
                 <span className="ml-auto text-[10px] font-mono border border-stone-200 rounded px-1 py-0.5">Ctrl+K</span>
@@ -249,11 +268,11 @@ export default function Layout() {
             title="Consejos del día"
             className={clsx(
               "w-full flex items-center gap-2 text-stone-400 hover:text-stone-600 bg-stone-50 hover:bg-stone-100 rounded-lg transition-colors relative",
-              sidebarOpen ? "px-2.5 py-1.5" : "justify-center py-2"
+              navExpanded ? "px-2.5 py-1.5" : "justify-center py-2"
             )}
           >
             <Bell size={13} />
-            {sidebarOpen ? (
+            {navExpanded ? (
               <>
                 <span className="text-xs">Consejos</span>
                 {insights.length > 0 && (
@@ -284,7 +303,7 @@ export default function Layout() {
             const accent = GROUP_ACCENT[group.label] ?? GROUP_ACCENT["Sistema"];
             return (
               <div key={group.label} className="mb-1">
-                {sidebarOpen && (
+                {navExpanded && (
                   <p className="px-3 pt-4 pb-1.5 flex items-center gap-1.5">
                     <span className={clsx("w-1.5 h-1.5 rounded-full", accent.dot)} />
                     <span className="text-[10px] font-semibold uppercase tracking-[0.1em] text-stone-400">
@@ -298,10 +317,10 @@ export default function Layout() {
                     <NavLink
                       key={l.to}
                       to={l.to}
-                      title={!sidebarOpen ? l.label : undefined}
+                      title={!navExpanded ? l.label : undefined}
                       className={({ isActive }) => clsx(
                         "flex items-center transition-all duration-100 mx-2 my-0.5 rounded-lg",
-                        sidebarOpen ? "px-2 py-1.5 gap-2.5" : "justify-center py-2",
+                        navExpanded ? "px-2 py-1.5 gap-2.5" : "justify-center py-2",
                         isActive
                           ? clsx(accent.active, "shadow-sm")
                           : "text-stone-600 hover:bg-stone-50"
@@ -320,7 +339,7 @@ export default function Layout() {
                               className={isActive ? accent.activeIcon : accent.icon}
                             />
                           </span>
-                          {sidebarOpen && (
+                          {navExpanded && (
                             <span className={clsx(
                               "text-[12.5px] leading-none",
                               isActive ? "text-white font-bold" : "font-semibold text-stone-700"
@@ -342,13 +361,13 @@ export default function Layout() {
         {posModeMode === "client" && (
           <div className={clsx(
             "border-t border-stone-100 flex items-center gap-1.5",
-            sidebarOpen ? "px-3.5 py-2" : "py-2 justify-center"
+            navExpanded ? "px-3.5 py-2" : "py-2 justify-center"
           )}>
             <span className={clsx(
               "w-2 h-2 rounded-full shrink-0",
               syncStatus === "online" ? "bg-emerald-500" : syncStatus === "syncing" ? "bg-amber-500" : "bg-orange-500"
             )} />
-            {sidebarOpen && (
+            {navExpanded && (
               <span className="text-[10px] text-stone-400">
                 {syncStatus === "online" ? "Conectada al servidor" : syncStatus === "syncing" ? "Sincronizando…" : "Sin conexión — vendiendo local"}
               </span>
@@ -360,14 +379,14 @@ export default function Layout() {
         {availableUpdate && (
           <button
             onClick={() => navigate("/configuracion", { state: { tab: "sistema" } })}
-            title={sidebarOpen ? undefined : `Actualización disponible: v${availableUpdate.version}`}
+            title={navExpanded ? undefined : `Actualización disponible: v${availableUpdate.version}`}
             className={clsx(
               "border-t border-stone-100 flex items-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 transition-colors text-emerald-700",
-              sidebarOpen ? "px-3.5 py-2" : "py-2 justify-center"
+              navExpanded ? "px-3.5 py-2" : "py-2 justify-center"
             )}
           >
             <Download size={13} className="shrink-0" />
-            {sidebarOpen && (
+            {navExpanded && (
               <span className="text-[11px] font-semibold">Actualizar a v{availableUpdate.version}</span>
             )}
           </button>
@@ -377,34 +396,39 @@ export default function Layout() {
             -- si ya compró, tiene que poder activar la licencia sin buscarla. */}
         {licenseStatus?.kind === "trial" && !licenseStatus.expired && (
           <button
-            onClick={() => openUrl("https://www.mercalinonline.com/carrito?product=mercalin").catch(() => {})}
-            title={sidebarOpen ? undefined : "Comprar Mercalin"}
+            onClick={() =>
+              (IS_WEB
+                ? openSupportWhatsapp("Hola, estoy probando Mercalin en la web y quiero contratarlo.")
+                : openUrl("https://www.mercalinonline.com/carrito?product=mercalin")
+              ).catch(() => {})
+            }
+            title={navExpanded ? undefined : "Comprar Mercalin"}
             className={clsx(
               "border-t border-stone-100 flex items-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 transition-colors text-emerald-800",
-              sidebarOpen ? "px-3.5 py-2" : "py-2 justify-center"
+              navExpanded ? "px-3.5 py-2" : "py-2 justify-center"
             )}
           >
             <ShoppingCart size={13} className="shrink-0" />
-            {sidebarOpen && (
+            {navExpanded && (
               <span className="text-[11px] font-semibold">
                 {diasDePrueba === null
                   ? "Comprar Mercalin"
-                  : `${diasDePrueba <= 1 ? "Último día de prueba" : `Quedan ${diasDePrueba} días de prueba`} · Comprar`}
+                  : `${diasDePrueba <= 1 ? "Último día de prueba" : `Quedan ${diasDePrueba} días de prueba`} · ${IS_WEB ? "Contratar" : "Comprar"}`}
               </span>
             )}
           </button>
         )}
-        {licenseStatus?.kind === "trial" && !licenseStatus.expired && (
+        {!IS_WEB && licenseStatus?.kind === "trial" && !licenseStatus.expired && (
           <button
             onClick={() => navigate("/configuracion", { state: { tab: "sistema" } })}
-            title={sidebarOpen ? undefined : "¿Ya compraste? Activá tu licencia completa"}
+            title={navExpanded ? undefined : "¿Ya compraste? Activá tu licencia completa"}
             className={clsx(
               "border-t border-stone-100 flex items-center gap-1.5 bg-amber-50 hover:bg-amber-100 transition-colors text-amber-700",
-              sidebarOpen ? "px-3.5 py-2" : "py-2 justify-center"
+              navExpanded ? "px-3.5 py-2" : "py-2 justify-center"
             )}
           >
             <KeyRound size={13} className="shrink-0" />
-            {sidebarOpen && (
+            {navExpanded && (
               <span className="text-[11px] font-semibold">¿Ya compraste? Activá tu licencia</span>
             )}
           </button>
@@ -413,9 +437,9 @@ export default function Layout() {
         {/* Footer / usuario */}
         <div className={clsx(
           "border-t border-stone-100",
-          sidebarOpen ? "px-3 py-3" : "px-1 py-3 flex flex-col items-center gap-1.5"
+          navExpanded ? "px-3 py-3" : "px-1 py-3 flex flex-col items-center gap-1.5"
         )}>
-          {sidebarOpen ? (
+          {navExpanded ? (
             <div className="flex items-center gap-1.5">
               <div className="w-7 h-7 rounded-full bg-gradient-to-br from-red-400 to-red-600 flex items-center justify-center shrink-0 text-white text-[11px] font-bold">
                 {(user?.full_name ?? "?").trim().charAt(0).toUpperCase()}
@@ -451,9 +475,50 @@ export default function Layout() {
       )}
 
       {/* ── Contenido ─────────────────────────────────────────── */}
-      <main className="flex-1 overflow-hidden flex flex-col">
+      <main className="flex-1 min-w-0 overflow-hidden flex flex-col">
+        {isMobile && !isFocusMode && (
+          <div className="h-12 bg-white border-b border-stone-200 flex items-center px-2 gap-1 shrink-0">
+            <button
+              onClick={() => setMobileNavOpen(true)}
+              title="Menú"
+              aria-label="Abrir menú"
+              className="text-stone-600 hover:bg-stone-100 rounded-md w-10 h-10 flex items-center justify-center shrink-0"
+            >
+              <Menu size={20} />
+            </button>
+            <span className="font-bold text-sm text-stone-900 truncate flex-1">{businessName}</span>
+            <button
+              onClick={() => useCommandPaletteStore.getState().setOpen(true)}
+              aria-label="Buscar"
+              className="text-stone-500 hover:bg-stone-100 rounded-md w-10 h-10 flex items-center justify-center shrink-0"
+            >
+              <Search size={18} />
+            </button>
+            <button
+              onClick={() => setShowInsights(true)}
+              aria-label="Consejos del día"
+              className="text-stone-500 hover:bg-stone-100 rounded-md w-10 h-10 flex items-center justify-center shrink-0 relative"
+            >
+              <Bell size={18} />
+              {insights.length > 0 && (
+                <span className={clsx("absolute top-1.5 right-1.5 text-[9px] font-bold w-4 h-4 flex items-center justify-center rounded-full", insightBadgeClass(insights))}>
+                  {insights.length > 9 ? "9+" : insights.length}
+                </span>
+              )}
+            </button>
+          </div>
+        )}
         {isFocusMode && (
           <div className="h-11 bg-gradient-to-r from-red-700 to-red-900 flex items-center px-2 gap-1 shrink-0">
+            {isMobile && (
+              <button
+                onClick={() => setMobileNavOpen(true)}
+                aria-label="Abrir menú"
+                className="text-white/80 hover:text-white hover:bg-white/10 transition-colors rounded-md w-9 h-9 flex items-center justify-center shrink-0"
+              >
+                <Menu size={18} />
+              </button>
+            )}
             <button
               onClick={() => navigate("/dashboard")}
               title="Volver"

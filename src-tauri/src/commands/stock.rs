@@ -2,7 +2,7 @@ use crate::commands::{audit::log_action, err, CmdResult};
 use crate::models::{CountAdjustment, DeadStockItem, InventoryCountItem, LowStockProduct, ReorderItem, StockAdjustInput, StockMovement, TopProduct};
 use crate::AppState;
 use rusqlite::params;
-use tauri::State;
+use crate::State;
 
 // Separada para poder testearla sin un tauri::State real. pub(crate) porque
 // apply_inventory_count (mismo archivo) y ningún otro módulo la necesitan.
@@ -13,7 +13,7 @@ pub(crate) fn validate_new_stock(new_stock: f64) -> CmdResult<()> {
     Ok(())
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn adjust_stock(input: StockAdjustInput, user_id: Option<i64>, state: State<AppState>) -> CmdResult<()> {
     // Encontrado en la auditoría: input.new_stock se guardaba tal cual, sin
     // chequear que sea un número real ni que sea >= 0 -- una corrección de
@@ -69,7 +69,7 @@ pub fn adjust_stock(input: StockAdjustInput, user_id: Option<i64>, state: State<
     Ok(())
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn list_low_stock(state: State<AppState>) -> CmdResult<Vec<LowStockProduct>> {
     let conn = state.db.lock();
     if !crate::db::stock_tracking_enabled(&conn) {
@@ -106,7 +106,7 @@ pub fn list_low_stock(state: State<AppState>) -> CmdResult<Vec<LowStockProduct>>
     Ok(out)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn list_stock_movements(
     product_id: i64,
     limit: i64,
@@ -149,7 +149,7 @@ pub fn list_stock_movements(
     Ok(out)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn top_products(
     date_from: String,
     date_to: String,
@@ -196,7 +196,7 @@ pub fn top_products(
 // facturación) y solo productos reales (product_id no nulo) — para la grilla de
 // acceso rápido de Caja, donde importa qué se agarra más seguido, no qué generó
 // más plata (un producto caro vendido poco no debería ganarle a uno barato y frecuente).
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn top_products_by_qty(
     date_from: String,
     date_to: String,
@@ -240,7 +240,7 @@ pub fn top_products_by_qty(
     Ok(out)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn sales_by_category(
     date_from: String,
     date_to: String,
@@ -276,7 +276,7 @@ pub fn sales_by_category(
     Ok(out)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn reorder_by_supplier(state: State<AppState>) -> CmdResult<Vec<ReorderItem>> {
     let conn = state.db.lock();
     if !crate::db::stock_tracking_enabled(&conn) {
@@ -317,7 +317,7 @@ pub fn reorder_by_supplier(state: State<AppState>) -> CmdResult<Vec<ReorderItem>
     Ok(out)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn get_dead_stock(days: i64, state: State<AppState>) -> CmdResult<Vec<DeadStockItem>> {
     let conn = state.db.lock();
     if !crate::db::stock_tracking_enabled(&conn) {
@@ -366,7 +366,7 @@ pub fn get_dead_stock(days: i64, state: State<AppState>) -> CmdResult<Vec<DeadSt
 }
 
 /// Lista todos los productos activos para el flujo de conteo de inventario.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn list_inventory_count(state: State<AppState>) -> CmdResult<Vec<InventoryCountItem>> {
     let conn = state.db.lock();
     let mut stmt = conn.prepare(
@@ -386,7 +386,7 @@ pub fn list_inventory_count(state: State<AppState>) -> CmdResult<Vec<InventoryCo
 }
 
 /// Aplica ajustes masivos de stock resultantes del conteo de inventario.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn apply_inventory_count(
     adjustments: Vec<CountAdjustment>,
     user_id: Option<i64>,

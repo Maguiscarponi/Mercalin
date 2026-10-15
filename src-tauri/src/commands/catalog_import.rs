@@ -293,7 +293,7 @@ fn run_import(
 /// Nunca toca la base de datos que la app tiene abierta -- crea una completamente aparte
 /// en catalog_template.db, al lado de kiosco.db.
 #[cfg(debug_assertions)]
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn generate_catalog_template(app: AppHandle, state: State<AppState>) -> CmdResult<String> {
     if state.catalog_import_running.swap(true, Ordering::SeqCst) {
         return Err("Ya hay una importación en curso.".into());

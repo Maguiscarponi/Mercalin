@@ -3,7 +3,7 @@ use crate::models::{NewReturn, ReturnItem, ReturnRecord, ReturnWithItems};
 use crate::AppState;
 use rusqlite::{params, Transaction};
 use std::collections::HashMap;
-use tauri::State;
+use crate::State;
 
 fn row_to_return(row: &rusqlite::Row) -> rusqlite::Result<ReturnRecord> {
     Ok(ReturnRecord {
@@ -106,7 +106,7 @@ fn validate_return_items(
 // la cantidad disponible por ítem (vendido menos ya devuelto) y el monto
 // devuelto (proporcional al subtotal_cents ya con descuento aplicado), sin
 // confiar en lo que mande el cliente salvo qué ítem y cuánta cantidad.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn create_return(input: NewReturn, state: State<AppState>) -> CmdResult<ReturnRecord> {
     if input.items.is_empty() {
         return Err("La devolución no tiene ítems".to_string());
@@ -393,7 +393,7 @@ fn restock_combo_components(tx: &Transaction, combo_id: i64, returned_qty: f64) 
     Ok(())
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn list_returns(limit: i64, state: State<AppState>) -> CmdResult<Vec<ReturnRecord>> {
     let conn = state.db.lock();
     let mut stmt = conn
@@ -408,7 +408,7 @@ pub fn list_returns(limit: i64, state: State<AppState>) -> CmdResult<Vec<ReturnR
     Ok(out)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn get_return_with_items(id: i64, state: State<AppState>) -> CmdResult<ReturnWithItems> {
     let conn = state.db.lock();
 

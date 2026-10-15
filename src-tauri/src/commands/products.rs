@@ -2,7 +2,7 @@ use crate::commands::{audit::log_action, err, CmdResult};
 use crate::models::{BulkPriceInput, BulkPricePreviewItem, BulkStockInput, BulkStockPreviewItem, CategoryStat, CsvProductRow, ExpiringProduct, ImportResult, MinStockSuggestion, NewProduct, PriceImpactItem, Product, ProductVelocity, PriceSyncAlert};
 use crate::AppState;
 use rusqlite::{params, Connection, Row};
-use tauri::State;
+use crate::State;
 
 // Un código de barras es UNIQUE en toda la tabla, incluidos los productos desactivados
 // (soft-delete) -- sin este mensaje, reusar un código años después de borrar el producto
@@ -102,7 +102,7 @@ fn row_to_product(row: &Row) -> rusqlite::Result<Product> {
     })
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn find_product_by_barcode(
     barcode: String,
     state: State<AppState>,
@@ -116,7 +116,7 @@ pub fn find_product_by_barcode(
     Ok(stmt.query_row(params![barcode], row_to_product).ok())
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn list_products(query: String, include_ghosts: bool, state: State<AppState>) -> CmdResult<Vec<Product>> {
     let conn = state.db.lock();
     let q = query.trim().to_lowercase();
@@ -169,7 +169,7 @@ pub fn list_products(query: String, include_ghosts: bool, state: State<AppState>
     Ok(out)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn create_product(product: NewProduct, user_id: Option<i64>, state: State<AppState>) -> CmdResult<Product> {
     validate_product_fields(
         &product.name, product.price_cents, product.price2_cents, product.price3_cents,
@@ -208,7 +208,7 @@ pub fn create_product(product: NewProduct, user_id: Option<i64>, state: State<Ap
     stmt.query_row(params![id], row_to_product).map_err(err)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn update_product(product: Product, user_id: Option<i64>, state: State<AppState>) -> CmdResult<Product> {
     validate_product_fields(
         &product.name, product.price_cents, product.price2_cents, product.price3_cents,
@@ -256,7 +256,7 @@ pub fn update_product(product: Product, user_id: Option<i64>, state: State<AppSt
     stmt.query_row(params![product.id], row_to_product).map_err(err)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn delete_product(id: i64, user_id: Option<i64>, state: State<AppState>) -> CmdResult<()> {
     let conn = state.db.lock();
     conn.execute(
@@ -270,7 +270,7 @@ pub fn delete_product(id: i64, user_id: Option<i64>, state: State<AppState>) -> 
 
 // Para la sección "Inactivos" de Productos -- separado de list_products a propósito,
 // para que ni la búsqueda de Caja ni "Todos" sugieran vender/mostrar un producto borrado.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn list_inactive_products(state: State<AppState>) -> CmdResult<Vec<Product>> {
     let conn = state.db.lock();
     let mut stmt = conn
@@ -282,7 +282,7 @@ pub fn list_inactive_products(state: State<AppState>) -> CmdResult<Vec<Product>>
     Ok(out)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn reactivate_product(id: i64, user_id: Option<i64>, state: State<AppState>) -> CmdResult<()> {
     let conn = state.db.lock();
     conn.execute(
@@ -294,14 +294,14 @@ pub fn reactivate_product(id: i64, user_id: Option<i64>, state: State<AppState>)
     Ok(())
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn get_product(id: i64, state: State<AppState>) -> CmdResult<Product> {
     let conn = state.db.lock();
     let mut stmt = conn.prepare("SELECT * FROM products WHERE id = ?1").map_err(err)?;
     stmt.query_row(params![id], row_to_product).map_err(err)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn list_expiring_products(days: i64, state: State<AppState>) -> CmdResult<Vec<ExpiringProduct>> {
     let conn = state.db.lock();
     let mut stmt = conn
@@ -339,7 +339,7 @@ pub fn list_expiring_products(days: i64, state: State<AppState>) -> CmdResult<Ve
 // apply_bulk_update_prices). Estos tres cubren categoría/marca/proveedor -- separados
 // en vez de un solo comando genérico para que el frontend solo llame al que el usuario
 // realmente completó en el modal de edición masiva, sin pisar los demás campos.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn bulk_set_category(ids: Vec<i64>, category: Option<String>, user_id: Option<i64>, state: State<AppState>) -> CmdResult<i64> {
     let conn = state.db.lock();
     if ids.is_empty() { return Ok(0); }
@@ -353,7 +353,7 @@ pub fn bulk_set_category(ids: Vec<i64>, category: Option<String>, user_id: Optio
     Ok(n as i64)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn bulk_set_brand(ids: Vec<i64>, brand: Option<String>, user_id: Option<i64>, state: State<AppState>) -> CmdResult<i64> {
     let conn = state.db.lock();
     if ids.is_empty() { return Ok(0); }
@@ -367,7 +367,7 @@ pub fn bulk_set_brand(ids: Vec<i64>, brand: Option<String>, user_id: Option<i64>
     Ok(n as i64)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn bulk_set_supplier(ids: Vec<i64>, supplier_id: Option<i64>, user_id: Option<i64>, state: State<AppState>) -> CmdResult<i64> {
     let conn = state.db.lock();
     if ids.is_empty() { return Ok(0); }
@@ -409,7 +409,7 @@ fn describe_bulk_filter(conn: &Connection, filter_type: &str, filter_value: Opti
 // Lista de marcas en uso, para el autocompletar del formulario y el filtro de
 // Productos. A diferencia de categorías no tiene tabla propia ni "marca vacía"
 // precreada -- alcanza con derivarla de los productos existentes.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn list_brands(state: State<AppState>) -> CmdResult<Vec<CategoryStat>> {
     let conn = state.db.lock();
     let mut stmt = conn
@@ -436,7 +436,7 @@ pub fn list_brands(state: State<AppState>) -> CmdResult<Vec<CategoryStat>> {
 // products.category) unidas con las que se crearon de antemano sin ningún
 // producto todavía (tabla `categories`). El bucket "(sin categoria)" se arma
 // aparte porque no tiene sentido "crearlo" como categoría de antemano.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn list_categories(state: State<AppState>) -> CmdResult<Vec<CategoryStat>> {
     let conn = state.db.lock();
     let mut stmt = conn
@@ -477,7 +477,7 @@ pub fn list_categories(state: State<AppState>) -> CmdResult<Vec<CategoryStat>> {
 
 // Crea una categoría vacía, sin necesidad de asignarla a un producto todavía
 // (antes la única forma de "crear" un rubro era usarlo en Productos).
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn create_category(name: String, state: State<AppState>) -> CmdResult<()> {
     let name = name.trim();
     if name.is_empty() {
@@ -489,7 +489,7 @@ pub fn create_category(name: String, state: State<AppState>) -> CmdResult<()> {
     Ok(())
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn list_product_velocities(state: State<AppState>) -> CmdResult<Vec<ProductVelocity>> {
     let conn = state.db.lock();
     let mut stmt = conn
@@ -533,7 +533,7 @@ pub fn list_product_velocities(state: State<AppState>) -> CmdResult<Vec<ProductV
     Ok(out)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn get_price_desync(state: State<AppState>) -> CmdResult<Vec<PriceSyncAlert>> {
     let conn = state.db.lock();
     let mut stmt = conn.prepare(
@@ -570,7 +570,7 @@ pub fn get_price_desync(state: State<AppState>) -> CmdResult<Vec<PriceSyncAlert>
     Ok(rows)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn rename_category(old_name: String, new_name: String, state: State<AppState>) -> CmdResult<i64> {
     let conn = state.db.lock();
     let n = conn.execute(
@@ -584,7 +584,7 @@ pub fn rename_category(old_name: String, new_name: String, state: State<AppState
     Ok(n as i64)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn delete_category(name: String, state: State<AppState>) -> CmdResult<i64> {
     let conn = state.db.lock();
     let n = conn.execute(
@@ -599,7 +599,7 @@ pub fn delete_category(name: String, state: State<AppState>) -> CmdResult<i64> {
 // vacía) -- renombrar/eliminar alcanza con tocar products.brand directamente. Esto
 // es lo que permite consolidar duplicados por mayúsculas/espacios que antes no había
 // forma de corregir una vez creados.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn rename_brand(old_name: String, new_name: String, state: State<AppState>) -> CmdResult<i64> {
     let conn = state.db.lock();
     let n = conn.execute(
@@ -609,7 +609,7 @@ pub fn rename_brand(old_name: String, new_name: String, state: State<AppState>) 
     Ok(n as i64)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn delete_brand(name: String, state: State<AppState>) -> CmdResult<i64> {
     let conn = state.db.lock();
     let n = conn.execute(
@@ -620,7 +620,7 @@ pub fn delete_brand(name: String, state: State<AppState>) -> CmdResult<i64> {
 }
 
 /// Preview de actualización masiva de precios (no aplica cambios).
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn preview_bulk_update_prices(
     input: BulkPriceInput,
     state: State<AppState>,
@@ -670,7 +670,7 @@ pub fn preview_bulk_update_prices(
 }
 
 /// Aplica la actualización masiva de precios.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn apply_bulk_update_prices(
     input: BulkPriceInput,
     user_id: Option<i64>,
@@ -776,7 +776,7 @@ fn bulk_stock_items(conn: &Connection, input: &BulkStockInput) -> CmdResult<Vec<
 }
 
 /// Preview de actualización masiva de stock (no aplica cambios).
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn preview_bulk_update_stock(input: BulkStockInput, state: State<AppState>) -> CmdResult<Vec<BulkStockPreviewItem>> {
     let conn = state.db.lock();
     bulk_stock_items(&conn, &input)
@@ -785,7 +785,7 @@ pub fn preview_bulk_update_stock(input: BulkStockInput, state: State<AppState>) 
 /// Aplica la actualización masiva de stock -- cada producto queda con su
 /// propio movimiento en stock_movements, igual que un ajuste manual desde
 /// el modal de Stock de cada producto, para que el historial no pierda nada.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn apply_bulk_update_stock(input: BulkStockInput, user_id: Option<i64>, state: State<AppState>) -> CmdResult<i64> {
     let mut conn = state.db.lock();
     let items = bulk_stock_items(&conn, &input)?;
@@ -824,7 +824,7 @@ pub fn apply_bulk_update_stock(input: BulkStockInput, user_id: Option<i64>, stat
 }
 
 /// Importa productos desde filas parseadas de CSV.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn import_products_csv(
     rows: Vec<CsvProductRow>,
     user_id: Option<i64>,
@@ -952,7 +952,7 @@ pub fn import_products_csv(
 }
 
 /// Sugerencias de stock mínimo dinámico basadas en velocidad de venta x lead time del proveedor.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn get_min_stock_suggestions(state: State<AppState>) -> CmdResult<Vec<MinStockSuggestion>> {
     let conn = state.db.lock();
     if !crate::db::stock_tracking_enabled(&conn) {
@@ -1015,7 +1015,7 @@ pub fn get_min_stock_suggestions(state: State<AppState>) -> CmdResult<Vec<MinSto
 }
 
 /// Aplica las sugerencias de stock mínimo a los productos indicados.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn apply_min_stock_suggestions(
     suggestions: Vec<crate::models::MinStockSuggestion>,
     user_id: Option<i64>,
@@ -1036,7 +1036,7 @@ pub fn apply_min_stock_suggestions(
 }
 
 /// Proyección de impacto: cuánto ganaría el negocio si cada producto con margen bajo llegara al mínimo configurado.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn get_price_impact_projections(state: State<AppState>) -> CmdResult<Vec<PriceImpactItem>> {
     let conn = state.db.lock();
 

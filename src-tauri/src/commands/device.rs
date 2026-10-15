@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use std::io::Read;
 use std::path::Path;
-use tauri::State;
+use crate::State;
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -119,7 +119,7 @@ pub(crate) fn app_dir_of(state: &State<AppState>) -> CmdResult<std::path::PathBu
         .ok_or_else(|| "No se pudo determinar la carpeta de datos".to_string())
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn get_device_config(state: State<AppState>) -> CmdResult<DeviceConfig> {
     let app_dir = app_dir_of(&state)?;
     let mut cfg = read_device_config(&app_dir);
@@ -130,7 +130,7 @@ pub fn get_device_config(state: State<AppState>) -> CmdResult<DeviceConfig> {
     Ok(cfg)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn set_device_config(mut config: DeviceConfig, state: State<AppState>) -> CmdResult<()> {
     // Al pasar a modo servidor, aseguramos que exista un token de red -- sin
     // esto el servidor quedaría abierto sin autenticación (ver network_token).
@@ -145,7 +145,7 @@ pub fn set_device_config(mut config: DeviceConfig, state: State<AppState>) -> Cm
 // `setup()` en lib.rs). No toca la base actualmente abierta -- reemplazarla
 // en caliente mientras hay una conexión activa es innecesariamente riesgoso;
 // pedirle a la dueña que reinicie es el mismo patrón que ya usa "modo tablet".
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn bootstrap_from_server(server_addr: String, token: String, state: State<AppState>) -> CmdResult<String> {
     let url = format!("http://{}/api/db_snapshot", server_addr);
     let response = ureq::get(&url)
@@ -188,7 +188,7 @@ pub fn bootstrap_from_server(server_addr: String, token: String, state: State<Ap
 // Vuelve esta caja a modo standalone (no toca la base local -- solo deja de
 // tratarla como copia de la del servidor). Igual que en bootstrap_from_server,
 // se preserva la licencia -- desconectar de multicaja no debe desactivar la app.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn disconnect_client(state: State<AppState>) -> CmdResult<()> {
     let app_dir = app_dir_of(&state)?;
     let mut cfg = read_device_config(&app_dir);
@@ -310,7 +310,7 @@ impl LicenseStatus {
 // que ya trae la clave, no esto) -- es solo un colchón contra fallos nuestros.
 const VERIFY_GRACE_SECS: i64 = 30 * 24 * 60 * 60;
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn get_license_status(state: State<AppState>) -> CmdResult<LicenseStatus> {
     let app_dir = app_dir_of(&state)?;
     let mut cfg = read_device_config(&app_dir);
@@ -339,7 +339,7 @@ pub fn get_license_status(state: State<AppState>) -> CmdResult<LicenseStatus> {
 // Sirve tanto para activar por primera vez como para pegar una clave completa
 // nueva y desbloquear una prueba vencida (ver TrialExpired.tsx) — en ambos
 // casos solo pisa email/clave en device_config.json, nunca toca SQLite.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn activate_license(email: String, key: String, state: State<AppState>) -> CmdResult<LicenseStatus> {
     let normalized_email = email.trim().to_lowercase();
     if normalized_email.is_empty() {

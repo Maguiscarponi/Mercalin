@@ -3,14 +3,14 @@ use crate::models::{DailyReport, IvaReportItem, MarginCategory, MarginProduct, P
 use crate::AppState;
 use rusqlite::params;
 use std::collections::HashMap;
-use tauri::State;
+use crate::State;
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn daily_report(date: String, state: State<AppState>) -> CmdResult<DailyReport> {
     range_report(date.clone(), date, state)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn range_report(
     from_date: String,
     to_date: String,
@@ -76,7 +76,7 @@ pub fn range_report(
     })
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn sales_by_user(
     from_date: String,
     to_date: String,
@@ -138,7 +138,7 @@ fn compute_margin_row(price_cents: i64, cost_cents: i64, revenue_cents: i64, cos
     (profit_cents, margin_pct)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn margin_report(
     from_date: String,
     to_date: String,
@@ -230,7 +230,7 @@ pub fn margin_report(
     Ok(out)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn margin_by_category(
     from_date: String,
     to_date: String,
@@ -297,7 +297,7 @@ pub fn margin_by_category(
 
 /// Libro IVA ventas: desglose neto + IVA para el período dado.
 /// La tasa de IVA se lee de la tabla config (clave "iva_rate"), default 21.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn get_iva_report(
     from_date: String,
     to_date: String,
@@ -399,7 +399,7 @@ pub fn get_iva_report(
 // Reportes -- siempre miraba una ventana fija de 60 días desde hoy, aunque
 // la dueña estuviera mirando un mes pasado. Ahora recibe el mismo rango que
 // el resto de las pestañas.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn get_product_affinity(from_date: String, to_date: String, state: State<AppState>) -> CmdResult<Vec<ProductAffinity>> {
     let conn = state.db.lock();
 

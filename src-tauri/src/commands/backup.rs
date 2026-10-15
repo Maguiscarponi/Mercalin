@@ -1,7 +1,7 @@
 use crate::commands::{err, CmdResult};
 use crate::AppState;
 use std::io::Write;
-use tauri::State;
+use crate::State;
 
 // Encontrado en la auditoría: backup/restore no dejaban NINGÚN rastro en
 // Auditoría -- y aunque lo dejaran, un restore reemplaza la propia tabla
@@ -103,7 +103,7 @@ fn prune_old_backups(backup_dir: &std::path::Path, keep: usize) {
     }
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn backup_database(actor_id: Option<i64>, state: State<AppState>) -> CmdResult<String> {
     let keep = get_keep_count(&state);
     let db_path = state.db_path.clone();
@@ -128,7 +128,7 @@ pub fn backup_database(actor_id: Option<i64>, state: State<AppState>) -> CmdResu
     Ok(filename)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn list_backups(state: State<AppState>) -> CmdResult<Vec<BackupInfo>> {
     let backup_dir = backup_dir(&state);
 
@@ -152,7 +152,7 @@ pub fn list_backups(state: State<AppState>) -> CmdResult<Vec<BackupInfo>> {
     Ok(entries)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn delete_backup(name: String, actor_id: Option<i64>, state: State<AppState>) -> CmdResult<()> {
     if !name.starts_with("kiosco_backup_") || !name.ends_with(".db") || name.contains('/') || name.contains('\\') {
         return Err("Nombre de backup inválido".into());
@@ -179,7 +179,7 @@ pub fn delete_backup(name: String, actor_id: Option<i64>, state: State<AppState>
 // no avisaba nada específico -- se podía perder un turno entero de ventas en
 // curso sin saber cuánto. Devuelve el monto vendido en la sesión abierta (si
 // hay una) para que el frontend lo muestre en la confirmación.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn get_open_session_warning(state: State<AppState>) -> CmdResult<Option<i64>> {
     let conn = state.db.lock();
     let session_id: Option<i64> = conn
@@ -246,14 +246,14 @@ fn do_restore(src: &std::path::Path, state: &AppState, actor_id: Option<i64>) ->
 
 // Restaurar desde un archivo elegido a mano (típicamente en otra compu, sin
 // historial local de backups todavía).
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn restore_backup(file_path: String, actor_id: Option<i64>, state: State<AppState>) -> CmdResult<()> {
     do_restore(std::path::Path::new(&file_path), &state, actor_id)
 }
 
 // Restaurar uno de los backups que ya están en la lista de esta misma compu
 // -- no hace falta volver a elegir el archivo, ya se sabe dónde está.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn restore_backup_by_name(name: String, actor_id: Option<i64>, state: State<AppState>) -> CmdResult<()> {
     if !name.starts_with("kiosco_backup_") || !name.ends_with(".db") || name.contains('/') || name.contains('\\') {
         return Err("Nombre de backup inválido".into());
@@ -262,7 +262,7 @@ pub fn restore_backup_by_name(name: String, actor_id: Option<i64>, state: State<
     do_restore(&path, &state, actor_id)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn auto_backup_check(state: State<AppState>) -> CmdResult<bool> {
     let (enabled, last_at, freq_hours, keep_count) = {
         let conn = state.db.lock();

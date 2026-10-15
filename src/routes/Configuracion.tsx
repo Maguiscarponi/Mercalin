@@ -15,6 +15,8 @@ import { useHelpEnabledStore } from "@/stores/helpEnabled";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { getVersion } from "@tauri-apps/api/app";
+import { IS_WEB } from "@/web/platform";
+import { useWebAccount } from "@/web/WebGate";
 import { openSupportWhatsapp } from "@/lib/support";
 import { useAuthStore } from "@/stores/auth";
 import Field from "@/components/ui/Field";
@@ -644,9 +646,19 @@ export default function Configuracion() {
         {tab === "backup" && (
           <div className="max-w-2xl space-y-5">
             <div className="bg-sky-50 border border-sky-200 rounded-lg p-4 text-sm text-sky-900 leading-relaxed">
-              <strong>¿Para qué sirve esto?</strong> Guarda una copia completa de tu negocio (ventas, productos,
-              clientes, configuración de ARCA) para que si un día cambiás de computadora, se rompe la actual, o
-              reinstalás el programa, no pierdas nada. Son 3 pasos, uno abajo del otro.
+              {IS_WEB ? (
+                <>
+                  <strong>Tus datos ya están en la nube.</strong> Todo lo que cargás en Mercalin se guarda en el
+                  servidor, no en este dispositivo: si se rompe la compu o cambiás de celular, entrás con tu mail y
+                  está todo. Igual podés guardar copias de un momento puntual y descargarlas.
+                </>
+              ) : (
+                <>
+                  <strong>¿Para qué sirve esto?</strong> Guarda una copia completa de tu negocio (ventas, productos,
+                  clientes, configuración de ARCA) para que si un día cambiás de computadora, se rompe la actual, o
+                  reinstalás el programa, no pierdas nada. Son 3 pasos, uno abajo del otro.
+                </>
+              )}
             </div>
 
             {/* Paso 1 */}
@@ -690,7 +702,10 @@ export default function Configuracion() {
               </div>
             </section>
 
+            {IS_WEB && <DescargarCopiaWeb />}
+
             {/* Paso 2 */}
+            {!IS_WEB && (
             <section className="card p-5">
               <div className="flex items-center gap-2 mb-2">
                 <span className="w-7 h-7 rounded-full bg-emerald-500 text-white text-sm font-bold flex items-center justify-center shrink-0">2</span>
@@ -719,8 +734,10 @@ export default function Configuracion() {
                 <p className="text-xs text-amber-600 mt-2">⚠ Todavía no elegiste una carpeta de nube — si esta compu se rompe, perdés la copia también.</p>
               )}
             </section>
+            )}
 
             {/* Paso 3 */}
+            {!IS_WEB && (
             <section className="card p-5 border-2 border-sky-300 bg-sky-50/40">
               <div className="flex items-center gap-2 mb-2">
                 <span className="w-7 h-7 rounded-full bg-sky-500 text-white text-sm font-bold flex items-center justify-center shrink-0">3</span>
@@ -736,10 +753,11 @@ export default function Configuracion() {
                 {restoring ? "Restaurando…" : "📂 Elegir archivo y restaurar"}
               </button>
             </section>
+            )}
 
             {backups.length > 0 && (
               <section className="card p-5">
-                <h2 className="font-semibold text-sm mb-1 text-stone-600">Copias guardadas en esta compu ({backups.length})</h2>
+                <h2 className="font-semibold text-sm mb-1 text-stone-600">Copias guardadas {IS_WEB ? "en tu cuenta" : "en esta compu"} ({backups.length})</h2>
                 <p className="text-xs text-stone-400 mb-3">Para volver atrás rápido, sin salir a buscar el archivo.</p>
                 <div className="space-y-1">
                   {backups.map((b) => (
@@ -787,6 +805,7 @@ export default function Configuracion() {
               </div>
             </section>
 
+            {!IS_WEB && (
             <section className="card p-5">
               <h2 className="font-semibold text-sm mb-1">📱 Modo tablet / móvil</h2>
               <p className="text-xs text-stone-500 mb-4">Cualquier tablet en la misma red WiFi puede ver ventas del día, alertas y órdenes sin instalar nada.</p>
@@ -815,6 +834,7 @@ export default function Configuracion() {
                 )}
               </div>
             </section>
+            )}
 
             {/* Multicaja está oculta: probada entre dos computadoras reales no
                 funcionó (la caja cliente no llega a hablar con la servidor y queda
@@ -928,6 +948,9 @@ export default function Configuracion() {
             </section>
             )}
 
+            {IS_WEB && <CuentaWeb />}
+
+            {!IS_WEB && (
             <section className="card p-5">
               <h2 className="font-semibold text-sm mb-3">🔑 Licencia</h2>
               {licenseStatus && (
@@ -976,15 +999,17 @@ export default function Configuracion() {
                 </>
               )}
             </section>
+            )}
 
             <section className="card p-5">
               <h2 className="font-semibold text-sm mb-3">ℹ️ Acerca del sistema</h2>
               <dl className="text-sm space-y-1.5 text-stone-600">
                 <div className="flex justify-between"><dt>Versión</dt><dd className="font-mono">{appVersion || "…"}</dd></div>
                 <div className="flex justify-between"><dt>Sistema</dt><dd>Mercalin</dd></div>
-                <div className="flex justify-between"><dt>Motor de DB</dt><dd>SQLite (local)</dd></div>
+                <div className="flex justify-between"><dt>Motor de DB</dt><dd>{IS_WEB ? "SQLite (en la nube)" : "SQLite (local)"}</dd></div>
               </dl>
 
+              {!IS_WEB && (
               <div className="mt-4 pt-4 border-t border-stone-100">
                 {!updater.update && !updater.installing && (
                   <button onClick={() => updater.checkNow()} disabled={updater.checking} className="btn btn-secondary text-sm">
@@ -1017,9 +1042,10 @@ export default function Configuracion() {
                   <p className="text-xs text-stone-400 mt-2">Estás usando la última versión.</p>
                 )}
               </div>
+              )}
             </section>
 
-            {import.meta.env.DEV && (
+            {import.meta.env.DEV && !IS_WEB && (
               <section className="card p-5 border-2 border-dashed border-amber-300">
                 <h2 className="font-semibold text-sm mb-1">🛠 Plantilla de catálogo (solo desarrollo)</h2>
                 <p className="text-xs text-stone-500 mb-4">
@@ -1057,3 +1083,47 @@ export default function Configuracion() {
   );
 }
 
+
+// Versión web: descargar a este dispositivo una copia completa de la base.
+function DescargarCopiaWeb() {
+  const sessionToken = useAuthStore((s) => s.sessionToken);
+  return (
+    <section className="card p-5">
+      <h2 className="font-semibold text-sm mb-2">Descargar una copia a este dispositivo</h2>
+      <p className="text-xs text-stone-500 mb-3">
+        Baja un archivo con todo tu negocio (ventas, productos, clientes y ARCA). Sirve también para pasarte a
+        la app de escritorio cuando quieras.
+      </p>
+      <a
+        className="btn btn-secondary w-full text-center"
+        href={`/api/web/backup-download?session=${encodeURIComponent(sessionToken ?? "")}`}
+      >
+        ⬇️ Descargar copia
+      </a>
+    </section>
+  );
+}
+
+// Versión web: datos de la cuenta en lugar de la licencia con clave.
+function CuentaWeb() {
+  const web = useWebAccount();
+  if (!web) return null;
+  const { account } = web;
+  const fin = new Date(account.trialEndsAt * 1000).toLocaleDateString("es-AR");
+  return (
+    <section className="card p-5">
+      <h2 className="font-semibold text-sm mb-3">👤 Tu cuenta</h2>
+      <dl className="text-sm space-y-1.5 text-stone-600">
+        <div className="flex justify-between gap-3"><dt>Negocio</dt><dd className="text-right">{account.businessName}</dd></div>
+        <div className="flex justify-between gap-3"><dt>Mail</dt><dd className="text-right break-all">{account.email}</dd></div>
+        <div className="flex justify-between gap-3">
+          <dt>Plan</dt>
+          <dd className="text-right">{account.plan === "prueba" ? `Prueba gratis, hasta el ${fin}` : account.plan === "mensual" ? "Mensual" : "Sin plan activo"}</dd>
+        </div>
+      </dl>
+      <button type="button" onClick={() => web.signOutEverywhere()} className="btn btn-secondary text-sm mt-4">
+        Salir de esta cuenta en este dispositivo
+      </button>
+    </section>
+  );
+}

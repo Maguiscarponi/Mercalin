@@ -2,7 +2,7 @@ use crate::commands::{audit::log_action, err, CmdResult};
 use crate::models::{NewWeighedLabel, WeighedLabel};
 use crate::AppState;
 use rusqlite::{params, Row};
-use tauri::State;
+use crate::State;
 
 fn row_to_weighed_label(row: &Row) -> rusqlite::Result<WeighedLabel> {
     Ok(WeighedLabel {
@@ -24,7 +24,7 @@ fn row_to_weighed_label(row: &Row) -> rusqlite::Result<WeighedLabel> {
 // cambia después, esta etiqueta ya impresa sigue cobrando lo que dice el
 // papel. Prefijo "90": ningún código real de producto argentino (GS1 779...)
 // empieza así, así que nunca choca con un barcode de verdad.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn create_weighed_label(input: NewWeighedLabel, user_id: Option<i64>, state: State<AppState>) -> CmdResult<WeighedLabel> {
     // Encontrado en la auditoría: no se validaba nada acá -- un peso negativo
     // o cero, o un precio negativo, generaban un código de barras real que al
@@ -58,7 +58,7 @@ pub fn create_weighed_label(input: NewWeighedLabel, user_id: Option<i64>, state:
     stmt.query_row(params![id], row_to_weighed_label).map_err(err)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn find_weighed_label(barcode: String, state: State<AppState>) -> CmdResult<Option<WeighedLabel>> {
     let conn = state.db.lock();
     let mut stmt = conn.prepare(

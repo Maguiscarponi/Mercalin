@@ -9,7 +9,7 @@ use openssl::rsa::Rsa;
 use openssl::stack::Stack;
 use openssl::x509::{X509NameBuilder, X509Req, X509ReqBuilder, X509};
 use rusqlite::params;
-use tauri::State;
+use crate::State;
 
 // ─── Endpoints ARCA ──────────────────────────────────────────────────────────
 
@@ -37,7 +37,7 @@ fn nc_cbte_tipo(invoice_type: &str) -> i64 {
 
 // ─── Configuración ────────────────────────────────────────────────────────────
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn get_arca_config(state: State<AppState>) -> CmdResult<Option<ArcaConfig>> {
     let conn = state.db.lock();
     let row = conn.query_row(
@@ -87,7 +87,7 @@ pub fn get_arca_config(state: State<AppState>) -> CmdResult<Option<ArcaConfig>> 
     }
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn save_arca_config(input: ArcaConfigInput, session_token: Option<String>, state: State<AppState>) -> CmdResult<()> {
     let conn = state.db.lock();
     // Encontrado en la auditoría: guardar la configuración de ARCA (CUIT,
@@ -117,7 +117,7 @@ pub fn save_arca_config(input: ArcaConfigInput, session_token: Option<String>, s
 // Automática (la factura se emite sola al cobrar en Caja) o manual (solo
 // cuando se toca "Facturar" en la pantalla de venta confirmada). Va aparte de
 // save_arca_config para cambiarlo con un clic, sin reenviar los datos fiscales.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn set_arca_emision_automatica(enabled: bool, session_token: Option<String>, state: State<AppState>) -> CmdResult<()> {
     let conn = state.db.lock();
     let actor_id = Some(require_role(&conn, &state.sessions, session_token.as_deref(), "supervisor")?);
@@ -139,7 +139,7 @@ pub fn set_arca_emision_automatica(enabled: bool, session_token: Option<String>,
 // Producción, o para arrancar de cero si algo quedó mal cargado. No toca
 // nada del lado de ARCA (eso es imposible de todos modos): solo borra lo
 // que hay guardado localmente en esta base.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn reset_arca_data(session_token: Option<String>, state: State<AppState>) -> CmdResult<()> {
     let conn = state.db.lock();
     // Encontrado en la auditoría: borra TODO el historial real de facturas
@@ -161,7 +161,7 @@ pub fn reset_arca_data(session_token: Option<String>, state: State<AppState>) ->
 // y arma el CSR (pedido de certificado) que hay que pegar en ARCA →
 // Administración de Certificados Digitales → Nueva solicitud. ARCA devuelve
 // un .crt que se carga después con load_arca_certificate.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn generate_arca_keypair(state: State<AppState>) -> CmdResult<String> {
     let (cuit, razon_social) = {
         let conn = state.db.lock();
@@ -204,13 +204,13 @@ pub fn generate_arca_keypair(state: State<AppState>) -> CmdResult<String> {
     let conn = state.db.lock();
     conn.execute(
         "UPDATE arca_config SET private_key_pem=?1, certificate_pem=NULL, token=NULL, sign=NULL, token_expires_at=NULL, updated_at=CURRENT_TIMESTAMP WHERE id=1",
-        params![key_pem],
+        params![crate::secret::seal(&key_pem)],
     ).map_err(err)?;
 
     Ok(csr_pem)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn load_arca_certificate(cert_pem: String, state: State<AppState>) -> CmdResult<String> {
     if !cert_pem.contains("-----BEGIN CERTIFICATE-----") {
         return Err("El archivo no parece ser un certificado PEM válido".into());
@@ -227,6 +227,7 @@ pub fn load_arca_certificate(cert_pem: String, state: State<AppState>) -> CmdRes
     // vieja y ARCA lo rechaza recién al facturar, con un error de firma que
     // no dice nada. Mejor avisarlo acá, en el momento de cargarlo.
     let key_pem: String = conn.query_row("SELECT private_key_pem FROM arca_config WHERE id=1", [], |r| r.get(0)).map_err(err)?;
+    let key_pem = crate::secret::open(&key_pem)?;
     if !cert_matches_key(&cert_pem, &key_pem) {
         return Err("Este certificado no corresponde a la clave generada en esta computadora. Pasa si tocaste \"Generar de nuevo\" después de pedirlo en ARCA, o si es un archivo de otra compu. Descargá de nuevo el archivo mercalin.csr, cargalo en ARCA en un alias nuevo y subí acá el certificado que te dé.".into());
     }
@@ -365,7 +366,7 @@ fn get_or_refresh_token(state: &AppState) -> Result<(String, String, String), St
     };
 
     let cert = cert_pem.ok_or("No hay certificado ARCA cargado.")?;
-    let key = private_key_pem.ok_or("No hay clave privada ARCA.")?;
+    let key = crate::secret::open(&private_key_pem.ok_or("No hay clave privada ARCA.")?)?;
 
     // Token cacheado vigente
     if let (Some(t), Some(s), Some(exp)) = (&token, &sign, &token_expires_at) {
@@ -394,7 +395,7 @@ fn get_or_refresh_token(state: &AppState) -> Result<(String, String, String), St
     Ok((new_token, new_sign, environment))
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn test_arca_connection(state: State<AppState>) -> CmdResult<String> {
     get_or_refresh_token(&state)
         .map(|_| "Conexión con ARCA exitosa — token obtenido correctamente".to_string())
@@ -528,7 +529,7 @@ fn evaluar_punto_venta(pv: i64, lista: &Result<Vec<i64>, String>, ultimo: &Resul
     }
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn diagnose_arca(state: State<AppState>) -> CmdResult<ArcaDiagnosis> {
     let fila = {
         let conn = state.db.lock();
@@ -542,6 +543,7 @@ pub fn diagnose_arca(state: State<AppState>) -> CmdResult<ArcaDiagnosis> {
         ).ok()
     };
     let sin_probar = |motivo: &str| check("sin_probar", "sin_probar", motivo);
+    let fila = fila.map(|(c, p, i, k, cert)| (c, p, i, k.and_then(|k| crate::secret::open(&k).ok()), cert));
     let Some((cuit, pv, condicion_iva, key_pem, cert_pem)) = fila.filter(|f| !f.0.trim().is_empty()) else {
         return Ok(ArcaDiagnosis {
             certificado: check("falta", "sin_datos", "Todavía no cargaste tus datos. Empezá por el paso 1."),
@@ -594,7 +596,7 @@ pub fn diagnose_arca(state: State<AppState>) -> CmdResult<ArcaDiagnosis> {
 
 // Cambia solo el punto de venta, sin reenviar el resto de los datos fiscales
 // (para elegirlo con un clic entre los que ARCA informa que sirven).
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn set_arca_punto_venta(punto_venta: i64, session_token: Option<String>, state: State<AppState>) -> CmdResult<()> {
     if !(1..=99998).contains(&punto_venta) {
         return Err("El punto de venta tiene que ser un número entre 1 y 99998.".to_string());
@@ -774,7 +776,7 @@ fn validate_invoice_input(input: &InvoiceInput) -> CmdResult<()> {
     Ok(())
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn issue_electronic_invoice(input: InvoiceInput, state: State<AppState>) -> CmdResult<ElectronicInvoice> {
     validate_invoice_input(&input)?;
 
@@ -864,7 +866,7 @@ pub fn issue_electronic_invoice(input: InvoiceInput, state: State<AppState>) -> 
 // con su propia NC, sin que la primera bloquee a las siguientes. Cuando no
 // vienen (anulación manual desde Facturación), es una anulación total como
 // siempre fue: por el importe completo y solo se puede hacer una vez.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn issue_credit_note(
     invoice_id: i64,
     amount_cents: Option<i64>,
@@ -1038,7 +1040,7 @@ pub fn issue_credit_note(
     fetch_invoice(&state, inv_id)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn list_electronic_invoices(limit: i64, state: State<AppState>) -> CmdResult<Vec<ElectronicInvoice>> {
     let conn = state.db.lock();
     let mut stmt = conn.prepare(
@@ -1054,7 +1056,7 @@ pub fn list_electronic_invoices(limit: i64, state: State<AppState>) -> CmdResult
 // Para Devoluciones: saber si la venta que se está por devolver tiene una
 // factura ARCA vigente (no una NC), para poder ofrecer emitir la nota de
 // crédito correspondiente al confirmar la devolución.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn get_invoice_for_sale(sale_id: i64, state: State<AppState>) -> CmdResult<Option<ElectronicInvoice>> {
     let conn = state.db.lock();
     let mut stmt = conn.prepare(
@@ -1070,7 +1072,7 @@ pub fn get_invoice_for_sale(sale_id: i64, state: State<AppState>) -> CmdResult<O
     }
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn retry_pending_invoices(state: State<AppState>) -> CmdResult<i64> {
     let pending_ids: Vec<i64> = {
         let conn = state.db.lock();
@@ -1108,7 +1110,7 @@ pub fn retry_pending_invoices(state: State<AppState>) -> CmdResult<i64> {
 // puntual -- solo el bulk de arriba (que además solo miraba 'pendiente', que
 // nunca ocurría). Ahora permite reintentar una factura en 'error' o
 // 'pendiente' desde Facturación, una por una.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn retry_invoice(invoice_id: i64, state: State<AppState>) -> CmdResult<ElectronicInvoice> {
     let inv = fetch_invoice(&state, invoice_id)?;
     if inv.status != "error" && inv.status != "pendiente" {

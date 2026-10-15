@@ -1,17 +1,30 @@
-mod db;
-mod models;
-mod commands;
-mod rpc;
-mod sync_db;
-mod sync_worker;
+pub mod db;
+pub mod models;
+pub mod commands;
+pub mod rpc;
+pub mod sync_db;
+pub mod sync_worker;
+pub mod secret;
 
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use parking_lot::Mutex;
 use rusqlite::Connection;
+#[cfg(feature = "desktop")]
 use serde_json::Value;
+#[cfg(feature = "desktop")]
 use tauri::{AppHandle, Manager};
+
+// Cómo reciben el estado los comandos. En la app de escritorio es el
+// `tauri::State` de siempre; en la versión web (src/bin/web.rs, sin Tauri)
+// es una referencia común al AppState de cada comercio. Los dos se usan
+// igual adentro de los comandos (state.db.lock(), etc.), así que la lógica
+// de negocio es exactamente la misma en las dos versiones.
+#[cfg(feature = "desktop")]
+pub type State<'a, T> = tauri::State<'a, T>;
+#[cfg(not(feature = "desktop"))]
+pub type State<'a, T> = &'a T;
 
 pub struct AppState {
     pub db: Arc<Mutex<Connection>>,
@@ -32,6 +45,7 @@ pub struct AppState {
 
 // ─── Servidor HTTP para modo tablet ──────────────────────────────────────────
 
+#[cfg(feature = "desktop")]
 fn get_local_ip() -> String {
     let socket = std::net::UdpSocket::bind("0.0.0.0:0").ok();
     if let Some(s) = socket {
@@ -44,6 +58,7 @@ fn get_local_ip() -> String {
     "127.0.0.1".to_string()
 }
 
+#[cfg(feature = "desktop")]
 fn tablet_html(ip: &str, port: u16) -> String {
     format!(r#"<!DOCTYPE html>
 <html lang="es">
@@ -134,6 +149,7 @@ setInterval(loadAll,60000);
 // No acelera el acceso a la base (ya serializado por `Mutex<Connection>`), pero
 // evita que una caja con red lenta bloquee a las demás mientras arma el request.
 // La función no bloquea: spawnea los workers y vuelve enseguida.
+#[cfg(feature = "desktop")]
 fn start_network_server(app: AppHandle, db: Arc<Mutex<Connection>>, port: u16) {
     let server = match tiny_http::Server::http(format!("0.0.0.0:{}", port)) {
         Ok(s) => Arc::new(s),
@@ -160,6 +176,7 @@ fn start_network_server(app: AppHandle, db: Arc<Mutex<Connection>>, port: u16) {
 // DeviceConfig::network_token. None si esta caja no tiene modo servidor
 // configurado con un token (no debería pasar en la práctica: set_device_config
 // genera uno apenas se activa modo servidor).
+#[cfg(feature = "desktop")]
 fn expected_network_token(app: &AppHandle) -> Option<String> {
     let app_dir = app.path().app_data_dir().ok()?;
     commands::device::read_device_config(&app_dir).network_token
@@ -169,6 +186,7 @@ fn expected_network_token(app: &AppHandle) -> Option<String> {
 // Rechaza si no hay token configurado o si vino vacío -- un servidor sin
 // network_token (no debería pasar, ver ensure_network_token) no debe quedar
 // abierto a "cualquiera con el header vacío".
+#[cfg(feature = "desktop")]
 fn tokens_match(expected: &Option<String>, provided: &Option<String>) -> bool {
     match (expected, provided) {
         (Some(e), Some(p)) if !e.is_empty() => e == p,
@@ -176,6 +194,7 @@ fn tokens_match(expected: &Option<String>, provided: &Option<String>) -> bool {
     }
 }
 
+#[cfg(feature = "desktop")]
 fn request_token(request: &tiny_http::Request) -> Option<String> {
     request
         .headers()
@@ -184,6 +203,7 @@ fn request_token(request: &tiny_http::Request) -> Option<String> {
         .map(|h| h.value.as_str().to_string())
 }
 
+#[cfg(feature = "desktop")]
 fn unauthorized_response() -> tiny_http::ResponseBox {
     tiny_http::Response::from_string(r#"{"ok":false,"error":"No autorizado"}"#)
         .with_status_code(401)
@@ -192,6 +212,7 @@ fn unauthorized_response() -> tiny_http::ResponseBox {
         .boxed()
 }
 
+#[cfg(feature = "desktop")]
 fn handle_network_request(
     app: &AppHandle,
     db: &Arc<Mutex<Connection>>,
@@ -370,6 +391,7 @@ fn handle_network_request(
     let _ = request.respond(response);
 }
 
+#[cfg(feature = "desktop")]
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 struct NetworkInfo {
@@ -381,6 +403,7 @@ struct NetworkInfo {
     server_token: Option<String>,
 }
 
+#[cfg(feature = "desktop")]
 #[tauri::command]
 fn get_network_info(state: tauri::State<AppState>) -> NetworkInfo {
     let (tablet_enabled, port) = {
@@ -411,6 +434,7 @@ fn get_network_info(state: tauri::State<AppState>) -> NetworkInfo {
 
 // ─── Entry point ──────────────────────────────────────────────────────────────
 
+#[cfg(feature = "desktop")]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -742,7 +766,7 @@ pub fn run() {
         .expect("error al correr la app Tauri");
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "desktop"))]
 mod network_auth_tests {
     use super::tokens_match;
 

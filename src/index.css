@@ -131,3 +131,14 @@
     font-size: 12pt;
   }
 }
+
+/* Celular: ningún cuadro con ancho fijo (ventanas, modales) puede ser más ancho
+   que la pantalla. En la app de escritorio (ventana de 1024px o más) no aplica. */
+@media (max-width: 767px) {
+  [class*="w-["] {
+    max-width: calc(100vw - 1.5rem);
+  }
+  /* Grillas de 4 a 6 columnas (tarjetas de números): de a 2 o 3 en el celular. */
+  .grid-cols-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .grid-cols-5, .grid-cols-6 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}

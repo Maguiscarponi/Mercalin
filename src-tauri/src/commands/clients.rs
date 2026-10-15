@@ -2,7 +2,7 @@ use crate::commands::{err, CmdResult};
 use crate::models::{Client, ClientAccountEntry, ClientPaymentInput, ClientRfm, NewClient};
 use crate::AppState;
 use rusqlite::{params, Row};
-use tauri::State;
+use crate::State;
 
 fn friendly_dni_error<E: std::fmt::Display>(e: E) -> String {
     let s = err(e);
@@ -43,7 +43,7 @@ const CLIENT_SELECT: &str = "
            ) as balance_cents
     FROM clients c";
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn list_clients(query: String, state: State<AppState>) -> CmdResult<Vec<Client>> {
     let conn = state.db.lock();
     let q = query.trim().to_string();
@@ -76,7 +76,7 @@ pub fn list_clients(query: String, state: State<AppState>) -> CmdResult<Vec<Clie
 // Para la sección "Inactivos" de Clientes — separado de list_clients a propósito,
 // para que el buscador rápido de Caja (que sí usa list_clients) nunca sugiera
 // asignar una venta a un cliente desactivado.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn list_inactive_clients(state: State<AppState>) -> CmdResult<Vec<Client>> {
     let conn = state.db.lock();
     let sql = format!("{} WHERE c.active = 0 ORDER BY c.name", CLIENT_SELECT);
@@ -89,7 +89,7 @@ pub fn list_inactive_clients(state: State<AppState>) -> CmdResult<Vec<Client>> {
     Ok(out)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn reactivate_client(id: i64, state: State<AppState>) -> CmdResult<()> {
     let conn = state.db.lock();
     conn.execute(
@@ -100,7 +100,7 @@ pub fn reactivate_client(id: i64, state: State<AppState>) -> CmdResult<()> {
     Ok(())
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn get_client(id: i64, state: State<AppState>) -> CmdResult<Client> {
     let conn = state.db.lock();
     let sql = format!("{} WHERE c.id = ?1", CLIENT_SELECT);
@@ -119,7 +119,7 @@ fn validate_credit_limit(credit_limit_cents: i64) -> CmdResult<()> {
     Ok(())
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn create_client(client: NewClient, state: State<AppState>) -> CmdResult<Client> {
     validate_credit_limit(client.credit_limit_cents)?;
     let conn = state.db.lock();
@@ -147,7 +147,7 @@ pub fn create_client(client: NewClient, state: State<AppState>) -> CmdResult<Cli
     stmt.query_row(params![id], row_to_client).map_err(err)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn update_client(client: Client, state: State<AppState>) -> CmdResult<Client> {
     validate_credit_limit(client.credit_limit_cents)?;
     let conn = state.db.lock();
@@ -176,7 +176,7 @@ pub fn update_client(client: Client, state: State<AppState>) -> CmdResult<Client
     stmt.query_row(params![client.id], row_to_client).map_err(err)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn delete_client(id: i64, state: State<AppState>) -> CmdResult<()> {
     let conn = state.db.lock();
     conn.execute(
@@ -187,7 +187,7 @@ pub fn delete_client(id: i64, state: State<AppState>) -> CmdResult<()> {
     Ok(())
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn client_account_history(
     client_id: i64,
     state: State<AppState>,
@@ -220,7 +220,7 @@ pub fn client_account_history(
     Ok(out)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn register_client_payment(
     input: ClientPaymentInput,
     state: State<AppState>,
@@ -270,7 +270,7 @@ fn classify_rfm_segment(
     "habitual".to_string()
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn get_clients_rfm(state: State<AppState>) -> CmdResult<Vec<ClientRfm>> {
     let conn = state.db.lock();
     let mut stmt = conn.prepare(

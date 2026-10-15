@@ -2,7 +2,7 @@ use crate::commands::{err, CmdResult};
 use crate::models::AuditEntry;
 use crate::AppState;
 use rusqlite::params;
-use tauri::State;
+use crate::State;
 
 pub fn log_action(
     conn: &rusqlite::Connection,
@@ -18,7 +18,7 @@ pub fn log_action(
     );
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn list_audit_log(limit: i64, state: State<AppState>) -> CmdResult<Vec<AuditEntry>> {
     let conn = state.db.lock();
     let mut stmt = conn

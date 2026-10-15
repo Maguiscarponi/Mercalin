@@ -10,18 +10,22 @@
 // única vía es un "Resincronizar todo" completo (clonado de la base, que sí
 // trae el hash porque es una copia cruda del archivo).
 
+#![cfg_attr(not(feature = "desktop"), allow(dead_code, unused_imports))]
+
 use crate::AppState;
 use parking_lot::Mutex;
 use rusqlite::{params, Connection};
 use serde_json::Value;
 use std::sync::Arc;
 use std::time::Duration;
+#[cfg(feature = "desktop")]
 use tauri::{AppHandle, Emitter};
 
 const POLL_INTERVAL: Duration = Duration::from_secs(5);
 const HTTP_TIMEOUT: Duration = Duration::from_secs(8);
 const HEALTH_TIMEOUT: Duration = Duration::from_secs(2);
 
+#[cfg(feature = "desktop")]
 fn set_status(app: &AppHandle, status_arc: &Arc<Mutex<String>>, status: &str) {
     let changed = {
         let mut s = status_arc.lock();
@@ -208,6 +212,7 @@ fn resync_light(db: &Arc<Mutex<Connection>>, server_addr: &str, token: &str) {
 }
 
 /// No bloquea: spawnea el hilo de polling y vuelve enseguida.
+#[cfg(feature = "desktop")]
 pub fn run_sync_worker(
     app: AppHandle,
     db: Arc<Mutex<Connection>>,
@@ -245,13 +250,13 @@ pub fn run_sync_worker(
     });
 }
 
-#[tauri::command]
-pub fn get_sync_status(state: tauri::State<AppState>) -> String {
+#[cfg_attr(feature = "desktop", tauri::command)]
+pub fn get_sync_status(state: crate::State<AppState>) -> String {
     state.sync_status.lock().clone()
 }
 
-#[tauri::command]
-pub fn list_pending_sync_ops(state: tauri::State<AppState>) -> crate::commands::CmdResult<Vec<crate::models::PendingSyncOp>> {
+#[cfg_attr(feature = "desktop", tauri::command)]
+pub fn list_pending_sync_ops(state: crate::State<AppState>) -> crate::commands::CmdResult<Vec<crate::models::PendingSyncOp>> {
     let conn = state.sync_queue.lock();
     let mut stmt = conn
         .prepare("SELECT id, created_at, command, payload_json, status, attempts, last_error, synced_at FROM pending_sync_ops ORDER BY id DESC LIMIT 200")
@@ -273,8 +278,8 @@ pub fn list_pending_sync_ops(state: tauri::State<AppState>) -> crate::commands::
     Ok(rows.filter_map(|r| r.ok()).collect())
 }
 
-#[tauri::command]
-pub fn enqueue_sync_op(command: String, payload: Value, state: tauri::State<AppState>) -> crate::commands::CmdResult<()> {
+#[cfg_attr(feature = "desktop", tauri::command)]
+pub fn enqueue_sync_op(command: String, payload: Value, state: crate::State<AppState>) -> crate::commands::CmdResult<()> {
     let conn = state.sync_queue.lock();
     let payload_json = serde_json::to_string(&payload).map_err(crate::commands::err)?;
     conn.execute(

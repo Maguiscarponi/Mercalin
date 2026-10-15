@@ -5,7 +5,7 @@ pub mod caja;
 // Todo el archivo es una herramienta de uso interno (generar la plantilla de catálogo
 // para empaquetar con el instalador, ver generate_catalog_template) — no se compila en
 // builds de release, ningún cliente real la necesita.
-#[cfg(debug_assertions)]
+#[cfg(all(debug_assertions, feature = "desktop"))]
 pub mod catalog_import;
 pub mod combos;
 pub mod dashboard;

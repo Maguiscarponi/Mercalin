@@ -4,7 +4,7 @@ use crate::AppState;
 use chrono::{Datelike, Timelike};
 use rusqlite::params;
 use std::collections::HashSet;
-use tauri::State;
+use crate::State;
 
 fn fmt_cents(cents: i64) -> String {
     let pesos = cents as f64 / 100.0;
@@ -49,7 +49,7 @@ macro_rules! push {
     };
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn get_insights(state: State<AppState>) -> CmdResult<Vec<Insight>> {
     let conn = state.db.lock();
 
@@ -1182,7 +1182,7 @@ pub fn get_insights(state: State<AppState>) -> CmdResult<Vec<Insight>> {
 // verlo todos los días -- "hoy" (dismissed_until = fecha de hoy, vuelve a
 // aparecer mañana si la condición sigue) o "para siempre" (dismissed_until
 // NULL, solo vuelve si se restaura a mano desde Configuración).
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn dismiss_insight(insight_id: String, message: String, forever: bool, state: State<AppState>) -> CmdResult<()> {
     let conn = state.db.lock();
     let dismissed_until: Option<String> = if forever {
@@ -1202,7 +1202,7 @@ pub fn dismiss_insight(insight_id: String, message: String, forever: bool, state
 // Para la lista de "consejos ocultos" en Configuración -- deja restaurar uno
 // puntual sin tener que esperar a que venza solo (los "para siempre" nunca
 // vencerían) ni tocar la base a mano.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn list_dismissed_insights(state: State<AppState>) -> CmdResult<Vec<DismissedInsight>> {
     let conn = state.db.lock();
     let mut stmt = conn.prepare(
@@ -1221,7 +1221,7 @@ pub fn list_dismissed_insights(state: State<AppState>) -> CmdResult<Vec<Dismisse
     Ok(out)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn restore_insight(insight_id: String, state: State<AppState>) -> CmdResult<()> {
     let conn = state.db.lock();
     conn.execute("DELETE FROM insight_dismissals WHERE insight_id=?1", params![insight_id]).map_err(err)?;

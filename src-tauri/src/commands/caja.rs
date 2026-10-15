@@ -4,7 +4,7 @@ use crate::models::{
 };
 use crate::AppState;
 use rusqlite::{params, Connection};
-use tauri::State;
+use crate::State;
 
 // Separada para poder testearla con una Connection en memoria (tauri::State
 // no se puede construir a mano fuera de una app real). Ver el comentario en
@@ -51,7 +51,7 @@ fn row_to_session(row: &rusqlite::Row) -> rusqlite::Result<CashSession> {
     })
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn open_cash_session(
     input: OpenSessionInput,
     state: State<AppState>,
@@ -80,7 +80,7 @@ pub fn open_cash_session(
     stmt.query_row(params![id], row_to_session).map_err(err)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn close_cash_session(
     input: CloseSessionInput,
     state: State<AppState>,
@@ -104,14 +104,14 @@ pub fn close_cash_session(
         .map_err(err)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn get_cash_session(id: i64, state: State<AppState>) -> CmdResult<CashSession> {
     let conn = state.db.lock();
     let mut stmt = conn.prepare("SELECT * FROM cash_sessions WHERE id = ?1").map_err(err)?;
     stmt.query_row(params![id], row_to_session).map_err(err)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn get_current_session(state: State<AppState>) -> CmdResult<Option<CashSession>> {
     let conn = state.db.lock();
     let mut stmt = conn
@@ -121,7 +121,7 @@ pub fn get_current_session(state: State<AppState>) -> CmdResult<Option<CashSessi
     Ok(stmt.query_row([], row_to_session).ok())
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn list_open_sessions(state: State<AppState>) -> CmdResult<Vec<CashSession>> {
     let conn = state.db.lock();
     let mut stmt = conn
@@ -135,7 +135,7 @@ pub fn list_open_sessions(state: State<AppState>) -> CmdResult<Vec<CashSession>>
     Ok(out)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn list_cash_sessions(limit: i64, state: State<AppState>) -> CmdResult<Vec<CashSession>> {
     let conn = state.db.lock();
     let mut stmt = conn
@@ -150,7 +150,7 @@ pub fn list_cash_sessions(limit: i64, state: State<AppState>) -> CmdResult<Vec<C
     Ok(out)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn add_cash_movement(
     input: NewCashMovement,
     state: State<AppState>,
@@ -201,7 +201,7 @@ pub fn add_cash_movement(
     .map_err(err)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn get_session_sales_total(
     session_id: i64,
     state: State<AppState>,
@@ -235,7 +235,7 @@ pub fn get_session_sales_total(
     Ok(efectivo)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn get_session_all_sales_total(
     session_id: i64,
     state: State<AppState>,
@@ -252,7 +252,7 @@ pub fn get_session_all_sales_total(
     Ok(total)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn list_cash_movements(
     session_id: i64,
     state: State<AppState>,

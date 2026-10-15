@@ -2,7 +2,7 @@ use crate::commands::{err, CmdResult};
 use crate::models::{Combo, ComboItem, ComboWithItems, NewCombo};
 use crate::AppState;
 use rusqlite::{params, Connection};
-use tauri::State;
+use crate::State;
 
 // Encontrado en la auditoría: mismo problema que del lado de productos --
 // nada impedía que un combo compartiera código de barras con un producto ya
@@ -96,7 +96,7 @@ fn fetch_combo_with_items(conn: &rusqlite::Connection, combo_id: i64) -> CmdResu
     Ok(ComboWithItems { combo, items })
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn list_combos(state: State<AppState>) -> CmdResult<Vec<ComboWithItems>> {
     let conn = state.db.lock();
     let ids: Vec<i64> = {
@@ -117,7 +117,7 @@ pub fn list_combos(state: State<AppState>) -> CmdResult<Vec<ComboWithItems>> {
 // Reverse-lookup: en qué combos participa un producto -- para avisar antes de
 // borrarlo/desactivarlo (un combo activo con un componente inactivo sigue
 // vendiéndose en Caja sin que nadie se entere) y para mostrarlo en su ficha.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn list_combos_for_product(product_id: i64, state: State<AppState>) -> CmdResult<Vec<Combo>> {
     let conn = state.db.lock();
     let mut stmt = conn
@@ -134,7 +134,7 @@ pub fn list_combos_for_product(product_id: i64, state: State<AppState>) -> CmdRe
     Ok(out)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn list_active_combos(state: State<AppState>) -> CmdResult<Vec<ComboWithItems>> {
     let conn = state.db.lock();
     let ids: Vec<i64> = {
@@ -152,7 +152,7 @@ pub fn list_active_combos(state: State<AppState>) -> CmdResult<Vec<ComboWithItem
         .collect()
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn find_combo_by_barcode(barcode: String, state: State<AppState>) -> CmdResult<Option<ComboWithItems>> {
     let conn = state.db.lock();
     let id: Option<i64> = conn
@@ -164,7 +164,7 @@ pub fn find_combo_by_barcode(barcode: String, state: State<AppState>) -> CmdResu
     }
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn create_combo(input: NewCombo, state: State<AppState>) -> CmdResult<ComboWithItems> {
     if input.name.trim().is_empty() {
         return Err("El nombre del combo es obligatorio".into());
@@ -191,7 +191,7 @@ pub fn create_combo(input: NewCombo, state: State<AppState>) -> CmdResult<ComboW
     fetch_combo_with_items(&conn, combo_id)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn update_combo(id: i64, input: NewCombo, state: State<AppState>) -> CmdResult<ComboWithItems> {
     if input.name.trim().is_empty() {
         return Err("El nombre del combo es obligatorio".into());
@@ -220,7 +220,7 @@ pub fn update_combo(id: i64, input: NewCombo, state: State<AppState>) -> CmdResu
     fetch_combo_with_items(&conn, id)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn toggle_combo(id: i64, state: State<AppState>) -> CmdResult<Combo> {
     let conn = state.db.lock();
     conn.execute(
@@ -238,7 +238,7 @@ pub fn toggle_combo(id: i64, state: State<AppState>) -> CmdResult<Combo> {
     stmt.query_row(params![id], row_to_combo).map_err(err)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn delete_combo(id: i64, state: State<AppState>) -> CmdResult<()> {
     let conn = state.db.lock();
     // Encontrado en la auditoría: a diferencia del resto del catálogo (que

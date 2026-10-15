@@ -344,7 +344,7 @@ export default function Dashboard() {
   return (
     <div className="h-full flex flex-col overflow-hidden bg-stone-100">
       {/* Header */}
-      <div className="bg-white border-b border-stone-200 px-6 py-3 flex items-center justify-between shrink-0">
+      <div className="bg-white border-b border-stone-200 px-3 md:px-6 py-3 flex flex-wrap gap-2 items-center justify-between shrink-0">
         <div className="flex items-center gap-2.5">
           <GreetingIcon className="w-4 h-4 text-stone-400" />
           <div>
@@ -386,7 +386,7 @@ export default function Dashboard() {
       </div>
 
       {/* Body */}
-      <div className="flex-1 overflow-y-auto p-5 space-y-4">
+      <div className="flex-1 overflow-y-auto p-3 md:p-5 space-y-4">
         <OnboardingChecklist
           hasProducts={hasProducts}
           hasSales={data.today_sales_count > 0 || data.month_so_far_cents > 0}

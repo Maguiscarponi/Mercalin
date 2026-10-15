@@ -2,7 +2,7 @@ use crate::commands::{err, CmdResult};
 use crate::models::{CostInflationItem, NewPurchaseOrder, NewPurchaseOrderItem, NewSupplier, PurchaseOrder, PurchaseOrderItem, PurchaseProjection, Supplier, SupplierLeadTime, SupplierRiskScore};
 use crate::AppState;
 use rusqlite::{params, Row};
-use tauri::State;
+use crate::State;
 
 fn row_to_supplier(row: &Row) -> rusqlite::Result<Supplier> {
     Ok(Supplier {
@@ -20,7 +20,7 @@ fn row_to_supplier(row: &Row) -> rusqlite::Result<Supplier> {
     })
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn list_suppliers(state: State<AppState>) -> CmdResult<Vec<Supplier>> {
     let conn = state.db.lock();
     let mut stmt = conn
@@ -59,7 +59,7 @@ fn validate_purchase_items(items: &[NewPurchaseOrderItem]) -> CmdResult<()> {
     Ok(())
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn create_supplier(supplier: NewSupplier, state: State<AppState>) -> CmdResult<Supplier> {
     validate_supplier_name(&supplier.name)?;
     let conn = state.db.lock();
@@ -85,7 +85,7 @@ pub fn create_supplier(supplier: NewSupplier, state: State<AppState>) -> CmdResu
     stmt.query_row(params![id], row_to_supplier).map_err(err)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn update_supplier(supplier: Supplier, state: State<AppState>) -> CmdResult<Supplier> {
     validate_supplier_name(&supplier.name)?;
     let conn = state.db.lock();
@@ -113,7 +113,7 @@ pub fn update_supplier(supplier: Supplier, state: State<AppState>) -> CmdResult<
         .map_err(err)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn delete_supplier(id: i64, state: State<AppState>) -> CmdResult<()> {
     let conn = state.db.lock();
     conn.execute(
@@ -124,7 +124,7 @@ pub fn delete_supplier(id: i64, state: State<AppState>) -> CmdResult<()> {
     Ok(())
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn create_purchase_order(
     order: NewPurchaseOrder,
     state: State<AppState>,
@@ -186,7 +186,7 @@ pub fn create_purchase_order(
     .map_err(err)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn list_purchase_orders(
     supplier_id: Option<i64>,
     state: State<AppState>,
@@ -241,7 +241,7 @@ pub fn list_purchase_orders(
     Ok(out)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn receive_purchase_order(
     order_id: i64,
     state: State<AppState>,
@@ -329,7 +329,7 @@ pub fn receive_purchase_order(
     .map_err(err)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn get_purchase_items(
     order_id: i64,
     state: State<AppState>,
@@ -359,7 +359,7 @@ pub fn get_purchase_items(
     Ok(out)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn cancel_purchase_order(order_id: i64, state: State<AppState>) -> CmdResult<()> {
     let conn = state.db.lock();
     conn.execute(
@@ -370,7 +370,7 @@ pub fn cancel_purchase_order(order_id: i64, state: State<AppState>) -> CmdResult
     Ok(())
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn generate_auto_orders(state: State<AppState>) -> CmdResult<Vec<PurchaseOrder>> {
     let conn = state.db.lock();
     if !crate::db::stock_tracking_enabled(&conn) {
@@ -458,7 +458,7 @@ pub fn generate_auto_orders(state: State<AppState>) -> CmdResult<Vec<PurchaseOrd
 }
 
 /// Lead time promedio real por proveedor (calculado de órdenes recibidas).
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn get_supplier_lead_times(state: State<AppState>) -> CmdResult<Vec<SupplierLeadTime>> {
     let conn = state.db.lock();
     let mut stmt = conn.prepare(
@@ -490,7 +490,7 @@ pub fn get_supplier_lead_times(state: State<AppState>) -> CmdResult<Vec<Supplier
 }
 
 /// Proyección de compras: productos que se agotan en los próximos 7 días según velocidad de venta.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn get_purchase_projections(state: State<AppState>) -> CmdResult<Vec<PurchaseProjection>> {
     let conn = state.db.lock();
     if !crate::db::stock_tracking_enabled(&conn) {
@@ -546,7 +546,7 @@ pub fn get_purchase_projections(state: State<AppState>) -> CmdResult<Vec<Purchas
 }
 
 /// Inflación de costos: variación del precio de costo entre la primera y la última compra por producto/proveedor.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn get_supplier_cost_inflation(state: State<AppState>) -> CmdResult<Vec<CostInflationItem>> {
     let conn = state.db.lock();
     let mut stmt = conn.prepare(
@@ -586,7 +586,7 @@ pub fn get_supplier_cost_inflation(state: State<AppState>) -> CmdResult<Vec<Cost
 }
 
 /// Score de riesgo por proveedor: combina variabilidad de lead time + inflacion de costos.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn get_supplier_risk_scores(state: State<AppState>) -> CmdResult<Vec<SupplierRiskScore>> {
     let conn = state.db.lock();
 

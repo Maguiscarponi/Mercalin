@@ -6,7 +6,7 @@ use crate::AppState;
 use hmac::{Hmac, Mac};
 use rusqlite::{params, Connection};
 use sha2::{Digest, Sha256};
-use tauri::State;
+use crate::State;
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -84,7 +84,7 @@ fn row_to_user(row: &rusqlite::Row) -> rusqlite::Result<User> {
     })
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn list_users(state: State<AppState>) -> CmdResult<Vec<User>> {
     let conn = state.db.lock();
     let mut stmt = conn
@@ -98,7 +98,7 @@ pub fn list_users(state: State<AppState>) -> CmdResult<Vec<User>> {
     Ok(out)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn create_user(user: NewUser, session_token: Option<String>, state: State<AppState>) -> CmdResult<User> {
     // Encontrado en la auditoría: change_password sí exigía un mínimo de
     // caracteres, pero crear un usuario nuevo no -- se podía dar de alta con
@@ -122,7 +122,7 @@ pub fn create_user(user: NewUser, session_token: Option<String>, state: State<Ap
     stmt.query_row(params![id], row_to_user).map_err(err)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn update_user(user: User, session_token: Option<String>, state: State<AppState>) -> CmdResult<User> {
     let conn = state.db.lock();
     let actor_id = Some(require_admin(&conn, &state.sessions, session_token.as_deref())?);
@@ -159,7 +159,7 @@ pub fn update_user(user: User, session_token: Option<String>, state: State<AppSt
     stmt.query_row(params![user.id], row_to_user).map_err(err)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn change_password(
     user_id: i64,
     new_password: String,
@@ -190,7 +190,7 @@ pub fn change_password(
     Ok(())
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn delete_user(id: i64, session_token: Option<String>, state: State<AppState>) -> CmdResult<()> {
     let conn = state.db.lock();
     let actor_id = Some(require_admin(&conn, &state.sessions, session_token.as_deref())?);
@@ -216,7 +216,7 @@ pub fn delete_user(id: i64, session_token: Option<String>, state: State<AppState
 // mail real del comprador como usuario y la contraseña que eligió. Así el login
 // de todos los días es con su mail, no con credenciales genéricas que cualquiera
 // que instale la app conoce de antemano.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn claim_admin_account(email: String, password: String, state: State<AppState>) -> CmdResult<LoginResult> {
     if password.len() < 4 {
         return Err("La contraseña debe tener al menos 4 caracteres".to_string());
@@ -297,7 +297,7 @@ pub(crate) fn reset_password_with_license(
     Ok(user_id)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn reset_password_with_license_key(email: String, key: String, new_password: String, state: State<AppState>) -> CmdResult<()> {
     let app_dir = crate::commands::device::app_dir_of(&state)?;
     let cfg = crate::commands::device::read_device_config(&app_dir);
@@ -307,7 +307,7 @@ pub fn reset_password_with_license_key(email: String, key: String, new_password:
     Ok(())
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn login(username: String, password: String, state: State<AppState>) -> CmdResult<LoginResult> {
     let conn = state.db.lock();
     // No se puede comparar el hash directo en el WHERE como antes: con sal
@@ -346,7 +346,7 @@ pub fn login(username: String, password: String, state: State<AppState>) -> CmdR
     Ok(LoginResult { user, session_token })
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn logout(session_token: String, state: State<AppState>) -> CmdResult<()> {
     invalidate_session(&state.sessions, &session_token);
     Ok(())

@@ -13,6 +13,7 @@ import { CashSessionPanel, OpenCashForm } from "./Caja_Sesion";
 import { confirmAction, showToast } from "@/stores/dialogs";
 import { useStockTrackingStore } from "@/stores/stockTracking";
 import { useCombosEnabledStore } from "@/stores/combosEnabled";
+import { useIsMobile } from "@/lib/useIsMobile";
 import type { CashSession, Client, ComboWithItems, DeptButton, Product, Promotion, SaleWithItems, WeighedLabel } from "@/types";
 
 export default function Caja() {
@@ -57,6 +58,9 @@ export default function Caja() {
   const [pendingPriceProduct, setPendingPriceProduct] = useState<Product | null>(null);
   const [quickProducts, setQuickProducts] = useState<Product[]>([]);
   const scanRef = useRef<HTMLInputElement>(null);
+  // En el celular no se fuerza el foco en el buscador: abriría el teclado
+  // cada vez que se toca un botón.
+  const isMobile = useIsMobile();
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Producto detrás de cada línea del carrito con promo aplicada, para poder
   // recalcular el descuento (2x1/3x2/mínimo) cada vez que cambia la cantidad.
@@ -110,7 +114,7 @@ export default function Caja() {
     }).catch(console.error);
   }, []);
 
-  useEffect(() => { scanRef.current?.focus(); }, []);
+  useEffect(() => { if (!isMobile) scanRef.current?.focus(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!combosEnabled) { setCombos([]); return; }
@@ -608,12 +612,12 @@ ${itemsHtml}
   }
 
   return (
-    <div className="h-full flex flex-col p-3 gap-3 relative">
+    <div className="h-full flex flex-col p-2 md:p-3 gap-3 relative">
 
-      <div className="flex-1 grid grid-cols-[1fr_420px] gap-3 min-h-0">
+      <div className="flex-1 grid grid-cols-1 md:grid-cols-[1fr_420px] gap-3 min-h-0 max-md:overflow-y-auto max-md:content-start">
         {/* Columna izquierda: scan + items */}
-        <div className="card flex flex-col min-h-0">
-          <div className="p-4 border-b border-stone-200">
+        <div className="card flex flex-col min-h-0 max-md:min-h-[45dvh]">
+          <div className="p-3 md:p-4 border-b border-stone-200">
             <input
               ref={scanRef}
               type="text"
@@ -624,6 +628,7 @@ ${itemsHtml}
               onKeyDown={handleScan}
               autoComplete="off"
               onBlur={(e) => {
+                if (isMobile) return;
                 const next = e.relatedTarget as HTMLElement | null;
                 // Si el foco se va a otro INPUT/TEXTAREA real, dejarlo ir
                 if (next && (next.tagName === "INPUT" || next.tagName === "TEXTAREA" || next.tagName === "SELECT")) return;
@@ -683,7 +688,7 @@ ${itemsHtml}
                   return (
                     <li
                       key={idx}
-                      className="grid grid-cols-[1fr_auto_150px_40px] gap-3 items-center px-4 py-4 border-b border-stone-100 hover:bg-stone-50"
+                      className="grid grid-cols-[1fr_auto_auto_28px] md:grid-cols-[1fr_auto_150px_40px] gap-2 md:gap-3 items-center px-3 md:px-4 py-3 md:py-4 border-b border-stone-100 hover:bg-stone-50"
                     >
                       <div>
                         <div className="font-semibold text-base leading-tight flex items-center gap-2">
@@ -757,11 +762,11 @@ ${itemsHtml}
           </div>
 
           {/* TOTAL — blanco, número enorme */}
-          <div className="card px-5 py-10 flex flex-col items-center text-center shrink-0">
+          <div className="card px-5 py-6 md:py-10 flex flex-col items-center text-center shrink-0">
             <div className="text-[11px] uppercase tracking-[0.2em] font-semibold text-stone-400 mb-3">
               Total a cobrar
             </div>
-            <div className="text-7xl font-black tabular leading-none text-stone-900">
+            <div className="text-5xl md:text-7xl font-black tabular leading-none text-stone-900">
               {centsToARS(total)}
             </div>
             <div className="mt-4 text-sm text-stone-400 flex items-center gap-2">
@@ -996,6 +1001,17 @@ ${itemsHtml}
           </div>
         </div>
       </div>
+
+      {/* Celular: el botón Cobrar queda siempre a mano, abajo, con el total. */}
+      {isMobile && cart.items.length > 0 && (
+        <button
+          onClick={tryOpenPay}
+          disabled={session === null || hasStockIssue}
+          className="shrink-0 w-full h-14 rounded-xl bg-red-600 active:bg-red-800 text-white font-black text-xl disabled:opacity-35 flex items-center justify-center gap-2 shadow-lg"
+        >
+          Cobrar <span className="tabular">{centsToARS(total)}</span>
+        </button>
+      )}
 
       {payOpen && (
         <PaymentModal

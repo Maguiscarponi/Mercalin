@@ -2,7 +2,7 @@ use crate::commands::{audit::log_action, err, CmdResult};
 use crate::models::ConfigEntry;
 use crate::AppState;
 use rusqlite::params;
-use tauri::State;
+use crate::State;
 
 // Valores que vale la pena poder auditar (quién cambió el CUIT/razón social
 // del negocio y cuándo, por ejemplo) sin llenar Auditoría de ruido por cada
@@ -16,7 +16,7 @@ const SENSITIVE_CONFIG_KEYS: &[&str] = &[
     "max_discount_pct_no_pin", "min_margin_pct",
 ];
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn get_config(key: String, state: State<AppState>) -> CmdResult<Option<String>> {
     let conn = state.db.lock();
     Ok(conn
@@ -28,7 +28,7 @@ pub fn get_config(key: String, state: State<AppState>) -> CmdResult<Option<Strin
         .ok())
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn set_config(entry: ConfigEntry, actor_id: Option<i64>, state: State<AppState>) -> CmdResult<()> {
     let conn = state.db.lock();
     conn.execute(
@@ -43,7 +43,7 @@ pub fn set_config(entry: ConfigEntry, actor_id: Option<i64>, state: State<AppSta
     Ok(())
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn get_all_config(state: State<AppState>) -> CmdResult<Vec<ConfigEntry>> {
     let conn = state.db.lock();
     let mut stmt = conn.prepare("SELECT key, value FROM config ORDER BY key").map_err(err)?;
@@ -63,7 +63,7 @@ pub fn get_all_config(state: State<AppState>) -> CmdResult<Vec<ConfigEntry>> {
     Ok(out)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn set_multiple_config(entries: Vec<ConfigEntry>, actor_id: Option<i64>, state: State<AppState>) -> CmdResult<()> {
     let conn = state.db.lock();
     let mut changed_sensitive: Vec<String> = Vec::new();

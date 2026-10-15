@@ -2,7 +2,7 @@ use crate::commands::{err, require_role, CmdResult};
 use crate::models::{NewQuote, Quote, QuoteItem, QuoteWithItems};
 use crate::AppState;
 use rusqlite::params;
-use tauri::State;
+use crate::State;
 
 fn row_to_quote(row: &rusqlite::Row) -> rusqlite::Result<Quote> {
     Ok(Quote {
@@ -20,7 +20,7 @@ fn row_to_quote(row: &rusqlite::Row) -> rusqlite::Result<Quote> {
     })
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn list_quotes(state: State<AppState>) -> CmdResult<Vec<Quote>> {
     let conn = state.db.lock();
     let mut stmt = conn.prepare(
@@ -34,7 +34,7 @@ pub fn list_quotes(state: State<AppState>) -> CmdResult<Vec<Quote>> {
     Ok(out)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn get_quote_with_items(id: i64, state: State<AppState>) -> CmdResult<QuoteWithItems> {
     let conn = state.db.lock();
     let sql = "SELECT q.*, c.name as client_name FROM quotes q LEFT JOIN clients c ON q.client_id = c.id WHERE q.id = ?1";
@@ -62,7 +62,7 @@ pub fn get_quote_with_items(id: i64, state: State<AppState>) -> CmdResult<QuoteW
     Ok(QuoteWithItems { quote, items })
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn create_quote(quote: NewQuote, session_token: Option<String>, state: State<AppState>) -> CmdResult<Quote> {
     let mut conn = state.db.lock();
     require_role(&conn, &state.sessions, session_token.as_deref(), "supervisor")?;
@@ -97,7 +97,7 @@ pub fn create_quote(quote: NewQuote, session_token: Option<String>, state: State
     stmt.query_row(params![qid], row_to_quote).map_err(err)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn update_quote(id: i64, quote: NewQuote, session_token: Option<String>, state: State<AppState>) -> CmdResult<Quote> {
     let mut conn = state.db.lock();
     require_role(&conn, &state.sessions, session_token.as_deref(), "supervisor")?;
@@ -131,7 +131,7 @@ pub fn update_quote(id: i64, quote: NewQuote, session_token: Option<String>, sta
     stmt.query_row(params![id], row_to_quote).map_err(err)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn update_quote_status(id: i64, status: String, session_token: Option<String>, state: State<AppState>) -> CmdResult<Quote> {
     let conn = state.db.lock();
     require_role(&conn, &state.sessions, session_token.as_deref(), "supervisor")?;
@@ -144,7 +144,7 @@ pub fn update_quote_status(id: i64, status: String, session_token: Option<String
     stmt.query_row(params![id], row_to_quote).map_err(err)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn delete_quote(id: i64, session_token: Option<String>, state: State<AppState>) -> CmdResult<()> {
     let conn = state.db.lock();
     require_role(&conn, &state.sessions, session_token.as_deref(), "supervisor")?;

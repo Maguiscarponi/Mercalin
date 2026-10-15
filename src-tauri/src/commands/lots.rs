@@ -2,7 +2,7 @@ use crate::commands::{audit::log_action, err, CmdResult};
 use crate::models::{ExpiringLot, NewProductLot, ProductLot};
 use crate::AppState;
 use rusqlite::params;
-use tauri::State;
+use crate::State;
 
 fn row_to_lot(row: &rusqlite::Row) -> rusqlite::Result<ProductLot> {
     Ok(ProductLot {
@@ -18,7 +18,7 @@ fn row_to_lot(row: &rusqlite::Row) -> rusqlite::Result<ProductLot> {
     })
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn list_product_lots(product_id: i64, state: State<AppState>) -> CmdResult<Vec<ProductLot>> {
     let conn = state.db.lock();
     let mut stmt = conn
@@ -39,7 +39,7 @@ pub fn list_product_lots(product_id: i64, state: State<AppState>) -> CmdResult<V
     Ok(out)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn list_expiring_lots(days: i64, state: State<AppState>) -> CmdResult<Vec<ExpiringLot>> {
     let conn = state.db.lock();
     let mut stmt = conn
@@ -93,7 +93,7 @@ fn validate_new_lot(qty: f64, cost_cents: i64) -> CmdResult<()> {
     Ok(())
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn add_product_lot(input: NewProductLot, user_id: Option<i64>, state: State<AppState>) -> CmdResult<ProductLot> {
     validate_new_lot(input.qty, input.cost_cents)?;
     let mut conn = state.db.lock();
@@ -143,7 +143,7 @@ pub fn add_product_lot(input: NewProductLot, user_id: Option<i64>, state: State<
     stmt.query_row(params![lot_id], row_to_lot).map_err(err)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn retire_lot(lot_id: i64, user_id: Option<i64>, state: State<AppState>) -> CmdResult<()> {
     let mut conn = state.db.lock();
     let tx = conn.transaction().map_err(err)?;
@@ -186,7 +186,7 @@ pub fn retire_lot(lot_id: i64, user_id: Option<i64>, state: State<AppState>) -> 
     Ok(())
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn update_lot_expiry(
     lot_id: i64,
     expires_at: Option<String>,

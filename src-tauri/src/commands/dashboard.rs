@@ -4,9 +4,9 @@ use crate::models::{
     TopProductToday,
 };
 use crate::AppState;
-use tauri::State;
+use crate::State;
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn get_dashboard(state: State<AppState>) -> CmdResult<DashboardData> {
     let conn = state.db.lock();
 

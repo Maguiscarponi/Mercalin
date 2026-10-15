@@ -2,7 +2,7 @@ use crate::commands::{err, require_role, CmdResult};
 use crate::models::{NewPromotion, Promotion};
 use crate::AppState;
 use rusqlite::params;
-use tauri::State;
+use crate::State;
 
 fn row_to_promo(row: &rusqlite::Row) -> rusqlite::Result<Promotion> {
     Ok(Promotion {
@@ -24,7 +24,7 @@ fn row_to_promo(row: &rusqlite::Row) -> rusqlite::Result<Promotion> {
     })
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn list_promotions(state: State<AppState>) -> CmdResult<Vec<Promotion>> {
     let conn = state.db.lock();
     let mut stmt = conn
@@ -50,7 +50,7 @@ fn validate_promo_dates(starts_at: &Option<String>, ends_at: &Option<String>) ->
     Ok(())
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn create_promotion(promo: NewPromotion, session_token: Option<String>, state: State<AppState>) -> CmdResult<Promotion> {
     validate_promo_dates(&promo.starts_at, &promo.ends_at)?;
     let conn = state.db.lock();
@@ -80,7 +80,7 @@ pub fn create_promotion(promo: NewPromotion, session_token: Option<String>, stat
     stmt.query_row(params![id], row_to_promo).map_err(err)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn update_promotion(promo: Promotion, session_token: Option<String>, state: State<AppState>) -> CmdResult<Promotion> {
     validate_promo_dates(&promo.starts_at, &promo.ends_at)?;
     let conn = state.db.lock();
@@ -112,7 +112,7 @@ pub fn update_promotion(promo: Promotion, session_token: Option<String>, state: 
     stmt.query_row(params![promo.id], row_to_promo).map_err(err)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn toggle_promotion(id: i64, session_token: Option<String>, state: State<AppState>) -> CmdResult<Promotion> {
     let conn = state.db.lock();
     require_role(&conn, &state.sessions, session_token.as_deref(), "supervisor")?;
@@ -125,7 +125,7 @@ pub fn toggle_promotion(id: i64, session_token: Option<String>, state: State<App
     stmt.query_row(params![id], row_to_promo).map_err(err)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn delete_promotion(id: i64, session_token: Option<String>, state: State<AppState>) -> CmdResult<()> {
     let conn = state.db.lock();
     require_role(&conn, &state.sessions, session_token.as_deref(), "supervisor")?;

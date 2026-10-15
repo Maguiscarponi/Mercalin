@@ -2,6 +2,10 @@ import { useState } from "react";
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
 import mercalinLogo from "@/assets/mercalin-logo.svg";
+import { IS_WEB } from "@/web/platform";
+import { useWebAccount } from "@/web/WebGate";
+import CodeLogin from "@/web/CodeLogin";
+import { webApi } from "@/web/webApi";
 
 export default function Login() {
   const setSession = useAuthStore((s) => s.setSession);
@@ -27,6 +31,10 @@ export default function Login() {
     }
   }
 
+  if (recuperando && IS_WEB) {
+    return <EntrarComoDueno onVolver={() => setRecuperando(false)} />;
+  }
+
   if (recuperando) {
     return (
       <RecuperarContrasena
@@ -44,7 +52,7 @@ export default function Login() {
   }
 
   return (
-    <div className="h-screen flex items-center justify-center bg-stone-100">
+    <div className="min-h-[100dvh] flex items-center justify-center bg-stone-100 px-4">
       <div className="w-full max-w-sm">
         {/* Logo / Header */}
         <div className="text-center mb-8">
@@ -113,9 +121,10 @@ export default function Login() {
             }}
             className="block w-full text-center text-sm text-stone-500 hover:text-stone-800 underline underline-offset-2 mt-5"
           >
-            ¿Olvidaste tu contraseña?
+            {IS_WEB ? "Soy el dueño: entrar con un código a mi mail" : "¿Olvidaste tu contraseña?"}
           </button>
         </div>
+        {IS_WEB && <SalirDeLaCuenta />}
       </div>
     </div>
   );
@@ -256,5 +265,52 @@ function RecuperarContrasena({
         </p>
       </div>
     </div>
+  );
+}
+
+// Versión web: el dueño entra con un código a su mail (no hay clave de
+// activación como en la app de escritorio).
+function EntrarComoDueno({ onVolver }: { onVolver: () => void }) {
+  const web = useWebAccount();
+  const setSession = useAuthStore((s) => s.setSession);
+  const [error, setError] = useState<string | null>(null);
+
+  return (
+    <div className="min-h-[100dvh] flex items-center justify-center bg-stone-100 px-4">
+      <div className="w-full max-w-sm">
+        <div className="text-center mb-8">
+          <img src={mercalinLogo} alt="Mercalin" className="h-14 mx-auto mb-4" />
+          <p className="text-stone-500 text-sm mt-1">Te mandamos un código al mail del dueño.</p>
+        </div>
+        <div className="bg-white rounded-2xl shadow-sm border border-stone-200 p-6 sm:p-8">
+          <CodeLogin
+            initialEmail={web?.account.email ?? ""}
+            lockEmail
+            onVerified={async () => {
+              const result = await webApi.ownerLogin();
+              if (result) setSession(result);
+              else setError("No se pudo entrar. Probá de nuevo.");
+            }}
+          />
+          {error && <div className="bg-orange-50 text-orange-700 border border-orange-200 rounded-lg px-4 py-3 text-sm mt-4">{error}</div>}
+          <button type="button" onClick={onVolver} className="block w-full text-center text-sm text-stone-500 hover:text-stone-800 underline underline-offset-2 mt-5">
+            Volver
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SalirDeLaCuenta() {
+  const web = useWebAccount();
+  if (!web) return null;
+  return (
+    <p className="text-center text-xs text-stone-400 mt-6">
+      {web.account.businessName} ·{" "}
+      <button type="button" className="underline underline-offset-2 hover:text-stone-700" onClick={() => web.signOutEverywhere()}>
+        Salir de esta cuenta en este navegador
+      </button>
+    </p>
   );
 }

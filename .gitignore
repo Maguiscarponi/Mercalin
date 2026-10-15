@@ -41,3 +41,8 @@ src-tauri/gen/
 # Excepción: la plantilla de catálogo SÍ se versiona (ver generate_catalog_template) —
 # es un insumo de build, no una base de datos de prueba de una corrida local.
 !src-tauri/resources/template.db
+
+# Versión web
+dist-web
+src-tauri/mercalin-web-data/
+mercalin-web-data/

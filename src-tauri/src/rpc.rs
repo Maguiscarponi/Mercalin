@@ -14,12 +14,13 @@
 
 use crate::AppState;
 use serde_json::Value;
+#[cfg(feature = "desktop")]
 use tauri::{AppHandle, Manager};
 
 pub type RpcResult = Result<Value, String>;
 
 macro_rules! rpc_dispatch {
-    ( $app:expr, $command:expr, $body:expr, { $( $name:literal => $path:path [ $($arg:ident : $ty:ty),* $(,)? ] ),* $(,)? } ) => {
+    ( $state:expr, $command:expr, $body:expr, { $( $name:literal => $path:path [ $($arg:ident : $ty:ty),* $(,)? ] ),* $(,)? } ) => {
         match $command {
             $(
                 $name => {
@@ -28,7 +29,7 @@ macro_rules! rpc_dispatch {
                     struct Args { $($arg: $ty,)* }
                     let args: Args = serde_json::from_value($body)
                         .map_err(|e| format!("Argumentos inválidos para \"{}\": {}", $name, e))?;
-                    let state = $app.state::<AppState>();
+                    let state = $state;
                     let result = $path($(args.$arg,)* state)?;
                     serde_json::to_value(result).map_err(|e| e.to_string())
                 }
@@ -38,8 +39,15 @@ macro_rules! rpc_dispatch {
     };
 }
 
+#[cfg(feature = "desktop")]
 pub fn dispatch(app: &AppHandle, command: &str, body: Value) -> RpcResult {
-    rpc_dispatch!(app, command, body, {
+    dispatch_with(app.state::<AppState>(), command, body)
+}
+
+// Mismo despacho, pero recibiendo el estado ya resuelto: lo usa la versión web
+// (src/bin/web.rs), donde cada comercio tiene su propio AppState.
+pub fn dispatch_with(state: crate::State<AppState>, command: &str, body: Value) -> RpcResult {
+    rpc_dispatch!(state, command, body, {
         // Productos
         "find_product_by_barcode" => crate::commands::products::find_product_by_barcode[barcode: String],
         "create_weighed_label" => crate::commands::weighed_labels::create_weighed_label[input: crate::models::NewWeighedLabel, user_id: Option<i64>],

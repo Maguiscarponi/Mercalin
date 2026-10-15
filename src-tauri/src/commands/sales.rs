@@ -2,7 +2,7 @@ use crate::commands::{audit::log_action, err, CmdResult};
 use crate::models::{CartItem, Sale, SaleInput, SaleItem, SaleWithItems};
 use crate::AppState;
 use rusqlite::{params, Connection};
-use tauri::State;
+use crate::State;
 
 // Separada de create_sale (que necesita un tauri::State real, no construible
 // en un test unitario fuera de la app) para poder testearla sola. Ver el
@@ -70,7 +70,7 @@ fn row_to_sale(row: &rusqlite::Row) -> rusqlite::Result<Sale> {
     })
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn create_sale(input: SaleInput, state: State<AppState>) -> CmdResult<Sale> {
     if input.items.is_empty() {
         return Err("La venta no tiene ítems".to_string());
@@ -452,7 +452,7 @@ pub fn create_sale(input: SaleInput, state: State<AppState>) -> CmdResult<Sale> 
     stmt.query_row(params![sale_id], row_to_sale).map_err(err)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn get_sale(id: i64, state: State<AppState>) -> CmdResult<Sale> {
     let conn = state.db.lock();
     let mut stmt = conn
@@ -465,7 +465,7 @@ pub fn get_sale(id: i64, state: State<AppState>) -> CmdResult<Sale> {
     stmt.query_row(params![id], row_to_sale).map_err(err)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn get_sale_with_items(id: i64, state: State<AppState>) -> CmdResult<SaleWithItems> {
     let conn = state.db.lock();
 
@@ -511,7 +511,7 @@ pub fn get_sale_with_items(id: i64, state: State<AppState>) -> CmdResult<SaleWit
     Ok(SaleWithItems { sale, items })
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn list_sales(
     date: String,
     limit: i64,
@@ -520,7 +520,7 @@ pub fn list_sales(
     list_sales_range(date.clone(), date, limit, state)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn list_sales_range(
     from_date: String,
     to_date: String,
@@ -555,7 +555,7 @@ pub fn list_sales_range(
 // de 300 sobre TODAS las ventas del período y filtraba por cliente después -- en un
 // local con más de 300 ventas en 90 días, las compras más viejas de un cliente
 // puntual podían quedar afuera del corte antes de siquiera llegar al filtro.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn list_sales_by_client(client_id: i64, limit: i64, state: State<AppState>) -> CmdResult<Vec<Sale>> {
     let conn = state.db.lock();
 
@@ -580,7 +580,7 @@ pub fn list_sales_by_client(client_id: i64, limit: i64, state: State<AppState>) 
     Ok(out)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn cancel_sale(id: i64, state: State<AppState>) -> CmdResult<()> {
     let mut conn = state.db.lock();
     let tx = conn.transaction().map_err(err)?;

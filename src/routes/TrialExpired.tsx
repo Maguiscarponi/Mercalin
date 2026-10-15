@@ -3,6 +3,8 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { api } from "@/lib/api";
 import mercalinLogo from "@/assets/mercalin-logo.svg";
 import type { LicenseStatus } from "@/types";
+import { IS_WEB } from "@/web/platform";
+import { openSupportWhatsapp } from "@/lib/support";
 
 // Directo a la página de compra, no a la portada: quien llega acá ya probó
 // el sistema y lo que necesita es pagar.
@@ -52,6 +54,8 @@ export default function TrialExpired({
   }
 
   const expiredDate = status.expiresAt ? new Date(status.expiresAt * 1000).toLocaleDateString("es-AR") : null;
+
+  if (IS_WEB) return <TrialExpiredWeb expiredDate={expiredDate} />;
 
   return (
     <div className="h-screen flex items-center justify-center bg-stone-100">
@@ -116,6 +120,34 @@ export default function TrialExpired({
               {loading ? "Activando…" : "Activar clave"}
             </button>
           </form>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Versión web: no hay clave para pegar; el plan se activa desde la cuenta.
+function TrialExpiredWeb({ expiredDate }: { expiredDate: string | null }) {
+  return (
+    <div className="min-h-[100dvh] flex items-center justify-center bg-stone-100 px-4">
+      <div className="w-full max-w-sm">
+        <div className="text-center mb-8">
+          <img src={mercalinLogo} alt="Mercalin" className="h-14 mx-auto mb-4" />
+          <h1 className="text-xl font-semibold text-stone-800">Tu prueba gratis terminó</h1>
+          <p className="text-stone-500 text-sm mt-1">
+            {expiredDate ? `Terminó el ${expiredDate}. ` : ""}
+            Tus productos, ventas y clientes siguen guardados. Elegí un plan y seguís desde donde dejaste.
+          </p>
+        </div>
+        <div className="bg-white rounded-2xl shadow-sm border border-stone-200 p-6 sm:p-8 space-y-4">
+          <button
+            type="button"
+            className="btn btn-primary w-full py-2.5 text-base"
+            onClick={() => openSupportWhatsapp("Hola, terminó mi prueba de Mercalin en la web y quiero seguir usándolo.")}
+          >
+            Quiero seguir con Mercalin
+          </button>
+          <p className="text-xs text-stone-400 text-center">Te respondemos por WhatsApp y lo activamos al toque.</p>
         </div>
       </div>
     </div>
